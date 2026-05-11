@@ -109,6 +109,18 @@ def test_run_command_invokes_workflow_with_input_file(tmp_path: Path) -> None:
     assert payload["output"] == {"answer": "Answer: hello"}
 
 
+def test_run_command_accepts_inline_json_input() -> None:
+    result = CliRunner().invoke(
+        app,
+        ["run", str(FIXTURES / "linear_llm.json"), "--input", '{"question":"hello"}', "--json"],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["status"] == "succeeded"
+    assert payload["output"] == {"answer": "Answer: hello"}
+
+
 def test_run_command_invokes_conditional_workflow_with_input_file(tmp_path: Path) -> None:
     input_file = tmp_path / "input.json"
     input_file.write_text(json.dumps({"question": "hello", "confidence": 0.9}), encoding="utf-8")
