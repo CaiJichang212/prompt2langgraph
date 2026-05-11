@@ -5,14 +5,22 @@ from __future__ import annotations
 from typing import Any
 from uuid import uuid4
 
+from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.types import Command
+
 from prompt2langgraph.compiler.langgraph_py import compile_workflow_to_graph
 from prompt2langgraph.diagnostics.codes import E_RUNTIME_010, E_SCHEMA_002, E_TARGET_009
 from prompt2langgraph.diagnostics.report import Diagnostic, DiagnosticLocation
+from prompt2langgraph.ir.lockfile import sha256_canonical_json
 from prompt2langgraph.ir.models import EdgeKind, WorkflowSpec
+from prompt2langgraph.ir.normalize import normalize_workflow
 from prompt2langgraph.registry.builtins import builtin_executor_registry
 from prompt2langgraph.registry.executors import ExecutorRegistry
-from prompt2langgraph.runtime.events import RunEvent, RunResult
+from prompt2langgraph.runtime.events import RunEvent, RunInterrupt, RunResult
 from prompt2langgraph.validate.validator import validate_workflow
+
+_THREAD_CHECKPOINTERS: dict[tuple[str, str], InMemorySaver] = {}
+_PENDING_INTERRUPTS: set[tuple[str, str]] = set()
 
 
 def run_workflow(
@@ -20,17 +28,36 @@ def run_workflow(
     input_payload: dict[str, Any],
     *,
     executors: ExecutorRegistry | None = None,
+    thread_id: str | None = None,
+    resume_payload: Any | None = None,
 ) -> RunResult:
     run_id = _new_id("run")
-    thread_id = _new_id("thread")
+    thread_id = thread_id or _new_id("thread")
     events = [RunEvent(type="run.started", run_id=run_id, thread_id=thread_id)]
+    if resume_payload is not None:
+        events.append(RunEvent(type="run.resumed", run_id=run_id, thread_id=thread_id))
     executor_registry = executors or builtin_executor_registry()
 
     report = validate_workflow(workflow, executors=executor_registry)
     if not report.ok:
         return _failed_result(run_id, thread_id, events, report.diagnostics)
 
-    input_diagnostics = _check_input_payload(workflow, input_payload)
+    thread_key = _thread_key(workflow, thread_id)
+    if resume_payload is not None and thread_key not in _PENDING_INTERRUPTS:
+        return _failed_result(
+            run_id,
+            thread_id,
+            events,
+            [
+                Diagnostic(
+                    code=E_RUNTIME_010,
+                    severity="error",
+                    message=f'no pending interrupt for thread "{thread_id}"',
+                )
+            ],
+        )
+
+    input_diagnostics = [] if resume_payload is not None else _check_input_payload(workflow, input_payload)
     if input_diagnostics:
         return _failed_result(run_id, thread_id, events, input_diagnostics)
 
@@ -42,12 +69,23 @@ def run_workflow(
         events.append(RunEvent(type=event_type, run_id=run_id, thread_id=thread_id, node_id=node_id))
 
     try:
-        graph = compile_workflow_to_graph(workflow, executor_registry, event_sink=record_node_event)
+        checkpointer = _checkpointer_for(thread_key)
+        graph = compile_workflow_to_graph(
+            workflow,
+            executor_registry,
+            event_sink=record_node_event,
+            checkpointer=checkpointer,
+        )
+        graph_input: dict[str, Any] | Command = (
+            Command(resume=resume_payload) if resume_payload is not None else input_payload
+        )
         final_state = graph.invoke(
-            input_payload,
+            graph_input,
             config={"configurable": {"thread_id": thread_id}},
         )
     except Exception as exc:
+        if resume_payload is not None:
+            _clear_thread(thread_key)
         return _failed_result(
             run_id,
             thread_id,
@@ -62,6 +100,20 @@ def run_workflow(
             ],
         )
 
+    interrupt = _extract_interrupt(final_state, events)
+    if interrupt is not None:
+        _PENDING_INTERRUPTS.add(thread_key)
+        return RunResult(
+            status="waiting",
+            run_id=run_id,
+            thread_id=thread_id,
+            output={},
+            events=events,
+            diagnostics=[],
+            interrupt=interrupt,
+        )
+
+    _clear_thread(thread_key)
     events.append(RunEvent(type="run.finished", run_id=run_id, thread_id=thread_id))
     return RunResult(
         status="succeeded",
@@ -71,6 +123,43 @@ def run_workflow(
         events=events,
         diagnostics=[],
     )
+
+
+def _checkpointer_for(thread_key: tuple[str, str]) -> InMemorySaver:
+    return _THREAD_CHECKPOINTERS.setdefault(thread_key, InMemorySaver())
+
+
+def _thread_key(workflow: WorkflowSpec, thread_id: str) -> tuple[str, str]:
+    workflow_hash = sha256_canonical_json(normalize_workflow(workflow).model_dump(mode="json"))
+    return workflow_hash, thread_id
+
+
+def _clear_thread(thread_key: tuple[str, str]) -> None:
+    _PENDING_INTERRUPTS.discard(thread_key)
+    _THREAD_CHECKPOINTERS.pop(thread_key, None)
+
+
+def _extract_interrupt(state: dict[str, Any], events: list[RunEvent]) -> RunInterrupt | None:
+    interrupts = state.get("__interrupt__")
+    if not interrupts:
+        return None
+
+    interrupt_value = interrupts[0].value
+    payload = interrupt_value if isinstance(interrupt_value, dict) else {"value": interrupt_value}
+    node_id = next((event.node_id for event in reversed(events) if event.type == "node.started"), None)
+    node_id = node_id or "unknown"
+    run_id = events[0].run_id
+    thread_id = events[0].thread_id
+    events.append(
+        RunEvent(
+            type="node.interrupted",
+            run_id=run_id,
+            thread_id=thread_id,
+            node_id=node_id,
+            payload=payload,
+        )
+    )
+    return RunInterrupt(node_id=node_id, payload=payload)
 
 
 def _new_id(prefix: str) -> str:
