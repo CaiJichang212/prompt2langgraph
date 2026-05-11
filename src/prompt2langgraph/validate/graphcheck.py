@@ -52,6 +52,8 @@ def check_graph(workflow: WorkflowSpec) -> list[Diagnostic]:
     outgoing: dict[str, list[str]] = defaultdict(list)
     dynamic_sources: set[str] = set()
     static_sources: set[str] = set()
+    loop_edges_by_source: dict[str, list[str]] = defaultdict(list)
+    loop_continuations_by_source: dict[str, list[str]] = defaultdict(list)
 
     for edge in workflow.edges:
         if edge.source not in node_id_set:
@@ -74,10 +76,14 @@ def check_graph(workflow: WorkflowSpec) -> list[Diagnostic]:
             )
 
         outgoing[edge.source].extend(_reachable_targets(edge))
-        if edge.kind in {EdgeKind.CONDITIONAL, EdgeKind.LOOP, EdgeKind.FANOUT}:
+        if edge.kind in {EdgeKind.CONDITIONAL, EdgeKind.FANOUT}:
             dynamic_sources.add(edge.source)
         else:
             static_sources.add(edge.source)
+        if edge.kind is EdgeKind.LOOP:
+            loop_edges_by_source[edge.source].append(edge.id)
+        elif edge.kind is EdgeKind.LINEAR:
+            loop_continuations_by_source[edge.source].append(edge.id)
 
         if edge.kind is EdgeKind.LOOP and edge.loop_guard is None:
             diagnostics.append(
@@ -116,6 +122,27 @@ def check_graph(workflow: WorkflowSpec) -> list[Diagnostic]:
                 location=DiagnosticLocation(node_id=source),
             )
         )
+
+    for source, edge_ids in sorted(loop_edges_by_source.items()):
+        if len(edge_ids) > 1:
+            diagnostics.append(
+                Diagnostic(
+                    code=E_ROUTE_011,
+                    severity="error",
+                    message=f'loop source "{source}" must have at most one loop edge',
+                    location=DiagnosticLocation(node_id=source),
+                )
+            )
+        continuation_ids = loop_continuations_by_source.get(source, [])
+        if len(continuation_ids) > 1:
+            diagnostics.append(
+                Diagnostic(
+                    code=E_ROUTE_011,
+                    severity="error",
+                    message=f'loop source "{source}" must have at most one linear continuation',
+                    location=DiagnosticLocation(node_id=source),
+                )
+            )
 
     diagnostics.extend(_check_reachability(workflow.entrypoint, node_id_set, outgoing))
     diagnostics.extend(_check_exit_path(workflow.entrypoint, node_id_set, outgoing))
