@@ -51,6 +51,12 @@
         "expr": "confidence < 0.75",
         "routes": {"true": "approval", "false": "compose"}
       }
+    },
+    {
+      "id": "after_approval",
+      "source": "approval",
+      "target": "compose",
+      "kind": "linear"
     }
   ],
   "policies": {},
