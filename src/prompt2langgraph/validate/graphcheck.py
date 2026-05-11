@@ -1,10 +1,14 @@
 """Graph structure checks for Workflow IR."""
 
+import re
 from collections import Counter, defaultdict, deque
 
 from prompt2langgraph.diagnostics.codes import E_LOOP_005, E_REDUCER_012, E_ROUTE_011, E_SCHEMA_002, E_TYPE_003
 from prompt2langgraph.diagnostics.report import Diagnostic, DiagnosticLocation
 from prompt2langgraph.ir.models import EdgeKind, TypeName, WorkflowSpec
+
+
+CONDITION_PATTERN = re.compile(r"^\s*([A-Za-z_][A-Za-z0-9_]*)\s*(<=|>=|==|!=|<|>)\s*(.+?)\s*$")
 
 
 def check_graph(workflow: WorkflowSpec) -> list[Diagnostic]:
@@ -85,6 +89,9 @@ def check_graph(workflow: WorkflowSpec) -> list[Diagnostic]:
                 )
             )
 
+        if edge.kind is EdgeKind.CONDITIONAL:
+            diagnostics.extend(_check_condition(edge, workflow))
+
         if edge.condition is not None:
             for route_target in edge.condition.routes.values():
                 if route_target not in node_id_set:
@@ -119,6 +126,57 @@ def _reachable_targets(edge) -> list[str]:
     if edge.kind is EdgeKind.CONDITIONAL and edge.condition is not None:
         return list(edge.condition.routes.values())
     return [edge.target]
+
+
+def _check_condition(edge, workflow: WorkflowSpec) -> list[Diagnostic]:
+    if edge.condition is None:
+        return [
+            Diagnostic(
+                code=E_ROUTE_011,
+                severity="error",
+                message="conditional edge requires condition",
+                location=DiagnosticLocation(edge_id=edge.id),
+            )
+        ]
+
+    diagnostics: list[Diagnostic] = []
+    route_keys = set(edge.condition.routes)
+    if not {"true", "false"}.issubset(route_keys):
+        diagnostics.append(
+            Diagnostic(
+                code=E_ROUTE_011,
+                severity="error",
+                message='conditional routes must include "true" and "false"',
+                location=DiagnosticLocation(edge_id=edge.id),
+            )
+        )
+
+    match = CONDITION_PATTERN.match(edge.condition.expr)
+    if match is None:
+        diagnostics.append(
+            Diagnostic(
+                code=E_ROUTE_011,
+                severity="error",
+                message=f'unsupported conditional expression "{edge.condition.expr}"',
+                location=DiagnosticLocation(edge_id=edge.id),
+                hint='supported form: "<state_key> <comparison> <literal>"',
+            )
+        )
+        return diagnostics
+
+    state_key = match.group(1)
+    state_types = {**workflow.state_schema.channels, **workflow.state_schema.private}
+    if state_key not in state_types:
+        diagnostics.append(
+            Diagnostic(
+                code=E_SCHEMA_002,
+                severity="error",
+                message=f'conditional expression references undeclared state key "{state_key}"',
+                location=DiagnosticLocation(edge_id=edge.id, state_key=state_key),
+            )
+        )
+
+    return diagnostics
 
 
 def _check_fanout(edge, workflow: WorkflowSpec) -> list[Diagnostic]:
