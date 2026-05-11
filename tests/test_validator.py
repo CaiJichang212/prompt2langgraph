@@ -157,6 +157,36 @@ def test_validator_rejects_route_conflict() -> None:
     assert any(item.code == "E_ROUTE_011" and item.location.node_id == "route" for item in report.diagnostics)
 
 
+def test_validator_rejects_condition_expr_with_undeclared_state_key() -> None:
+    workflow = load_workflow("conditional_human_gate.json")
+    workflow["edges"][0]["condition"]["expr"] = "score < 0.75"
+
+    report = validate_workflow(workflow)
+
+    assert report.ok is False
+    assert any(item.code == "E_SCHEMA_002" and item.location.state_key == "score" for item in report.diagnostics)
+
+
+def test_validator_rejects_unsupported_condition_expr() -> None:
+    workflow = load_workflow("conditional_human_gate.json")
+    workflow["edges"][0]["condition"]["expr"] = "confidence between 0 and 1"
+
+    report = validate_workflow(workflow)
+
+    assert report.ok is False
+    assert any(item.code == "E_ROUTE_011" and item.location.edge_id == "route_by_confidence" for item in report.diagnostics)
+
+
+def test_validator_rejects_conditional_routes_without_true_and_false() -> None:
+    workflow = load_workflow("conditional_human_gate.json")
+    workflow["edges"][0]["condition"]["routes"] = {"yes": "compose", "no": "approval"}
+
+    report = validate_workflow(workflow)
+
+    assert report.ok is False
+    assert any(item.code == "E_ROUTE_011" and item.location.edge_id == "route_by_confidence" for item in report.diagnostics)
+
+
 def test_validator_rejects_fanout_without_reducer() -> None:
     report = validate_workflow(load_workflow("invalid_fanout_without_reducer.json"))
 

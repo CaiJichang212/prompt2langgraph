@@ -97,7 +97,21 @@ def test_run_workflow_reports_actual_node_events_for_failed_node() -> None:
 
 
 def test_run_workflow_rejects_unsupported_edge_kind_as_target_diagnostic() -> None:
-    result = run_workflow(load_workflow("conditional_human_gate.json"), {"question": "hello", "confidence": 0.5})
+    data = json.loads((FIXTURES / "linear_llm.json").read_text(encoding="utf-8"))
+    data["nodes"].append(
+        {
+            "id": "finish",
+            "kind": "transform",
+            "executor": {"ref": "builtin.identity_transform", "type": "builtin"},
+            "inputs": {"value": {"state_key": "answer"}},
+            "outputs": {"value": {"state_key": "answer"}},
+            "params": {},
+        }
+    )
+    data["edges"] = [{"id": "unsupported_join", "source": "compose", "target": "finish", "kind": "join"}]
+    workflow = WorkflowSpec.model_validate(data)
+
+    result = run_workflow(workflow, {"question": "hello"})
 
     assert result.status == "failed"
     assert result.output == {}
