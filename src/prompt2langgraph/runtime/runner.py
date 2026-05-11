@@ -116,12 +116,12 @@ def _check_input_payload(workflow: WorkflowSpec, input_payload: dict[str, Any]) 
 def _check_target_capabilities(workflow: WorkflowSpec) -> list[Diagnostic]:
     diagnostics: list[Diagnostic] = []
     for edge in workflow.edges:
-        if edge.kind is not EdgeKind.LINEAR:
+        if edge.kind not in {EdgeKind.LINEAR, EdgeKind.CONDITIONAL}:
             diagnostics.append(
                 Diagnostic(
                     code=E_TARGET_009,
                     severity="error",
-                    message=f'edge kind "{edge.kind.value}" is not supported by v0.1a LangGraph compiler',
+                    message=f'edge kind "{edge.kind.value}" is not supported by v0.1c LangGraph compiler',
                     location=DiagnosticLocation(edge_id=edge.id),
                 )
             )
