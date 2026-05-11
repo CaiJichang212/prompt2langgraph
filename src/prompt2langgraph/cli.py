@@ -112,7 +112,7 @@ def run(
         _emit(result_payload, json_output, "run failed")
         raise typer.Exit(1)
 
-    input_payload = _load_json(input)
+    input_payload = _load_input_payload(input)
     if isinstance(input_payload, ValidationReport):
         result_payload = {
             "status": "failed",
@@ -244,6 +244,38 @@ def _load_json(path: Path) -> dict[str, Any] | ValidationReport:
             ]
         )
     return data
+
+
+def _load_input_payload(value: Path) -> dict[str, Any] | ValidationReport:
+    raw_value = str(value).strip()
+    if raw_value.startswith("{"):
+        try:
+            data = json.loads(raw_value)
+        except json.JSONDecodeError as exc:
+            return ValidationReport(
+                diagnostics=[
+                    Diagnostic(
+                        code=E_PARSE_001,
+                        severity="error",
+                        message="failed to parse inline JSON input",
+                        location=DiagnosticLocation(source=raw_value, path=str(exc.pos)),
+                        hint=exc.msg,
+                    )
+                ]
+            )
+        if not isinstance(data, dict):
+            return ValidationReport(
+                diagnostics=[
+                    Diagnostic(
+                        code=E_PARSE_001,
+                        severity="error",
+                        message="inline JSON input must contain an object",
+                        location=DiagnosticLocation(source=raw_value),
+                    )
+                ]
+            )
+        return data
+    return _load_json(value)
 
 
 def _write_compile_artifacts(
