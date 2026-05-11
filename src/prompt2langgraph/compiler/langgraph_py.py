@@ -23,6 +23,7 @@ def compile_workflow_to_graph(
     executors: ExecutorRegistry,
     *,
     event_sink: NodeEventSink | None = None,
+    checkpointer: Any | None = None,
 ):
     """Compile a validated WorkflowSpec into an invokable LangGraph graph."""
 
@@ -81,7 +82,7 @@ def compile_workflow_to_graph(
         if node.id not in outgoing_sources:
             builder.add_edge(node.id, END)
 
-    return builder.compile()
+    return builder.compile(checkpointer=checkpointer)
 
 
 def _state_schema_for(workflow: WorkflowSpec) -> type[TypedDict]:
