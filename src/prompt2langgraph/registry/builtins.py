@@ -32,7 +32,10 @@ def route(inputs: dict[str, Any], params: dict[str, Any]) -> dict[str, Any]:
 
 
 def human_gate(inputs: dict[str, Any], params: dict[str, Any]) -> dict[str, Any]:
-    return {"approval": params.get("message", "Approve this run?")}
+    from langgraph.types import interrupt
+
+    approval = interrupt({"message": params.get("message", "Approve this run?")})
+    return {"approval": approval}
 
 
 def join(inputs: dict[str, Any], params: dict[str, Any]) -> dict[str, Any]:
