@@ -1,0 +1,50 @@
+{
+  "schema_version": "0.1",
+  "workflow_id": "invalid_route_conflict",
+  "name": "Invalid Route Conflict",
+  "entrypoint": "route",
+  "state_schema": {
+    "input": {"question": {"type": "string"}},
+    "output": {"answer": {"type": "string"}},
+    "channels": {
+      "question": {"type": "string"},
+      "confidence": {"type": "number"},
+      "answer": {"type": "string"}
+    },
+    "private": {},
+    "reducers": {}
+  },
+  "nodes": [
+    {
+      "id": "route",
+      "kind": "router",
+      "executor": {"ref": "builtin.route", "type": "builtin"},
+      "inputs": {},
+      "outputs": {},
+      "params": {}
+    },
+    {
+      "id": "compose",
+      "kind": "llm",
+      "executor": {"ref": "builtin.echo_llm", "type": "builtin"},
+      "inputs": {"question": {"state_key": "question"}},
+      "outputs": {"answer": {"state_key": "answer"}},
+      "params": {"template": "Answer: {question}"}
+    }
+  ],
+  "edges": [
+    {
+      "id": "dynamic_route",
+      "source": "route",
+      "target": "compose",
+      "kind": "conditional",
+      "condition": {
+        "expr": "confidence < 0.75",
+        "routes": {"true": "compose", "false": "compose"}
+      }
+    },
+    {"id": "static_route", "source": "route", "target": "compose", "kind": "linear"}
+  ],
+  "policies": {},
+  "metadata": {}
+}

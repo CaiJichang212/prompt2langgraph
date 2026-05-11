@@ -1,0 +1,53 @@
+{
+  "schema_version": "0.1",
+  "workflow_id": "invalid_fanout_without_reducer",
+  "name": "Invalid Fanout Without Reducer",
+  "entrypoint": "compose",
+  "state_schema": {
+    "input": {"question": {"type": "string"}},
+    "output": {"answer": {"type": "string"}},
+    "channels": {
+      "question": {"type": "string"},
+      "answer": {"type": "string"},
+      "docs_ref": {"type": "artifact_ref"},
+      "items": {"type": "array", "item_type": {"type": "string"}},
+      "item": {"type": "string"},
+      "results": {"type": "array", "item_type": {"type": "string"}}
+    },
+    "private": {},
+    "reducers": {}
+  },
+  "nodes": [
+    {
+      "id": "compose",
+      "kind": "llm",
+      "executor": {"ref": "builtin.echo_llm", "type": "builtin"},
+      "inputs": {"question": {"state_key": "question"}},
+      "outputs": {"answer": {"state_key": "answer"}},
+      "params": {"template": "Answer: {question}"}
+    },
+    {
+      "id": "join_results",
+      "kind": "join",
+      "executor": {"ref": "builtin.join", "type": "builtin"},
+      "inputs": {"docs_ref": {"state_key": "docs_ref"}},
+      "outputs": {},
+      "params": {}
+    }
+  ],
+  "edges": [
+    {
+      "id": "fanout_items",
+      "source": "compose",
+      "target": "join_results",
+      "kind": "fanout",
+      "map": {
+        "items_state_key": "items",
+        "item_state_key": "item",
+        "result_state_key": "results"
+      }
+    }
+  ],
+  "policies": {},
+  "metadata": {}
+}
