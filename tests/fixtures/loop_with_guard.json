@@ -1,0 +1,46 @@
+{
+  "schema_version": "0.1",
+  "workflow_id": "loop_with_guard",
+  "name": "Loop With Guard",
+  "entrypoint": "compose",
+  "state_schema": {
+    "input": {"question": {"type": "string"}},
+    "output": {"answer": {"type": "string"}},
+    "channels": {
+      "question": {"type": "string"},
+      "answer": {"type": "string"}
+    },
+    "private": {},
+    "reducers": {}
+  },
+  "nodes": [
+    {
+      "id": "compose",
+      "kind": "llm",
+      "executor": {"ref": "builtin.echo_llm", "type": "builtin"},
+      "inputs": {"question": {"state_key": "question"}},
+      "outputs": {"answer": {"state_key": "answer"}},
+      "params": {"template": "Answer: {question}"}
+    },
+    {
+      "id": "finalize",
+      "kind": "transform",
+      "executor": {"ref": "builtin.identity_transform", "type": "builtin"},
+      "inputs": {"value": {"state_key": "answer"}},
+      "outputs": {"value": {"state_key": "answer"}},
+      "params": {}
+    }
+  ],
+  "edges": [
+    {
+      "id": "retry",
+      "source": "compose",
+      "target": "compose",
+      "kind": "loop",
+      "loop_guard": {"max_iterations": 2}
+    },
+    {"id": "compose_to_finalize", "source": "compose", "target": "finalize", "kind": "linear"}
+  ],
+  "policies": {},
+  "metadata": {}
+}
