@@ -4,8 +4,9 @@ from pathlib import Path
 import pytest
 
 from prompt2langgraph.compiler.langgraph_py import compile_workflow_to_graph
-from prompt2langgraph.ir.models import WorkflowSpec
+from prompt2langgraph.ir.models import ExecutorType, ReducerName, StateSelector, TypeName, TypeSpec, WorkflowSpec
 from prompt2langgraph.registry.builtins import builtin_executor_registry
+from prompt2langgraph.registry.executors import ExecutorDefinition, ExecutorRegistry
 
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -57,3 +58,69 @@ def test_conditional_expression_supports_scalar_comparisons(expr: str, confidenc
     result = graph.invoke({"question": "hello", "confidence": confidence})
 
     assert result["answer"] == "Answer: hello"
+
+
+def test_compiles_guarded_loop_until_max_iterations_then_continues() -> None:
+    workflow = load_workflow("loop_with_guard.json")
+
+    events: list[tuple[str, str]] = []
+    graph = compile_workflow_to_graph(
+        workflow,
+        builtin_executor_registry(),
+        event_sink=lambda event_type, node_id: events.append((event_type, node_id)),
+    )
+    result = graph.invoke({"question": "hello"})
+
+    assert result["answer"] == "Answer: hello"
+    assert result["_loop_counts"] == {"retry": 2}
+    assert [event for event in events if event == ("node.started", "compose")] == [
+        ("node.started", "compose"),
+        ("node.started", "compose"),
+    ]
+    assert ("node.started", "finalize") in events
+
+
+def test_compiles_fanout_to_send_items_and_reduce_results() -> None:
+    workflow = load_workflow("fanout_map_reduce.json")
+
+    graph = compile_workflow_to_graph(workflow, builtin_executor_registry())
+    result = graph.invoke({"items": ["alpha", "beta"]})
+
+    assert result["items"] == ["alpha", "beta"]
+    assert sorted(result["results"]) == ["alpha", "beta"]
+
+
+def test_fanout_mapper_receives_original_state_context() -> None:
+    workflow = load_workflow("fanout_map_reduce.json")
+    workflow.state_schema.channels["prefix"] = TypeSpec(type=TypeName.STRING)
+    workflow.nodes[1].inputs["prefix"] = StateSelector(state_key="prefix")
+
+    builtins = builtin_executor_registry()
+    registry = ExecutorRegistry(
+        [
+            *[builtins.get(ref) for ref in builtins.refs()],
+            ExecutorDefinition(
+                ref="test.prefix_item",
+                type=ExecutorType.BUILTIN,
+                input_schema={"value": TypeSpec(type=TypeName.STRING), "prefix": TypeSpec(type=TypeName.STRING)},
+                output_schema={"value": TypeSpec(type=TypeName.STRING)},
+                handler=lambda inputs, params: {"value": f"{inputs['prefix']}:{inputs['value']}"},
+            ),
+        ]
+    )
+    workflow.nodes[1].executor.ref = "test.prefix_item"
+
+    graph = compile_workflow_to_graph(workflow, registry)
+    result = graph.invoke({"items": ["alpha", "beta"], "prefix": "p"})
+
+    assert sorted(result["results"]) == ["p:alpha", "p:beta"]
+
+
+def test_non_fanout_append_reducer_preserves_scalar_output() -> None:
+    workflow = load_workflow("linear_llm.json")
+    workflow.state_schema.reducers["answer"] = ReducerName.APPEND
+
+    graph = compile_workflow_to_graph(workflow, builtin_executor_registry())
+    result = graph.invoke({"question": "hello", "answer": "seed:"})
+
+    assert result["answer"] == "seed:Answer: hello"

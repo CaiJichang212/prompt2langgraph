@@ -150,6 +150,27 @@ def test_validator_rejects_loop_without_guard() -> None:
     assert any(item.code == "E_LOOP_005" and item.location.edge_id == "retry" for item in report.diagnostics)
 
 
+def test_validator_accepts_guarded_loop_with_continuation() -> None:
+    report = validate_workflow(load_workflow("loop_with_guard.json"))
+
+    assert report.ok is True
+    assert report.diagnostics == []
+
+
+def test_validator_rejects_multiple_loop_edges_from_same_source() -> None:
+    report = validate_workflow(load_workflow("invalid_loop_multiple_loop_edges_same_source.json"))
+
+    assert report.ok is False
+    assert any(item.code == "E_ROUTE_011" and item.location.node_id == "compose" for item in report.diagnostics)
+
+
+def test_validator_rejects_multiple_loop_continuations_from_same_source() -> None:
+    report = validate_workflow(load_workflow("invalid_loop_multiple_continuations.json"))
+
+    assert report.ok is False
+    assert any(item.code == "E_ROUTE_011" and item.location.node_id == "compose" for item in report.diagnostics)
+
+
 def test_validator_rejects_route_conflict() -> None:
     report = validate_workflow(load_workflow("invalid_route_conflict.json"))
 
@@ -192,6 +213,24 @@ def test_validator_rejects_fanout_without_reducer() -> None:
 
     assert report.ok is False
     assert any(item.code == "E_REDUCER_012" and item.location.state_key == "results" for item in report.diagnostics)
+
+
+def test_validator_accepts_fanout_with_append_reducer() -> None:
+    report = validate_workflow(load_workflow("fanout_map_reduce.json"))
+
+    assert report.ok is True
+    assert report.diagnostics == []
+
+
+def test_validator_rejects_fanout_items_state_that_is_not_array() -> None:
+    workflow = load_workflow("fanout_map_reduce.json")
+    workflow["state_schema"]["channels"]["items"] = {"type": "string"}
+    workflow["state_schema"]["input"]["items"] = {"type": "string"}
+
+    report = validate_workflow(workflow)
+
+    assert report.ok is False
+    assert any(item.code == "E_TYPE_003" and item.location.state_key == "items" for item in report.diagnostics)
 
 
 def test_validator_rejects_graph_without_exit_path() -> None:
