@@ -16,7 +16,7 @@ class ExecutorDefinition:
     input_schema: dict[str, TypeSpec] = field(default_factory=dict)
     output_schema: dict[str, TypeSpec] = field(default_factory=dict)
     secrets: tuple[str, ...] = ()
-    capabilities: tuple[str, ...] = ()
+    required_capabilities: tuple[str, ...] = ()
     handler: ExecutorHandler | None = None
 
     def invoke(self, inputs: dict[str, Any], params: dict[str, Any]) -> dict[str, Any]:
@@ -42,4 +42,3 @@ class ExecutorRegistry:
 
     def refs(self) -> list[str]:
         return sorted(self._definitions)
-
