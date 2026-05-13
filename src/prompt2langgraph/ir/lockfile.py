@@ -17,6 +17,31 @@ from prompt2langgraph.registry.executors import ExecutorRegistry
 from prompt2langgraph.registry.nodes import NodeRegistry
 
 
+REQUIRED_GENERATED_FILES = {
+    "workflow.ir.json",
+    "workflow.lock.json",
+    "manifest.json",
+    "compile_report.json",
+    "graph.mmd",
+    "generated/__init__.py",
+    "generated/state.py",
+    "generated/nodes.py",
+    "generated/graph.py",
+}
+
+DEFAULT_GENERATED_FILES = [
+    "workflow.ir.json",
+    "workflow.lock.json",
+    "manifest.json",
+    "compile_report.json",
+    "graph.mmd",
+    "generated/__init__.py",
+    "generated/state.py",
+    "generated/nodes.py",
+    "generated/graph.py",
+]
+
+
 def canonical_json_dumps(value: Any) -> str:
     return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
 
@@ -52,18 +77,7 @@ def build_workflow_lock(
         "langgraph_version": _package_version("langgraph"),
         "compile_options_hash": sha256_canonical_json(compile_options),
         "policy_hash": sha256_canonical_json(policy),
-        "generated_files": generated_files
-        or [
-            "workflow.ir.json",
-            "workflow.lock.json",
-            "manifest.json",
-            "compile_report.json",
-            "graph.mmd",
-            "generated/__init__.py",
-            "generated/state.py",
-            "generated/nodes.py",
-            "generated/graph.py",
-        ],
+        "generated_files": list(generated_files) if generated_files is not None else list(DEFAULT_GENERATED_FILES),
     }
 
 
@@ -72,10 +86,11 @@ def build_manifest(
     *,
     target: str = "langgraph-py",
     executor_registry: ExecutorRegistry | None = None,
+    node_policies: dict[str, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     normalized = normalize_workflow(workflow)
     bound = bind_workflow(normalized, executors=executor_registry)
-    return {
+    manifest = {
         "workflow_id": normalized.workflow_id,
         "entrypoint": normalized.entrypoint,
         "target": target,
@@ -107,6 +122,9 @@ def build_manifest(
         "executor_bindings": bound.executor_bindings,
         "artifact_policy": {"large_objects": "artifact_ref"},
     }
+    if node_policies is not None:
+        manifest["policy_summary"] = {"node_policies": node_policies}
+    return manifest
 
 
 def build_compile_report(
@@ -115,16 +133,21 @@ def build_compile_report(
     diagnostics: list[Diagnostic | dict[str, Any]] | ValidationReport | None = None,
     artifacts: dict[str, str] | None = None,
     ok: bool | None = None,
+    compile_id: str,
+    timings_ms: dict[str, float],
+    registry_hash: str | None = None,
+    executor_bindings: dict[str, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     normalized = normalize_workflow(workflow)
     diagnostic_items = _diagnostic_items(diagnostics)
-    return {
+    report = {
         "ok": ok if ok is not None else not any(item["severity"] == "error" for item in diagnostic_items),
-        "compile_id": f"compile_{sha256_canonical_json(normalized.workflow_id)[:16].replace('sha256:', '')}",
+        "compile_id": compile_id,
         "workflow_id": normalized.workflow_id,
         "workflow_hash": sha256_canonical_json(normalized.model_dump(mode="json")),
-        "registry_hash": sha256_canonical_json(_registry_contract(builtin_node_registry(), builtin_executor_registry())),
-        "timings_ms": {},
+        "registry_hash": registry_hash
+        or sha256_canonical_json(_registry_contract(builtin_node_registry(), builtin_executor_registry())),
+        "timings_ms": dict(timings_ms),
         "nodes": [
             {"id": node.id, "kind": node.kind, "executor": node.executor.ref}
             for node in normalized.nodes
@@ -146,6 +169,9 @@ def build_compile_report(
             "mermaid": "graph.mmd",
         },
     }
+    if executor_bindings is not None:
+        report["binding_summary"] = {"executor_bindings": executor_bindings}
+    return report
 
 
 def _diagnostic_items(
