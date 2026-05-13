@@ -102,7 +102,7 @@ def run(
 ) -> None:
     """Run a Workflow IR or simplified JSON plan with a JSON input payload."""
 
-    workflow_or_report = _load_workflow_or_report(workflow_json)
+    workflow_or_report = _load_workflow_source_or_report(workflow_json)
     if isinstance(workflow_or_report, ValidationReport):
         result_payload = {
             "status": "failed",
@@ -124,7 +124,11 @@ def run(
 
     from prompt2langgraph.runtime.runner import run_workflow
 
-    result = run_workflow(workflow_or_report, input_payload)
+    result = run_workflow(
+        workflow_or_report,
+        input_payload,
+        state_store_dir=_runtime_state_store_dir(workflow_json),
+    )
     _emit(result.model_dump(mode="json"), json_output, result.status)
     if result.status != "succeeded":
         raise typer.Exit(1)
@@ -138,10 +142,6 @@ def graph(
 ) -> None:
     """Render a workflow graph."""
 
-    workflow_or_report = _load_workflow_or_report(workflow_json)
-    if isinstance(workflow_or_report, ValidationReport):
-        _emit_validation_report(workflow_or_report, json_output)
-        raise typer.Exit(1)
     if format != "mermaid":
         report = ValidationReport(
             diagnostics=[
@@ -155,8 +155,69 @@ def graph(
         _emit_validation_report(report, json_output)
         raise typer.Exit(1)
 
+    if workflow_json.name == "workflow.lock.json":
+        try:
+            from prompt2langgraph.runtime.artifacts import load_bundle_mermaid
+
+            mermaid = load_bundle_mermaid(workflow_json)
+        except OSError as exc:
+            report = ValidationReport(
+                diagnostics=[
+                    Diagnostic(
+                        code=E_PARSE_001,
+                        severity="error",
+                        message=f'failed to read bundle graph for "{workflow_json}"',
+                        location=DiagnosticLocation(source=str(workflow_json)),
+                        hint=str(exc),
+                    )
+                ]
+            )
+            _emit_validation_report(report, json_output)
+            raise typer.Exit(1)
+        _emit({"format": "mermaid", "graph": mermaid}, json_output, mermaid)
+        return
+
+    workflow_or_report = _load_workflow_source_or_report(workflow_json)
+    if isinstance(workflow_or_report, ValidationReport):
+        _emit_validation_report(workflow_or_report, json_output)
+        raise typer.Exit(1)
+
     mermaid = workflow_to_mermaid(workflow_or_report)
     _emit({"format": "mermaid", "graph": mermaid}, json_output, mermaid)
+
+
+@app.command()
+def resume(
+    workflow_json: Path,
+    thread_id: str = typer.Option(..., "--thread-id"),
+    resume: str = typer.Option(..., "--resume"),
+    json_output: bool = typer.Option(False, "--json", help="Emit a machine-readable result."),
+) -> None:
+    """Resume a waiting Workflow IR or compiled bundle."""
+
+    workflow_or_report = _load_workflow_source_or_report(workflow_json)
+    if isinstance(workflow_or_report, ValidationReport):
+        result_payload = {
+            "status": "failed",
+            "output": {},
+            "diagnostics": [item.model_dump(mode="json") for item in workflow_or_report.diagnostics],
+        }
+        _emit(result_payload, json_output, "resume failed")
+        raise typer.Exit(1)
+
+    resume_payload = _parse_resume_payload(resume)
+    from prompt2langgraph.runtime.runner import run_workflow
+
+    result = run_workflow(
+        workflow_or_report,
+        {},
+        thread_id=thread_id,
+        resume_payload=resume_payload,
+        state_store_dir=_runtime_state_store_dir(workflow_json),
+    )
+    _emit(result.model_dump(mode="json"), json_output, result.status)
+    if result.status != "succeeded":
+        raise typer.Exit(1)
 
 
 def _load_workflow_or_report(path: Path) -> WorkflowSpec | ValidationReport:
@@ -203,6 +264,27 @@ def _load_workflow_or_report(path: Path) -> WorkflowSpec | ValidationReport:
             )
         ]
     )
+
+
+def _load_workflow_source_or_report(path: Path) -> WorkflowSpec | ValidationReport:
+    if path.name == "workflow.lock.json":
+        try:
+            from prompt2langgraph.runtime.artifacts import load_bundle_workflow
+
+            return load_bundle_workflow(path)
+        except (OSError, ValueError, json.JSONDecodeError, ValidationError) as exc:
+            return ValidationReport(
+                diagnostics=[
+                    Diagnostic(
+                        code=E_PARSE_001,
+                        severity="error",
+                        message=f'failed to load workflow bundle "{path}"',
+                        location=DiagnosticLocation(source=str(path)),
+                        hint=str(exc),
+                    )
+                ]
+            )
+    return _load_workflow_or_report(path)
 
 
 def _load_json(path: Path) -> dict[str, Any] | ValidationReport:
@@ -278,6 +360,19 @@ def _load_input_payload(value: Path) -> dict[str, Any] | ValidationReport:
     return _load_json(value)
 
 
+def _parse_resume_payload(value: str) -> Any:
+    try:
+        return json.loads(value)
+    except json.JSONDecodeError:
+        return value
+
+
+def _runtime_state_store_dir(workflow_json: Path) -> Path:
+    if workflow_json.name == "workflow.lock.json":
+        return workflow_json.parent / ".pt2lg-runtime"
+    return Path.cwd() / ".pt2lg-runtime"
+
+
 def _write_compile_artifacts(
     workflow: WorkflowSpec,
     output_dir: Path,
@@ -287,6 +382,8 @@ def _write_compile_artifacts(
 ) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     normalized = normalize_workflow(workflow)
+    from prompt2langgraph.compiler.codegen import emit_generated_bundle
+
     artifacts = {
         "workflow.ir.json": normalized.model_dump(mode="json"),
         "workflow.lock.json": build_workflow_lock(normalized, target=target),
@@ -295,6 +392,7 @@ def _write_compile_artifacts(
     }
     for name, payload in artifacts.items():
         (output_dir / name).write_text(_json_dumps(payload), encoding="utf-8")
+    emit_generated_bundle(normalized, output_dir)
     (output_dir / "graph.mmd").write_text(workflow_to_mermaid(normalized), encoding="utf-8")
 
 
