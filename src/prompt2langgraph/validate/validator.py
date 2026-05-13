@@ -43,7 +43,7 @@ def validate_workflow(
     diagnostics: list[Diagnostic] = []
     diagnostics.extend(_check_registries(spec, node_registry, executor_registry))
     diagnostics.extend(check_graph(spec))
-    diagnostics.extend(check_types(spec, executor_registry))
+    diagnostics.extend(check_types(spec, executor_registry, node_registry))
     diagnostics.extend(check_security(spec, node_registry))
     return ValidationReport(diagnostics=diagnostics)
 
