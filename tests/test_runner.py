@@ -30,6 +30,16 @@ def test_run_workflow_invokes_linear_llm_and_returns_declared_output() -> None:
     assert result.events[1].node_id == "compose"
 
 
+def test_run_workflow_returns_metrics() -> None:
+    result = run_workflow(load_workflow("linear_llm.json"), {"question": "hello"})
+
+    assert result.status == "succeeded"
+    assert result.metrics.duration_ms is not None
+    assert result.metrics.retry_count == 0
+    assert result.metrics.tool_call_count == 0
+    assert result.tool_calls == []
+
+
 def test_run_workflow_returns_validation_diagnostics_without_invoking() -> None:
     data = json.loads((FIXTURES / "linear_llm.json").read_text(encoding="utf-8"))
     data["nodes"][0]["executor"]["ref"] = "missing.executor"
@@ -39,6 +49,8 @@ def test_run_workflow_returns_validation_diagnostics_without_invoking() -> None:
 
     assert result.status == "failed"
     assert result.output == {}
+    assert result.metrics.duration_ms is not None
+    assert result.tool_calls == []
     assert any(diagnostic.code == "E_BIND_006" for diagnostic in result.diagnostics)
 
 
@@ -128,6 +140,8 @@ def test_run_workflow_waits_at_human_gate_and_resumes_with_same_thread() -> None
     assert waiting.interrupt.node_id == "approval"
     assert waiting.interrupt.payload == {"message": "Approve low-confidence answer?"}
     assert waiting.output == {}
+    assert waiting.metrics.duration_ms is not None
+    assert waiting.tool_calls == []
     assert [event.type for event in waiting.events] == [
         "run.started",
         "node.started",
@@ -202,3 +216,24 @@ def test_run_workflow_rejects_resume_when_workflow_changed_for_same_thread() -> 
         diagnostic.code == "E_RUNTIME_010" and "no pending interrupt" in diagnostic.message
         for diagnostic in result.diagnostics
     )
+
+
+def test_run_workflow_invokes_guarded_loop() -> None:
+    result = run_workflow(load_workflow("loop_with_guard.json"), {"question": "hello"})
+
+    assert result.status == "succeeded"
+    assert result.output == {"answer": "Answer: hello"}
+    assert [event.node_id for event in result.events if event.type == "node.started"] == [
+        "compose",
+        "compose",
+        "finalize",
+    ]
+    assert result.diagnostics == []
+
+
+def test_run_workflow_invokes_fanout_map_reduce() -> None:
+    result = run_workflow(load_workflow("fanout_map_reduce.json"), {"items": ["alpha", "beta"]})
+
+    assert result.status == "succeeded"
+    assert sorted(result.output["results"]) == ["alpha", "beta"]
+    assert result.diagnostics == []

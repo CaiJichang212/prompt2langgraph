@@ -1,4 +1,5 @@
 import json
+import importlib.util
 from dataclasses import replace
 from pathlib import Path
 
@@ -21,6 +22,15 @@ FIXTURES = Path(__file__).parent / "fixtures"
 
 def load_workflow(name: str) -> WorkflowSpec:
     return WorkflowSpec.model_validate(json.loads((FIXTURES / name).read_text(encoding="utf-8")))
+
+
+def import_generated_module(path: Path, module_name: str):
+    spec = importlib.util.spec_from_file_location(module_name, path)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def test_canonical_json_and_hash_are_deterministic() -> None:
@@ -50,9 +60,14 @@ def test_artifact_builders_emit_expected_minimal_shapes() -> None:
     assert lock["target"] == "langgraph-py"
     assert lock["generated_files"] == [
         "workflow.ir.json",
+        "workflow.lock.json",
         "manifest.json",
         "compile_report.json",
         "graph.mmd",
+        "generated/__init__.py",
+        "generated/state.py",
+        "generated/nodes.py",
+        "generated/graph.py",
     ]
 
     assert manifest == {
@@ -64,18 +79,24 @@ def test_artifact_builders_emit_expected_minimal_shapes() -> None:
         "state_keys": ["answer", "question"],
         "interrupt_nodes": [],
         "side_effect_nodes": [],
+        "executor_bindings": {
+            "compose": {
+                "executor": "builtin.echo_llm",
+                "type": "builtin",
+                "capabilities": [],
+            }
+        },
+        "artifact_policy": {"large_objects": "artifact_ref"},
     }
 
-    assert report == {
-        "ok": True,
-        "workflow_id": "linear_llm",
-        "diagnostics": [],
-        "artifacts": {
-            "workflow_ir": "workflow.ir.json",
-            "lock": "workflow.lock.json",
-            "manifest": "manifest.json",
-            "mermaid": "graph.mmd",
-        },
+    assert report["ok"] is True
+    assert report["workflow_id"] == "linear_llm"
+    assert report["diagnostics"] == []
+    assert report["artifacts"] == {
+        "workflow_ir": "workflow.ir.json",
+        "lock": "workflow.lock.json",
+        "manifest": "manifest.json",
+        "mermaid": "graph.mmd",
     }
 
     assert "START --> compose" in mermaid
@@ -93,7 +114,11 @@ def test_registry_hash_changes_when_registry_contract_changes() -> None:
             [
                 replace(
                     base_nodes.get(kind),
-                    capabilities=("contract_changed",) if kind == "llm" else base_nodes.get(kind).capabilities,
+                    required_capabilities=(
+                        ("contract_changed",)
+                        if kind == "llm"
+                        else base_nodes.get(kind).required_capabilities
+                    ),
                 )
                 for kind in base_nodes.kinds()
             ]
@@ -121,3 +146,209 @@ def test_mermaid_renders_all_conditional_routes() -> None:
 
     assert "route -- true --> approval" in mermaid
     assert "route -- false --> compose" in mermaid
+
+
+def test_mermaid_labels_special_edge_kinds() -> None:
+    loop_mermaid = workflow_to_mermaid(load_workflow("loop_with_guard.json"))
+    fanout_mermaid = workflow_to_mermaid(load_workflow("fanout_map_reduce.json"))
+    join_data = json.loads((FIXTURES / "linear_llm.json").read_text(encoding="utf-8"))
+    join_data["nodes"].append(
+        {
+            "id": "finish",
+            "kind": "transform",
+            "executor": {"ref": "builtin.identity_transform", "type": "builtin"},
+            "inputs": {"value": {"state_key": "answer"}},
+            "outputs": {"value": {"state_key": "answer"}},
+            "params": {},
+        }
+    )
+    join_data["edges"] = [{"id": "join_finish", "source": "compose", "target": "finish", "kind": "join"}]
+
+    join_mermaid = workflow_to_mermaid(WorkflowSpec.model_validate(join_data))
+
+    assert "compose -- loop --> compose" in loop_mermaid
+    assert "start -- fanout --> process_item" in fanout_mermaid
+    assert "compose -- join --> finish" in join_mermaid
+
+
+def test_compile_report_contains_hashes_tables_and_compile_id() -> None:
+    workflow = load_workflow("linear_llm.json")
+
+    report = build_compile_report(workflow)
+
+    assert report["compile_id"].startswith("compile_")
+    assert report["workflow_hash"].startswith("sha256:")
+    assert report["registry_hash"].startswith("sha256:")
+    assert report["nodes"] == [{"id": "compose", "kind": "llm", "executor": "builtin.echo_llm"}]
+    assert report["edges"] == []
+    assert "question" in report["state_channels"]
+    assert "answer" in report["state_channels"]
+    assert "timings_ms" in report
+
+
+def test_policy_resolver_applies_workflow_timeout_over_node_default() -> None:
+    workflow = load_workflow("linear_llm.json")
+    workflow.policies.default_timeout_s = 77
+
+    from prompt2langgraph.policy.resolver import resolve_policies
+
+    resolved = resolve_policies(workflow)
+
+    assert resolved.node_policies["compose"]["timeout_s"] == 77
+    assert resolved.node_policies["compose"]["requires_approval"] is False
+
+
+def test_policy_resolver_timeout_precedence() -> None:
+    workflow = load_workflow("linear_llm.json")
+    workflow.nodes[0].timeout_s = None
+    workflow.policies.default_timeout_s = None
+    node_registry = NodeRegistry(
+        [
+            NodeDefinition(
+                kind="llm",
+                description="LLM node with custom timeout default.",
+                default_timeout_s=33,
+            )
+        ]
+    )
+
+    from prompt2langgraph.policy.resolver import resolve_policies
+
+    resolved = resolve_policies(workflow, nodes=node_registry)
+    assert resolved.node_policies["compose"]["timeout_s"] == 33
+
+    workflow.policies.default_timeout_s = 44
+    resolved = resolve_policies(workflow, nodes=node_registry)
+    assert resolved.node_policies["compose"]["timeout_s"] == 44
+
+    workflow.nodes[0].timeout_s = 55
+    resolved = resolve_policies(workflow, nodes=node_registry)
+    assert resolved.node_policies["compose"]["timeout_s"] == 55
+
+    resolved = resolve_policies(
+        workflow,
+        nodes=node_registry,
+        compile_options={"default_timeout_s": 66},
+    )
+    assert resolved.node_policies["compose"]["timeout_s"] == 66
+
+
+def test_policy_resolver_preserves_explicit_zero_timeout() -> None:
+    workflow = load_workflow("linear_llm.json")
+    workflow.nodes[0].timeout_s = 11
+    workflow.policies.default_timeout_s = 22
+
+    from prompt2langgraph.policy.resolver import resolve_policies
+
+    resolved = resolve_policies(workflow, compile_options={"default_timeout_s": 0})
+    assert resolved.node_policies["compose"]["timeout_s"] == 0
+
+    workflow.nodes[0].timeout_s = 0
+    resolved = resolve_policies(workflow)
+    assert resolved.node_policies["compose"]["timeout_s"] == 0
+
+
+def test_policy_resolver_requires_approval_for_disallowed_side_effects() -> None:
+    workflow = load_workflow("linear_llm.json")
+    workflow.nodes[0].kind = "side_effect"
+    workflow.policies.allow_side_effects = False
+
+    from prompt2langgraph.policy.resolver import resolve_policies
+
+    resolved = resolve_policies(workflow)
+
+    assert resolved.node_policies["compose"]["requires_approval"] is True
+
+
+def test_resource_binder_records_executor_binding_without_secrets() -> None:
+    workflow = load_workflow("linear_llm.json")
+    workflow.nodes[0].executor.ref = "custom.secret_llm"
+    executor_registry = ExecutorRegistry(
+        [
+            ExecutorDefinition(
+                ref="custom.secret_llm",
+                type=ExecutorType.BUILTIN,
+                input_schema={"question": TypeSpec(type=TypeName.STRING)},
+                output_schema={"answer": TypeSpec(type=TypeName.STRING)},
+                secrets=("API_KEY", "TOKEN"),
+            )
+        ]
+    )
+
+    from prompt2langgraph.binding.binder import bind_workflow
+
+    bound = bind_workflow(workflow, executors=executor_registry)
+
+    assert bound.executor_bindings["compose"]["executor"] == "custom.secret_llm"
+    assert "secrets" not in bound.executor_bindings["compose"]
+    serialized = json.dumps(bound.executor_bindings)
+    assert "API_KEY" not in serialized
+    assert "TOKEN" not in serialized
+
+
+def test_manifest_binds_custom_executor_registry() -> None:
+    workflow = load_workflow("linear_llm.json")
+    workflow.nodes[0].executor.ref = "custom.echo_llm"
+    executor_registry = ExecutorRegistry(
+        [
+            ExecutorDefinition(
+                ref="custom.echo_llm",
+                type=ExecutorType.BUILTIN,
+                input_schema={"question": TypeSpec(type=TypeName.STRING)},
+                output_schema={"answer": TypeSpec(type=TypeName.STRING)},
+                secrets=("API_KEY",),
+            )
+        ]
+    )
+
+    manifest = build_manifest(workflow, executor_registry=executor_registry)
+
+    assert manifest["executor_bindings"]["compose"]["executor"] == "custom.echo_llm"
+    assert "secrets" not in manifest["executor_bindings"]["compose"]
+    assert "API_KEY" not in json.dumps(manifest["executor_bindings"])
+
+
+def test_bundle_paths_load_workflow_from_lockfile(tmp_path: Path) -> None:
+    workflow = load_workflow("linear_llm.json")
+    output_dir = tmp_path / workflow.workflow_id
+    output_dir.mkdir()
+    (output_dir / "workflow.ir.json").write_text(
+        json.dumps(workflow.model_dump(mode="json"), ensure_ascii=False),
+        encoding="utf-8",
+    )
+    (output_dir / "workflow.lock.json").write_text(
+        json.dumps(build_workflow_lock(workflow), ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+    from prompt2langgraph.runtime.artifacts import BundlePaths, load_bundle_workflow
+
+    bundle = BundlePaths.from_lockfile(output_dir / "workflow.lock.json")
+    loaded = load_bundle_workflow(bundle)
+
+    assert bundle.root == output_dir
+    assert bundle.workflow_ir == output_dir / "workflow.ir.json"
+    assert loaded.workflow_id == "linear_llm"
+
+
+def test_emit_generated_bundle_writes_importable_graph_module(tmp_path: Path) -> None:
+    workflow = load_workflow("fanout_map_reduce.json")
+    from prompt2langgraph.compiler.codegen import emit_generated_bundle
+
+    generated = emit_generated_bundle(workflow, tmp_path)
+
+    assert (generated / "state.py").exists()
+    assert (generated / "nodes.py").exists()
+    graph_py = generated / "graph.py"
+    assert graph_py.exists()
+    assert "def build_graph()" in graph_py.read_text(encoding="utf-8")
+    assert "def compile_graph()" in graph_py.read_text(encoding="utf-8")
+
+    state_module = import_generated_module(generated / "state.py", "generated_state")
+    nodes_module = import_generated_module(generated / "nodes.py", "generated_nodes")
+    graph_module = import_generated_module(graph_py, "generated_graph")
+
+    assert state_module.STATE_SCHEMA["workflow_id"] == "fanout_map_reduce"
+    assert nodes_module.NODES[0]["id"] == "process_item"
+    assert callable(graph_module.build_graph)
+    assert callable(graph_module.compile_graph)

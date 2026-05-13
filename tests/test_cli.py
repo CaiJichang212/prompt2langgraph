@@ -164,3 +164,194 @@ def test_cli_module_import_does_not_eagerly_import_langgraph() -> None:
     )
 
     assert result.stdout.strip() == "False"
+
+
+def test_compile_command_emits_generated_bundle_files(tmp_path: Path) -> None:
+    result = CliRunner().invoke(
+        app,
+        [
+            "compile",
+            str(FIXTURES / "linear_llm.json"),
+            "--out",
+            str(tmp_path),
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    build_dir = tmp_path / "linear_llm"
+    for generated_file in [
+        build_dir / "generated" / "state.py",
+        build_dir / "generated" / "nodes.py",
+        build_dir / "generated" / "graph.py",
+    ]:
+        assert generated_file.exists()
+        source = generated_file.read_text(encoding="utf-8")
+        assert source.strip()
+        compile(source, str(generated_file), "exec")
+
+
+def test_run_command_accepts_workflow_lock_json_after_compile(tmp_path: Path) -> None:
+    compile_result = CliRunner().invoke(
+        app,
+        ["compile", str(FIXTURES / "linear_llm.json"), "--out", str(tmp_path), "--json"],
+    )
+    assert compile_result.exit_code == 0
+
+    lockfile = tmp_path / "linear_llm" / "workflow.lock.json"
+    run_result = CliRunner().invoke(
+        app,
+        ["run", str(lockfile), "--input", '{"question":"hello"}', "--json"],
+    )
+
+    assert run_result.exit_code == 0
+    payload = json.loads(run_result.stdout)
+    assert payload["status"] == "succeeded"
+    assert payload["output"] == {"answer": "Answer: hello"}
+
+
+def test_graph_command_accepts_workflow_lock_json_after_compile(tmp_path: Path) -> None:
+    compile_result = CliRunner().invoke(
+        app,
+        ["compile", str(FIXTURES / "linear_llm.json"), "--out", str(tmp_path), "--json"],
+    )
+    assert compile_result.exit_code == 0
+
+    lockfile = tmp_path / "linear_llm" / "workflow.lock.json"
+    graph_result = CliRunner().invoke(
+        app,
+        ["graph", str(lockfile), "--format", "mermaid", "--json"],
+    )
+
+    assert graph_result.exit_code == 0
+    payload = json.loads(graph_result.stdout)
+    assert payload["format"] == "mermaid"
+    assert "START --> compose" in payload["graph"]
+
+
+def test_resume_command_continues_pending_interrupt_from_lockfile(tmp_path: Path) -> None:
+    compile_result = CliRunner().invoke(
+        app,
+        ["compile", str(FIXTURES / "conditional_human_gate.json"), "--out", str(tmp_path), "--json"],
+    )
+    assert compile_result.exit_code == 0
+    lockfile = tmp_path / "conditional_human_gate" / "workflow.lock.json"
+
+    waiting_result = CliRunner().invoke(
+        app,
+        ["run", str(lockfile), "--input", '{"question":"hello","confidence":0.5}', "--json"],
+    )
+    assert waiting_result.exit_code != 0
+    waiting = json.loads(waiting_result.stdout)
+    assert waiting["status"] == "waiting"
+
+    resume_result = CliRunner().invoke(
+        app,
+        [
+            "resume",
+            str(lockfile),
+            "--thread-id",
+            waiting["thread_id"],
+            "--resume",
+            '"approved"',
+            "--json",
+        ],
+    )
+
+    assert resume_result.exit_code == 0
+    resumed = json.loads(resume_result.stdout)
+    assert resumed["status"] == "succeeded"
+    assert resumed["output"] == {"answer": "Answer: hello"}
+
+
+def test_resume_command_accepts_json_null_payload_from_lockfile(tmp_path: Path) -> None:
+    compile_result = CliRunner().invoke(
+        app,
+        ["compile", str(FIXTURES / "conditional_human_gate.json"), "--out", str(tmp_path), "--json"],
+    )
+    assert compile_result.exit_code == 0
+    lockfile = tmp_path / "conditional_human_gate" / "workflow.lock.json"
+
+    waiting_result = CliRunner().invoke(
+        app,
+        ["run", str(lockfile), "--input", '{"question":"hello","confidence":0.5}', "--json"],
+    )
+    assert waiting_result.exit_code != 0
+    waiting = json.loads(waiting_result.stdout)
+    assert waiting["status"] == "waiting"
+
+    resume_result = CliRunner().invoke(
+        app,
+        [
+            "resume",
+            str(lockfile),
+            "--thread-id",
+            waiting["thread_id"],
+            "--resume",
+            "null",
+            "--json",
+        ],
+    )
+
+    assert resume_result.exit_code != 0
+    resumed = json.loads(resume_result.stdout)
+    assert resumed["status"] == "failed"
+    assert any(event["type"] == "run.resumed" for event in resumed["events"])
+    assert not any(
+        item["code"] == "E_SCHEMA_002" and 'required input state key "question" is missing' in item["message"]
+        for item in resumed["diagnostics"]
+    )
+
+
+def test_resume_command_continues_pending_interrupt_across_processes(tmp_path: Path) -> None:
+    compile_result = CliRunner().invoke(
+        app,
+        ["compile", str(FIXTURES / "conditional_human_gate.json"), "--out", str(tmp_path), "--json"],
+    )
+    assert compile_result.exit_code == 0
+    lockfile = tmp_path / "conditional_human_gate" / "workflow.lock.json"
+
+    waiting_result = subprocess.run(
+        [
+            "uv",
+            "run",
+            "pt2lg",
+            "run",
+            str(lockfile),
+            "--input",
+            '{"question":"hello","confidence":0.5}',
+            "--json",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert waiting_result.returncode != 0
+    waiting = json.loads(waiting_result.stdout)
+    assert waiting["status"] == "waiting"
+    state_store = lockfile.parent / ".pt2lg-runtime"
+    assert list(state_store.glob("*.json"))
+
+    resume_result = subprocess.run(
+        [
+            "uv",
+            "run",
+            "pt2lg",
+            "resume",
+            str(lockfile),
+            "--thread-id",
+            waiting["thread_id"],
+            "--resume",
+            '"approved"',
+            "--json",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert resume_result.returncode == 0
+    resumed = json.loads(resume_result.stdout)
+    assert resumed["status"] == "succeeded"
+    assert resumed["output"] == {"answer": "Answer: hello"}
+    assert list(state_store.glob("*.json")) == []

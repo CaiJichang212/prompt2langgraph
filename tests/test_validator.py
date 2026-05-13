@@ -1,11 +1,12 @@
 import json
 from pathlib import Path
 
-from prompt2langgraph.ir.models import ExecutorType, TypeName
+from prompt2langgraph.ir.models import ExecutorType, TypeName, TypeSpec
 from prompt2langgraph.registry.builtins import (
     builtin_executor_registry,
     builtin_node_registry,
 )
+from prompt2langgraph.registry.nodes import NodeDefinition, NodeRegistry
 from prompt2langgraph.validate.validator import validate_workflow
 
 
@@ -273,3 +274,82 @@ def test_validator_rejects_unapproved_side_effect() -> None:
 
     assert report.ok is False
     assert any(item.code == "E_SIDE_008" and item.location.node_id == "send_email" for item in report.diagnostics)
+
+
+def test_builtin_node_definitions_expose_v01_contract_fields() -> None:
+    node = builtin_node_registry().get("llm")
+
+    assert node.description
+    assert "template" in node.param_schema
+    assert node.required_capabilities == ()
+    assert node.default_timeout_s is not None
+
+
+def test_validator_rejects_wrong_param_type() -> None:
+    workflow = load_workflow("linear_llm.json")
+    workflow["nodes"][0]["params"] = {"template": 123}
+
+    report = validate_workflow(workflow)
+
+    assert report.ok is False
+    assert any(item.code == "E_TYPE_003" and item.location.node_id == "compose" for item in report.diagnostics)
+
+
+def test_validator_rejects_array_param_item_type_mismatch() -> None:
+    workflow = load_workflow("linear_llm.json")
+    workflow["nodes"][0]["kind"] = "custom"
+    workflow["nodes"][0]["params"] = {"tags": ["ok", 123]}
+    nodes = NodeRegistry(
+        [
+            NodeDefinition(
+                kind="custom",
+                description="Custom node for validator tests.",
+                param_schema={
+                    "tags": TypeSpec(
+                        type=TypeName.ARRAY,
+                        item_type=TypeSpec(type=TypeName.STRING),
+                    )
+                },
+            )
+        ]
+    )
+
+    report = validate_workflow(workflow, nodes=nodes)
+
+    assert report.ok is False
+    assert any(
+        item.code == "E_TYPE_003"
+        and item.location.node_id == "compose"
+        and item.location.path == "params.tags"
+        for item in report.diagnostics
+    )
+
+
+def test_validator_rejects_object_param_property_type_mismatch() -> None:
+    workflow = load_workflow("linear_llm.json")
+    workflow["nodes"][0]["kind"] = "custom"
+    workflow["nodes"][0]["params"] = {"options": {"retries": "three"}}
+    nodes = NodeRegistry(
+        [
+            NodeDefinition(
+                kind="custom",
+                description="Custom node for validator tests.",
+                param_schema={
+                    "options": TypeSpec(
+                        type=TypeName.OBJECT,
+                        properties={"retries": TypeSpec(type=TypeName.INTEGER)},
+                    )
+                },
+            )
+        ]
+    )
+
+    report = validate_workflow(workflow, nodes=nodes)
+
+    assert report.ok is False
+    assert any(
+        item.code == "E_TYPE_003"
+        and item.location.node_id == "compose"
+        and item.location.path == "params.options"
+        for item in report.diagnostics
+    )
