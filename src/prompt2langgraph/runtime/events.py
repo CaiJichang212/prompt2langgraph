@@ -22,6 +22,13 @@ class RunInterrupt(BaseModel):
     payload: dict[str, Any] = Field(default_factory=dict)
 
 
+class RunMetrics(BaseModel):
+    duration_ms: float | None = None
+    token_count: int | None = None
+    retry_count: int = 0
+    tool_call_count: int = 0
+
+
 class RunResult(BaseModel):
     status: Literal["succeeded", "failed", "waiting"]
     run_id: str
@@ -30,3 +37,5 @@ class RunResult(BaseModel):
     events: list[RunEvent] = Field(default_factory=list)
     diagnostics: list[Diagnostic] = Field(default_factory=list)
     interrupt: RunInterrupt | None = None
+    metrics: RunMetrics = Field(default_factory=RunMetrics)
+    tool_calls: list[dict[str, Any]] = Field(default_factory=list)
