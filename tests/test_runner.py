@@ -237,3 +237,40 @@ def test_run_workflow_invokes_fanout_map_reduce() -> None:
     assert result.status == "succeeded"
     assert sorted(result.output["results"]) == ["alpha", "beta"]
     assert result.diagnostics == []
+
+
+def test_run_workflow_persists_state_to_store_dir_and_removes_on_resume(tmp_path: Path) -> None:
+    """Test that runtime state is isolated in .pt2lg-runtime and cleaned up after successful resume."""
+    workflow = load_workflow("conditional_human_gate.json")
+    state_store_dir = tmp_path / ".pt2lg-runtime"
+
+    # First run should create a waiting state and persist to state_store_dir
+    waiting = run_workflow(
+        workflow,
+        {"question": "hello", "confidence": 0.5},
+        state_store_dir=state_store_dir,
+    )
+
+    assert waiting.status == "waiting"
+    assert waiting.interrupt is not None
+
+    # State directory should exist and contain state file
+    assert state_store_dir.exists()
+    state_files = list(state_store_dir.glob("*.json"))
+    assert len(state_files) == 1, "Expected exactly one state file after interrupt"
+
+    # Resume should succeed and clean up state file
+    resumed = run_workflow(
+        workflow,
+        {},
+        thread_id=waiting.thread_id,
+        resume_payload="approved",
+        state_store_dir=state_store_dir,
+    )
+
+    assert resumed.status == "succeeded"
+    assert resumed.thread_id == waiting.thread_id
+
+    # State file should be removed after successful resume
+    remaining_state_files = list(state_store_dir.glob("*.json"))
+    assert remaining_state_files == [], "State file should be removed after successful resume"

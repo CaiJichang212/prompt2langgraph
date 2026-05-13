@@ -3,6 +3,8 @@ import importlib.util
 from dataclasses import replace
 from pathlib import Path
 
+import pytest
+
 from prompt2langgraph.ir.lockfile import (
     build_compile_report,
     build_manifest,
@@ -14,6 +16,7 @@ from prompt2langgraph.ir.models import ExecutorType, TypeName, TypeSpec, Workflo
 from prompt2langgraph.registry.builtins import builtin_executor_registry, builtin_node_registry
 from prompt2langgraph.registry.executors import ExecutorDefinition, ExecutorRegistry
 from prompt2langgraph.registry.nodes import NodeDefinition, NodeRegistry
+from prompt2langgraph.runtime.artifacts import load_bundle_workflow
 from prompt2langgraph.visualization.mermaid import workflow_to_mermaid
 
 
@@ -45,12 +48,18 @@ def test_artifact_builders_emit_expected_minimal_shapes() -> None:
 
     lock = build_workflow_lock(workflow)
     manifest = build_manifest(workflow)
-    report = build_compile_report(workflow, diagnostics=[], artifacts={
-        "workflow_ir": "workflow.ir.json",
-        "lock": "workflow.lock.json",
-        "manifest": "manifest.json",
-        "mermaid": "graph.mmd",
-    })
+    report = build_compile_report(
+        workflow,
+        diagnostics=[],
+        artifacts={
+            "workflow_ir": "workflow.ir.json",
+            "lock": "workflow.lock.json",
+            "manifest": "manifest.json",
+            "mermaid": "graph.mmd",
+        },
+        compile_id="compile_test",
+        timings_ms={"total": 1.0},
+    )
     mermaid = workflow_to_mermaid(workflow)
 
     assert lock["schema_version"] == "0.1"
@@ -101,6 +110,50 @@ def test_artifact_builders_emit_expected_minimal_shapes() -> None:
 
     assert "START --> compose" in mermaid
     assert "compose --> END" in mermaid
+
+
+def test_build_workflow_lock_copies_generated_files_lists() -> None:
+    workflow = load_workflow("linear_llm.json")
+
+    default_lock = build_workflow_lock(workflow)
+    default_lock["generated_files"].append("polluted.py")
+    next_default_lock = build_workflow_lock(workflow)
+
+    assert "polluted.py" not in next_default_lock["generated_files"]
+
+    custom_files = ["workflow.ir.json"]
+    custom_lock = build_workflow_lock(workflow, generated_files=custom_files)
+    custom_files.append("mutated.py")
+
+    assert custom_lock["generated_files"] == ["workflow.ir.json"]
+
+
+def test_load_bundle_workflow_requires_lockfile_to_exist(tmp_path: Path) -> None:
+    output_dir = tmp_path / "linear_llm"
+    output_dir.mkdir()
+    (output_dir / "workflow.ir.json").write_text(
+        (FIXTURES / "linear_llm.json").read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(OSError):
+        load_bundle_workflow(output_dir / "workflow.lock.json")
+
+
+def test_load_bundle_workflow_rejects_mismatched_workflow_hash(tmp_path: Path) -> None:
+    output_dir = tmp_path / "linear_llm"
+    output_dir.mkdir()
+    workflow = load_workflow("linear_llm.json")
+    (output_dir / "workflow.ir.json").write_text(
+        json.dumps(workflow.model_dump(mode="json")),
+        encoding="utf-8",
+    )
+    lock = build_workflow_lock(workflow)
+    lock["workflow_hash"] = "sha256:not-the-workflow-hash"
+    (output_dir / "workflow.lock.json").write_text(json.dumps(lock), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="workflow_hash"):
+        load_bundle_workflow(output_dir / "workflow.lock.json")
 
 
 def test_registry_hash_changes_when_registry_contract_changes() -> None:
@@ -174,9 +227,13 @@ def test_mermaid_labels_special_edge_kinds() -> None:
 def test_compile_report_contains_hashes_tables_and_compile_id() -> None:
     workflow = load_workflow("linear_llm.json")
 
-    report = build_compile_report(workflow)
+    report = build_compile_report(
+        workflow,
+        compile_id="compile_test",
+        timings_ms={"validate": 1.0, "target_compile": 2.0, "artifact_write": 3.0, "total": 6.0},
+    )
 
-    assert report["compile_id"].startswith("compile_")
+    assert report["compile_id"] == "compile_test"
     assert report["workflow_hash"].startswith("sha256:")
     assert report["registry_hash"].startswith("sha256:")
     assert report["nodes"] == [{"id": "compose", "kind": "llm", "executor": "builtin.echo_llm"}]
@@ -184,6 +241,19 @@ def test_compile_report_contains_hashes_tables_and_compile_id() -> None:
     assert "question" in report["state_channels"]
     assert "answer" in report["state_channels"]
     assert "timings_ms" in report
+    assert report["timings_ms"]["total"] == 6.0
+
+
+def test_compile_report_compile_id_changes_per_compile() -> None:
+    workflow = load_workflow("linear_llm.json")
+
+    first = build_compile_report(workflow, compile_id="compile_a", timings_ms={"total": 1.0})
+    second = build_compile_report(workflow, compile_id="compile_b", timings_ms={"total": 2.0})
+
+    assert first["compile_id"] == "compile_a"
+    assert second["compile_id"] == "compile_b"
+    assert first["compile_id"] != second["compile_id"]
+    assert first["timings_ms"]["total"] == 1.0
 
 
 def test_policy_resolver_applies_workflow_timeout_over_node_default() -> None:
@@ -352,3 +422,107 @@ def test_emit_generated_bundle_writes_importable_graph_module(tmp_path: Path) ->
     assert nodes_module.NODES[0]["id"] == "process_item"
     assert callable(graph_module.build_graph)
     assert callable(graph_module.compile_graph)
+
+
+def test_manifest_contains_executor_bindings_from_compile_path(tmp_path: Path) -> None:
+    """Test that manifest includes executor bindings when compiled through the full compile path."""
+    workflow = load_workflow("linear_llm.json")
+    from prompt2langgraph import compile_workflow
+
+    result = compile_workflow(workflow, out_dir=tmp_path)
+
+    manifest = json.loads((result.output_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["executor_bindings"]["compose"]["executor"] == "builtin.echo_llm"
+    assert manifest["executor_bindings"]["compose"]["type"] == "builtin"
+    assert manifest["executor_bindings"]["compose"]["capabilities"] == []
+
+
+def test_manifest_contains_policy_summary_from_compile_path(tmp_path: Path) -> None:
+    """Test that manifest includes policy summary when compiled through the full compile path."""
+    workflow = load_workflow("linear_llm.json")
+    workflow.policies.default_timeout_s = 120
+    from prompt2langgraph import compile_workflow
+
+    result = compile_workflow(workflow, out_dir=tmp_path)
+
+    manifest = json.loads((result.output_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert "policy_summary" in manifest
+    assert "node_policies" in manifest["policy_summary"]
+    assert manifest["policy_summary"]["node_policies"]["compose"]["timeout_s"] == 120
+    assert manifest["policy_summary"]["node_policies"]["compose"]["requires_approval"] is False
+
+
+def test_compile_report_contains_binding_summary_from_compile_path(tmp_path: Path) -> None:
+    """Test that compile_report includes binding summary when compiled through the full compile path."""
+    workflow = load_workflow("linear_llm.json")
+    from prompt2langgraph import compile_workflow
+
+    result = compile_workflow(workflow, out_dir=tmp_path)
+
+    report = json.loads((result.output_dir / "compile_report.json").read_text(encoding="utf-8"))
+    assert "binding_summary" in report
+    assert "executor_bindings" in report["binding_summary"]
+    assert report["binding_summary"]["executor_bindings"]["compose"]["executor"] == "builtin.echo_llm"
+
+
+def test_policy_summary_is_deterministic_and_secret_free(tmp_path: Path) -> None:
+    """Test that policy summary does not contain secrets and is deterministic."""
+    workflow = load_workflow("linear_llm.json")
+    workflow.nodes[0].executor.ref = "custom.secret_llm"
+    executor_registry = ExecutorRegistry(
+        [
+            ExecutorDefinition(
+                ref="custom.secret_llm",
+                type=ExecutorType.BUILTIN,
+                input_schema={"question": TypeSpec(type=TypeName.STRING)},
+                output_schema={"answer": TypeSpec(type=TypeName.STRING)},
+                secrets=("API_KEY", "TOKEN"),
+            )
+        ]
+    )
+
+    from prompt2langgraph.ir.lockfile import build_manifest
+    from prompt2langgraph.policy.resolver import resolve_policies
+
+    resolved = resolve_policies(workflow)
+    manifest = build_manifest(
+        workflow, executor_registry=executor_registry, node_policies=resolved.node_policies
+    )
+
+    assert "policy_summary" in manifest
+    serialized = json.dumps(manifest["policy_summary"])
+    assert "API_KEY" not in serialized
+    assert "TOKEN" not in serialized
+
+
+def test_binding_summary_is_deterministic_and_secret_free(tmp_path: Path) -> None:
+    """Test that binding summary does not contain secrets and is deterministic."""
+    workflow = load_workflow("linear_llm.json")
+    workflow.nodes[0].executor.ref = "custom.secret_llm"
+    executor_registry = ExecutorRegistry(
+        [
+            ExecutorDefinition(
+                ref="custom.secret_llm",
+                type=ExecutorType.BUILTIN,
+                input_schema={"question": TypeSpec(type=TypeName.STRING)},
+                output_schema={"answer": TypeSpec(type=TypeName.STRING)},
+                secrets=("API_KEY", "TOKEN"),
+            )
+        ]
+    )
+
+    from prompt2langgraph.binding.binder import bind_workflow
+    from prompt2langgraph.ir.lockfile import build_compile_report
+
+    bound = bind_workflow(workflow, executors=executor_registry)
+    report = build_compile_report(
+        workflow,
+        compile_id="compile_test",
+        timings_ms={"total": 1.0},
+        executor_bindings=bound.executor_bindings,
+    )
+
+    assert "binding_summary" in report
+    serialized = json.dumps(report["binding_summary"])
+    assert "API_KEY" not in serialized
+    assert "TOKEN" not in serialized
