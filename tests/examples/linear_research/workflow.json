@@ -1,0 +1,29 @@
+{
+  "schema_version": "0.1",
+  "workflow_id": "linear_llm",
+  "name": "Linear LLM",
+  "entrypoint": "compose",
+  "state_schema": {
+    "input": {"question": {"type": "string"}},
+    "output": {"answer": {"type": "string"}},
+    "channels": {
+      "question": {"type": "string"},
+      "answer": {"type": "string"}
+    },
+    "private": {},
+    "reducers": {}
+  },
+  "nodes": [
+    {
+      "id": "compose",
+      "kind": "llm",
+      "executor": {"ref": "builtin.echo_llm", "type": "builtin"},
+      "inputs": {"question": {"state_key": "question"}},
+      "outputs": {"answer": {"state_key": "answer"}},
+      "params": {"template": "Answer: {question}"}
+    }
+  ],
+  "edges": [],
+  "policies": {},
+  "metadata": {}
+}
