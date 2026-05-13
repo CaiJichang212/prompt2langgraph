@@ -159,6 +159,15 @@ def _clear_thread(thread_key: tuple[str, str], state_store_dir: Path | None = No
         _state_file(thread_key, state_store_dir).unlink(missing_ok=True)
 
 
+# Runtime Persistence Contract
+# ============================
+# The JSON snapshot helpers below (_save_thread_state, _load_thread_state, and
+# related serialization functions) provide a best-effort local resume format for
+# the CLI. This format is coupled to the current LangGraph InMemorySaver internals
+# and must NOT be treated as a stable interchange format. The structure may change
+# without notice across LangGraph or prompt2langgraph versions. It is intended
+# solely for short-lived local development workflows and should not be used for
+# long-term storage or cross-system communication.
 def _save_thread_state(thread_key: tuple[str, str], state_store_dir: Path) -> None:
     checkpointer = _THREAD_CHECKPOINTERS.get(thread_key)
     if checkpointer is None:
