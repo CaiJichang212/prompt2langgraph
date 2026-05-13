@@ -8,6 +8,7 @@ from dataclasses import asdict
 from importlib.metadata import PackageNotFoundError, version as package_version
 from typing import Any
 
+from prompt2langgraph.binding.binder import bind_workflow
 from prompt2langgraph.diagnostics.report import Diagnostic, ValidationReport
 from prompt2langgraph.ir.models import WorkflowSpec
 from prompt2langgraph.ir.normalize import normalize_workflow
@@ -54,15 +55,26 @@ def build_workflow_lock(
         "generated_files": generated_files
         or [
             "workflow.ir.json",
+            "workflow.lock.json",
             "manifest.json",
             "compile_report.json",
             "graph.mmd",
+            "generated/__init__.py",
+            "generated/state.py",
+            "generated/nodes.py",
+            "generated/graph.py",
         ],
     }
 
 
-def build_manifest(workflow: WorkflowSpec, *, target: str = "langgraph-py") -> dict[str, Any]:
+def build_manifest(
+    workflow: WorkflowSpec,
+    *,
+    target: str = "langgraph-py",
+    executor_registry: ExecutorRegistry | None = None,
+) -> dict[str, Any]:
     normalized = normalize_workflow(workflow)
+    bound = bind_workflow(normalized, executors=executor_registry)
     return {
         "workflow_id": normalized.workflow_id,
         "entrypoint": normalized.entrypoint,
@@ -92,6 +104,8 @@ def build_manifest(workflow: WorkflowSpec, *, target: str = "langgraph-py") -> d
         "side_effect_nodes": [
             node.id for node in normalized.nodes if node.kind == "side_effect"
         ],
+        "executor_bindings": bound.executor_bindings,
+        "artifact_policy": {"large_objects": "artifact_ref"},
     }
 
 
@@ -106,7 +120,23 @@ def build_compile_report(
     diagnostic_items = _diagnostic_items(diagnostics)
     return {
         "ok": ok if ok is not None else not any(item["severity"] == "error" for item in diagnostic_items),
+        "compile_id": f"compile_{sha256_canonical_json(normalized.workflow_id)[:16].replace('sha256:', '')}",
         "workflow_id": normalized.workflow_id,
+        "workflow_hash": sha256_canonical_json(normalized.model_dump(mode="json")),
+        "registry_hash": sha256_canonical_json(_registry_contract(builtin_node_registry(), builtin_executor_registry())),
+        "timings_ms": {},
+        "nodes": [
+            {"id": node.id, "kind": node.kind, "executor": node.executor.ref}
+            for node in normalized.nodes
+        ],
+        "edges": [
+            {"id": edge.id, "source": edge.source, "target": edge.target, "kind": edge.kind.value}
+            for edge in normalized.edges
+        ],
+        "state_channels": {
+            key: value.model_dump(mode="json")
+            for key, value in sorted(normalized.state_schema.channels.items())
+        },
         "diagnostics": diagnostic_items,
         "artifacts": artifacts
         or {
