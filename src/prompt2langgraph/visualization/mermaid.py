@@ -30,6 +30,12 @@ def _edge_lines(edge) -> list[str]:
             f"    {edge.source} -- {route} --> {target}"
             for route, target in edge.condition.routes.items()
         ]
+    if edge.kind is EdgeKind.LOOP:
+        return [f"    {edge.source} -- loop --> {edge.target}"]
+    if edge.kind is EdgeKind.FANOUT:
+        return [f"    {edge.source} -- fanout --> {edge.target}"]
+    if edge.kind is EdgeKind.JOIN:
+        return [f"    {edge.source} -- join --> {edge.target}"]
     return [f"    {edge.source} --> {edge.target}"]
 
 
