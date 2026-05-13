@@ -45,18 +45,59 @@ def join(inputs: dict[str, Any], params: dict[str, Any]) -> dict[str, Any]:
 def builtin_node_registry() -> NodeRegistry:
     return NodeRegistry(
         [
-            NodeDefinition(kind="llm", input_schema={"question": STRING}, output_schema={"answer": STRING}),
-            NodeDefinition(kind="tool", capabilities=("tool",)),
+            NodeDefinition(
+                kind="llm",
+                description="Deterministic mock LLM node for v0.1 local execution.",
+                input_schema={"question": STRING},
+                output_schema={"answer": STRING},
+                param_schema={"template": STRING},
+                default_timeout_s=120,
+            ),
+            NodeDefinition(
+                kind="tool",
+                description="Registered tool execution node.",
+                required_capabilities=("tool",),
+                default_timeout_s=60,
+            ),
             NodeDefinition(
                 kind="retriever",
+                description="Mock retriever node that returns an artifact reference.",
                 input_schema={"question": STRING},
                 output_schema={"docs_ref": ARTIFACT_REF},
+                default_timeout_s=60,
             ),
-            NodeDefinition(kind="transform", capabilities=("transform",)),
-            NodeDefinition(kind="router", capabilities=("route",)),
-            NodeDefinition(kind="human_gate", capabilities=("interrupt",)),
-            NodeDefinition(kind="join", capabilities=("join",)),
-            NodeDefinition(kind="side_effect", side_effect=True, capabilities=("side_effect",)),
+            NodeDefinition(
+                kind="transform",
+                description="Pure state transformation node.",
+                required_capabilities=("transform",),
+                default_timeout_s=60,
+            ),
+            NodeDefinition(
+                kind="router",
+                description="State-based routing node.",
+                required_capabilities=("route",),
+                default_timeout_s=60,
+            ),
+            NodeDefinition(
+                kind="human_gate",
+                description="Human approval gate that interrupts execution.",
+                param_schema={"message": STRING},
+                required_capabilities=("interrupt",),
+                default_timeout_s=60,
+            ),
+            NodeDefinition(
+                kind="join",
+                description="Branch join node for reduced state.",
+                required_capabilities=("join",),
+                default_timeout_s=60,
+            ),
+            NodeDefinition(
+                kind="side_effect",
+                description="External side-effect node requiring approval or idempotency.",
+                side_effect=True,
+                required_capabilities=("side_effect",),
+                default_timeout_s=60,
+            ),
         ]
     )
 
