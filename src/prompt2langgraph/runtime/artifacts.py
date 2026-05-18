@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from time import perf_counter
@@ -89,6 +90,8 @@ def compile_workflow_to_artifacts(
             resolved=resolved,
             bound=bound,
         )
+    else:
+        _remove_stale_bundle_artifacts(output_dir)
     return report, output_dir
 
 
@@ -187,6 +190,18 @@ def _write_compile_artifacts(
         executor_bindings=bound.executor_bindings,
     )
     (output_dir / "compile_report.json").write_text(_json_dumps(compile_report), encoding="utf-8")
+
+
+def _remove_stale_bundle_artifacts(output_dir: Path) -> None:
+    if not output_dir.exists():
+        return
+    for name in REQUIRED_GENERATED_FILES:
+        path = output_dir / name
+        if path.is_file():
+            path.unlink()
+    generated_dir = output_dir / "generated"
+    if generated_dir.is_dir():
+        shutil.rmtree(generated_dir)
 
 
 def _validate_and_compile_target(
