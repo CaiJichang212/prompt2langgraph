@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-from prompt2langgraph.ir.models import ExecutorType, TypeName, TypeSpec
+from prompt2langgraph.ir.models import ExecutorType, TypeName, TypeSpec, WorkflowSpec
 from prompt2langgraph.registry.builtins import (
     builtin_executor_registry,
     builtin_node_registry,
@@ -81,6 +81,31 @@ def test_validator_accepts_valid_linear_ir() -> None:
 
     assert report.ok is True
     assert report.diagnostics == []
+
+
+def test_compile_rejects_join_edge_as_unsupported_target_capability(tmp_path: Path) -> None:
+    workflow = WorkflowSpec.model_validate(load_workflow("linear_llm.json"))
+    data = workflow.model_dump(mode="json")
+    data["nodes"].append(
+        {
+            "id": "finish",
+            "kind": "transform",
+            "executor": {"ref": "builtin.identity_transform", "type": "builtin"},
+            "inputs": {"value": {"state_key": "answer"}},
+            "outputs": {"value": {"state_key": "answer"}},
+            "params": {},
+        }
+    )
+    data["edges"] = [{"id": "unsupported_join", "source": "compose", "target": "finish", "kind": "join"}]
+    workflow = WorkflowSpec.model_validate(data)
+
+    from prompt2langgraph.runtime.artifacts import compile_workflow_to_artifacts
+
+    report, output_dir = compile_workflow_to_artifacts(workflow, out_dir=tmp_path)
+
+    assert report.ok is False
+    assert not (output_dir / "workflow.lock.json").exists()
+    assert any(item.code == "E_TARGET_009" for item in report.diagnostics)
 
 
 def test_validator_accepts_conditional_routes_as_reachable() -> None:
