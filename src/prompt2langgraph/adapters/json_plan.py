@@ -98,8 +98,10 @@ def _node_spec(node: Mapping[str, Any], executors: ExecutorRegistry) -> NodeSpec
 
 
 def _edge_spec(edge: Mapping[str, Any], *, index: int) -> EdgeSpec:
-    source = _require_str(edge, "from")
-    target = _require_str(edge, "to")
+    if not isinstance(edge, Mapping):
+        raise ValueError(f"edge {index} must be an object")
+    source = _edge_endpoint(edge, "from", "source")
+    target = _edge_endpoint(edge, "to", "target")
     kind = EdgeKind(edge.get("kind", EdgeKind.LINEAR.value))
     return EdgeSpec(
         id=str(edge.get("id") or _stable_edge_id(source, target, index)),
@@ -110,6 +112,13 @@ def _edge_spec(edge: Mapping[str, Any], *, index: int) -> EdgeSpec:
         map=MapSpec.model_validate(edge["map"]) if "map" in edge else None,
         loop_guard=LoopGuard.model_validate(edge["loop_guard"]) if "loop_guard" in edge else None,
     )
+
+
+def _edge_endpoint(edge: Mapping[str, Any], primary: str, alias: str) -> str:
+    value = edge.get(primary, edge.get(alias))
+    if not isinstance(value, str) or not value:
+        raise ValueError(f'edge "{edge.get("id", "<unknown>")}" must define "{primary}" or "{alias}"')
+    return value
 
 
 def _collect_channels(
