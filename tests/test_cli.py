@@ -93,6 +93,45 @@ def test_compile_command_emits_expected_artifacts(tmp_path: Path) -> None:
     assert (build_dir / "compile_report.json").exists()
     assert (build_dir / "graph.mmd").exists()
 
+    report = json.loads((build_dir / "compile_report.json").read_text(encoding="utf-8"))
+    manifest = json.loads((build_dir / "manifest.json").read_text(encoding="utf-8"))
+
+    assert report["compile_id"].startswith("compile_")
+    assert {
+        "normalize",
+        "validate",
+        "resolve_policies",
+        "bind_workflow",
+        "target_compile",
+        "artifact_write",
+        "total",
+    }.issubset(set(report["timings_ms"]))
+    assert "binding_summary" in report
+    assert report["binding_summary"]["executor_bindings"]["compose"]["executor"] == "builtin.echo_llm"
+    assert "policy_summary" in manifest
+    assert manifest["policy_summary"]["node_policies"]["compose"]["timeout_s"] == 60
+
+
+def test_compile_command_reports_unsupported_target_as_json_without_traceback(tmp_path: Path) -> None:
+    result = CliRunner().invoke(
+        app,
+        [
+            "compile",
+            str(FIXTURES / "linear_llm.json"),
+            "--target",
+            "not-a-target",
+            "--out",
+            str(tmp_path),
+            "--json",
+        ],
+    )
+
+    assert result.exit_code != 0
+    payload = json.loads(result.stdout)
+    assert payload["ok"] is False
+    assert any(item["code"] == "E_TARGET_009" for item in payload["diagnostics"])
+    assert "Traceback" not in result.stdout
+
 
 def test_run_command_invokes_workflow_with_input_file(tmp_path: Path) -> None:
     input_file = tmp_path / "input.json"

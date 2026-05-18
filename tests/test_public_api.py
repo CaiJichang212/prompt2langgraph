@@ -32,6 +32,14 @@ def test_public_compile_workflow_returns_compile_result(tmp_path: Path) -> None:
     assert result.output_dir == tmp_path / "linear_llm"
     assert (result.output_dir / "workflow.lock.json").exists()
 
+    report = json.loads((result.output_dir / "compile_report.json").read_text(encoding="utf-8"))
+    manifest = json.loads((result.output_dir / "manifest.json").read_text(encoding="utf-8"))
+
+    assert report["compile_id"].startswith("compile_")
+    assert "target_compile" in report["timings_ms"]
+    assert "binding_summary" in report
+    assert "policy_summary" in manifest
+
 
 def test_public_compile_workflow_rejects_langgraph_compile_failures(tmp_path: Path) -> None:
     data = json.loads((FIXTURES / "linear_llm.json").read_text(encoding="utf-8"))
