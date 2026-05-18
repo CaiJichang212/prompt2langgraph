@@ -12,10 +12,7 @@ from pydantic import ValidationError
 from prompt2langgraph.adapters.json_plan import json_plan_to_workflow_spec
 from prompt2langgraph.diagnostics.codes import E_PARSE_001, E_SCHEMA_002, E_TARGET_009
 from prompt2langgraph.diagnostics.report import Diagnostic, DiagnosticLocation, ValidationReport
-from prompt2langgraph.ir.lockfile import build_compile_report, build_manifest, build_workflow_lock
 from prompt2langgraph.ir.models import WorkflowSpec
-from prompt2langgraph.ir.normalize import normalize_workflow
-from prompt2langgraph.registry.builtins import builtin_executor_registry
 from prompt2langgraph.validate.validator import validate_workflow
 from prompt2langgraph.visualization.mermaid import workflow_to_mermaid
 
@@ -56,42 +53,12 @@ def compile(
         raise typer.Exit(1)
 
     workflow = workflow_or_report
-    report = validate_workflow(workflow)
-    if report.ok and target != "langgraph-py":
-        report = ValidationReport(
-            diagnostics=[
-                Diagnostic(
-                    code=E_TARGET_009,
-                    severity="error",
-                    message=f'target "{target}" is not supported',
-                )
-            ]
-        )
+    from prompt2langgraph.runtime.artifacts import compile_workflow_to_artifacts
 
-    if report.ok:
-        try:
-            from prompt2langgraph.compiler.langgraph_py import compile_workflow_to_graph
-
-            compile_workflow_to_graph(workflow, builtin_executor_registry())
-        except Exception as exc:
-            report = ValidationReport(
-                diagnostics=[
-                    Diagnostic(
-                        code=E_TARGET_009,
-                        severity="error",
-                        message="workflow failed to compile for target langgraph-py",
-                        hint=str(exc),
-                    )
-                ]
-            )
-
+    report, output_dir = compile_workflow_to_artifacts(workflow, out_dir=out, target=target)
+    _emit_compile_payload(report.ok, output_dir if report.ok else None, report, json_output)
     if not report.ok:
-        _emit_compile_payload(False, None, report, json_output)
         raise typer.Exit(1)
-
-    output_dir = out / workflow.workflow_id
-    _write_compile_artifacts(workflow, output_dir, target=target, report=report)
-    _emit_compile_payload(True, output_dir, report, json_output)
 
 
 @app.command()
@@ -371,29 +338,6 @@ def _runtime_state_store_dir(workflow_json: Path) -> Path:
     if workflow_json.name == "workflow.lock.json":
         return workflow_json.parent / ".pt2lg-runtime"
     return Path.cwd() / ".pt2lg-runtime"
-
-
-def _write_compile_artifacts(
-    workflow: WorkflowSpec,
-    output_dir: Path,
-    *,
-    target: str,
-    report: ValidationReport,
-) -> None:
-    output_dir.mkdir(parents=True, exist_ok=True)
-    normalized = normalize_workflow(workflow)
-    from prompt2langgraph.compiler.codegen import emit_generated_bundle
-
-    artifacts = {
-        "workflow.ir.json": normalized.model_dump(mode="json"),
-        "workflow.lock.json": build_workflow_lock(normalized, target=target),
-        "manifest.json": build_manifest(normalized, target=target),
-        "compile_report.json": build_compile_report(normalized, diagnostics=report),
-    }
-    for name, payload in artifacts.items():
-        (output_dir / name).write_text(_json_dumps(payload), encoding="utf-8")
-    emit_generated_bundle(normalized, output_dir)
-    (output_dir / "graph.mmd").write_text(workflow_to_mermaid(normalized), encoding="utf-8")
 
 
 def _emit_validation_report(report: ValidationReport, json_output: bool) -> None:
