@@ -68,6 +68,35 @@ def test_validate_command_reports_schema_errors_as_schema_diagnostics(tmp_path: 
     assert any(item["code"] == "E_SCHEMA_002" for item in payload["diagnostics"])
 
 
+def test_validate_command_reports_json_plan_parse_errors_as_diagnostics(tmp_path: Path) -> None:
+    bad_plans = [
+        {"name": "Missing Nodes", "edges": []},
+        {"name": "Bad Nodes", "nodes": "not-a-list", "edges": []},
+        {
+            "name": "Bad Edge",
+            "nodes": [{"id": "first", "kind": "llm", "executor": "builtin.echo_llm"}],
+            "edges": [{"id": "missing_endpoint", "from": "first"}],
+        },
+        {
+            "name": "Non Object Edge",
+            "nodes": [{"id": "first", "kind": "llm", "executor": "builtin.echo_llm"}],
+            "edges": ["not-an-object"],
+        },
+    ]
+
+    for index, plan in enumerate(bad_plans):
+        plan_file = tmp_path / f"bad_plan_{index}.json"
+        plan_file.write_text(json.dumps(plan), encoding="utf-8")
+
+        result = CliRunner().invoke(app, ["validate", str(plan_file), "--json"])
+
+        assert result.exit_code != 0
+        payload = json.loads(result.stdout)
+        assert payload["ok"] is False
+        assert any(item["code"] == "E_PARSE_001" for item in payload["diagnostics"])
+        assert "Traceback" not in result.stdout
+
+
 def test_compile_command_emits_expected_artifacts(tmp_path: Path) -> None:
     result = CliRunner().invoke(
         app,

@@ -59,6 +59,26 @@ def test_json_plan_adapter_infers_entrypoint_from_root_node_not_list_order() -> 
     assert workflow.entrypoint == "retrieve"
 
 
+def test_json_plan_accepts_source_target_edge_aliases() -> None:
+    plan = {
+        "workflow_id": "alias_plan",
+        "name": "Alias Plan",
+        "entrypoint": "first",
+        "nodes": [
+            {"id": "first", "kind": "llm", "executor": "builtin.echo_llm"},
+            {"id": "second", "kind": "transform", "executor": "builtin.identity_transform"},
+        ],
+        "edges": [{"id": "first_to_second", "source": "first", "target": "second", "kind": "linear"}],
+        "inputs": {"question": "string"},
+        "outputs": {"answer": "string"},
+    }
+
+    workflow = json_plan_to_workflow_spec(plan)
+
+    assert workflow.edges[0].source == "first"
+    assert workflow.edges[0].target == "second"
+
+
 def test_json_plan_adapter_rejects_empty_nodes_with_clear_error() -> None:
     plan = {
         "name": "Empty Workflow",
