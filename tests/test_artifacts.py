@@ -338,9 +338,10 @@ def test_resource_binder_records_executor_binding_without_secrets() -> None:
             ExecutorDefinition(
                 ref="custom.secret_llm",
                 type=ExecutorType.BUILTIN,
-                input_schema={"question": TypeSpec(type=TypeName.STRING)},
-                output_schema={"answer": TypeSpec(type=TypeName.STRING)},
-                secrets=("API_KEY", "TOKEN"),
+                input_schema={},
+                output_schema={},
+                required_capabilities=("llm.invoke",),
+                secrets=("OPENAI_API_KEY",),
             )
         ]
     )
@@ -350,10 +351,64 @@ def test_resource_binder_records_executor_binding_without_secrets() -> None:
     bound = bind_workflow(workflow, executors=executor_registry)
 
     assert bound.executor_bindings["compose"]["executor"] == "custom.secret_llm"
-    assert "secrets" not in bound.executor_bindings["compose"]
-    serialized = json.dumps(bound.executor_bindings)
-    assert "API_KEY" not in serialized
-    assert "TOKEN" not in serialized
+    assert bound.executor_bindings["compose"]["capabilities"] == ["llm.invoke"]
+    assert "OPENAI_API_KEY" not in json.dumps(bound.model_dump(mode="json"))
+
+
+def test_resource_binder_records_required_capabilities() -> None:
+    workflow = load_workflow("linear_llm.json")
+    workflow.nodes[0].executor.ref = "custom.capability_llm"
+    executor_registry = ExecutorRegistry(
+        [
+            ExecutorDefinition(
+                ref="custom.capability_llm",
+                type=ExecutorType.BUILTIN,
+                input_schema={"question": TypeSpec(type=TypeName.STRING)},
+                output_schema={"answer": TypeSpec(type=TypeName.STRING)},
+                required_capabilities=("llm.invoke", "network.disabled"),
+            )
+        ]
+    )
+
+    from prompt2langgraph.binding.binder import bind_workflow
+
+    bound = bind_workflow(workflow, executors=executor_registry)
+
+    assert bound.executor_bindings["compose"]["capabilities"] == [
+        "llm.invoke",
+        "network.disabled",
+    ]
+
+
+def test_secret_names_do_not_enter_manifest_or_compile_report() -> None:
+    workflow = load_workflow("linear_llm.json")
+    workflow.nodes[0].executor.ref = "custom.secret_llm"
+    executor_registry = ExecutorRegistry(
+        [
+            ExecutorDefinition(
+                ref="custom.secret_llm",
+                type=ExecutorType.BUILTIN,
+                input_schema={"question": TypeSpec(type=TypeName.STRING)},
+                output_schema={"answer": TypeSpec(type=TypeName.STRING)},
+                secrets=("OPENAI_API_KEY",),
+            )
+        ]
+    )
+
+    from prompt2langgraph.binding.binder import bind_workflow
+    from prompt2langgraph.ir.lockfile import build_compile_report, build_manifest
+
+    bound = bind_workflow(workflow, executors=executor_registry)
+    manifest = build_manifest(workflow, executor_registry=executor_registry)
+    report = build_compile_report(
+        workflow,
+        compile_id="compile_secret_free",
+        timings_ms={"total": 1.0},
+        executor_bindings=bound.executor_bindings,
+    )
+
+    serialized = json.dumps({"manifest": manifest, "report": report})
+    assert "OPENAI_API_KEY" not in serialized
 
 
 def test_manifest_binds_custom_executor_registry() -> None:
