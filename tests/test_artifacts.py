@@ -520,6 +520,32 @@ def test_compile_report_contains_binding_summary_from_compile_path(tmp_path: Pat
     assert report["binding_summary"]["executor_bindings"]["compose"]["executor"] == "builtin.echo_llm"
 
 
+def test_failed_compile_removes_stale_bundle_artifacts_but_keeps_unrelated_files(tmp_path: Path) -> None:
+    workflow = load_workflow("linear_llm.json")
+    from prompt2langgraph.runtime.artifacts import compile_workflow_to_artifacts
+
+    successful_report, output_dir = compile_workflow_to_artifacts(workflow, out_dir=tmp_path)
+    assert successful_report.ok is True
+    assert (output_dir / "workflow.lock.json").exists()
+
+    unrelated_file = output_dir / "README.local"
+    unrelated_file.write_text("keep me", encoding="utf-8")
+
+    failed_report, failed_output_dir = compile_workflow_to_artifacts(
+        workflow,
+        out_dir=tmp_path,
+        target="not-a-target",
+    )
+
+    assert failed_report.ok is False
+    assert failed_output_dir == output_dir
+    assert not (output_dir / "workflow.lock.json").exists()
+    assert not (output_dir / "manifest.json").exists()
+    assert not (output_dir / "compile_report.json").exists()
+    assert not (output_dir / "generated").exists()
+    assert unrelated_file.read_text(encoding="utf-8") == "keep me"
+
+
 def test_policy_summary_is_deterministic_and_secret_free(tmp_path: Path) -> None:
     """Test that policy summary does not contain secrets and is deterministic."""
     workflow = load_workflow("linear_llm.json")
