@@ -1,0 +1,37 @@
+{
+  "artifact_policy": {
+    "large_objects": "artifact_ref"
+  },
+  "edges": [],
+  "entrypoint": "compose",
+  "executor_bindings": {
+    "compose": {
+      "capabilities": [],
+      "executor": "builtin.echo_llm",
+      "type": "builtin"
+    }
+  },
+  "interrupt_nodes": [],
+  "nodes": [
+    {
+      "executor": "builtin.echo_llm",
+      "id": "compose",
+      "kind": "llm"
+    }
+  ],
+  "policy_summary": {
+    "node_policies": {
+      "compose": {
+        "requires_approval": false,
+        "timeout_s": 60
+      }
+    }
+  },
+  "side_effect_nodes": [],
+  "state_keys": [
+    "answer",
+    "question"
+  ],
+  "target": "langgraph-py",
+  "workflow_id": "linear_llm"
+}

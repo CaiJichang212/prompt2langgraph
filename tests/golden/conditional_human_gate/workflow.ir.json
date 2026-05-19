@@ -1,0 +1,137 @@
+{
+  "edges": [
+    {
+      "condition": null,
+      "id": "after_approval",
+      "kind": "linear",
+      "loop_guard": null,
+      "map": null,
+      "source": "approval",
+      "target": "compose"
+    },
+    {
+      "condition": {
+        "expr": "confidence < 0.75",
+        "routes": {
+          "false": "compose",
+          "true": "approval"
+        }
+      },
+      "id": "route_by_confidence",
+      "kind": "conditional",
+      "loop_guard": null,
+      "map": null,
+      "source": "route",
+      "target": "compose"
+    }
+  ],
+  "entrypoint": "route",
+  "metadata": {},
+  "name": "Conditional Human Gate",
+  "nodes": [
+    {
+      "executor": {
+        "ref": "builtin.human_gate",
+        "type": "builtin"
+      },
+      "id": "approval",
+      "inputs": {},
+      "kind": "human_gate",
+      "outputs": {
+        "approval": {
+          "state_key": "approval"
+        }
+      },
+      "params": {
+        "message": "Approve low-confidence answer?"
+      },
+      "retry": null,
+      "security": null,
+      "timeout_s": null
+    },
+    {
+      "executor": {
+        "ref": "builtin.echo_llm",
+        "type": "builtin"
+      },
+      "id": "compose",
+      "inputs": {
+        "question": {
+          "state_key": "question"
+        }
+      },
+      "kind": "llm",
+      "outputs": {
+        "answer": {
+          "state_key": "answer"
+        }
+      },
+      "params": {
+        "template": "Answer: {question}"
+      },
+      "retry": null,
+      "security": null,
+      "timeout_s": null
+    },
+    {
+      "executor": {
+        "ref": "builtin.route",
+        "type": "builtin"
+      },
+      "id": "route",
+      "inputs": {},
+      "kind": "router",
+      "outputs": {},
+      "params": {},
+      "retry": null,
+      "security": null,
+      "timeout_s": null
+    }
+  ],
+  "policies": {
+    "allow_side_effects": false,
+    "default_timeout_s": 60
+  },
+  "schema_version": "0.1",
+  "state_schema": {
+    "channels": {
+      "answer": {
+        "item_type": null,
+        "properties": {},
+        "type": "string"
+      },
+      "approval": {
+        "item_type": null,
+        "properties": {},
+        "type": "string"
+      },
+      "confidence": {
+        "item_type": null,
+        "properties": {},
+        "type": "number"
+      },
+      "question": {
+        "item_type": null,
+        "properties": {},
+        "type": "string"
+      }
+    },
+    "input": {
+      "question": {
+        "item_type": null,
+        "properties": {},
+        "type": "string"
+      }
+    },
+    "output": {
+      "answer": {
+        "item_type": null,
+        "properties": {},
+        "type": "string"
+      }
+    },
+    "private": {},
+    "reducers": {}
+  },
+  "workflow_id": "conditional_human_gate"
+}

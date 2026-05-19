@@ -1,0 +1,74 @@
+{
+  "artifacts": {
+    "lock": "workflow.lock.json",
+    "manifest": "manifest.json",
+    "mermaid": "graph.mmd",
+    "workflow_ir": "workflow.ir.json"
+  },
+  "binding_summary": {
+    "executor_bindings": {
+      "process_item": {
+        "capabilities": [],
+        "executor": "builtin.identity_transform",
+        "type": "builtin"
+      },
+      "start": {
+        "capabilities": [],
+        "executor": "builtin.identity_transform",
+        "type": "builtin"
+      }
+    }
+  },
+  "compile_id": "<compile_id>",
+  "diagnostics": [],
+  "edges": [
+    {
+      "id": "fanout_items",
+      "kind": "fanout",
+      "source": "start",
+      "target": "process_item"
+    }
+  ],
+  "nodes": [
+    {
+      "executor": "builtin.identity_transform",
+      "id": "process_item",
+      "kind": "transform"
+    },
+    {
+      "executor": "builtin.identity_transform",
+      "id": "start",
+      "kind": "transform"
+    }
+  ],
+  "ok": true,
+  "registry_hash": "sha256:97a6f3094e9d85e04f9e7ef43bf11e8cb44b50f32c3c00a9c657811b365fd3fa",
+  "state_channels": {
+    "item": {
+      "item_type": null,
+      "properties": {},
+      "type": "string"
+    },
+    "items": {
+      "item_type": {
+        "item_type": null,
+        "properties": {},
+        "type": "string"
+      },
+      "properties": {},
+      "type": "array"
+    },
+    "results": {
+      "item_type": {
+        "item_type": null,
+        "properties": {},
+        "type": "string"
+      },
+      "properties": {},
+      "type": "array"
+    }
+  },
+  "timings_ms": "<timings_ms>",
+  "workflow_hash": "sha256:8a99b2dd329c99a7954293c09ad9612c5856dbf69dc0efb3148833156aa6669a",
+  "workflow_id": "fanout_map_reduce"
+}

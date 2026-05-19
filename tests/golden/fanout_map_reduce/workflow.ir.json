@@ -1,0 +1,125 @@
+{
+  "edges": [
+    {
+      "condition": null,
+      "id": "fanout_items",
+      "kind": "fanout",
+      "loop_guard": null,
+      "map": {
+        "item_state_key": "item",
+        "items_state_key": "items",
+        "result_state_key": "results"
+      },
+      "source": "start",
+      "target": "process_item"
+    }
+  ],
+  "entrypoint": "start",
+  "metadata": {},
+  "name": "Fanout Map Reduce",
+  "nodes": [
+    {
+      "executor": {
+        "ref": "builtin.identity_transform",
+        "type": "builtin"
+      },
+      "id": "process_item",
+      "inputs": {
+        "value": {
+          "state_key": "item"
+        }
+      },
+      "kind": "transform",
+      "outputs": {
+        "value": {
+          "state_key": "results"
+        }
+      },
+      "params": {},
+      "retry": null,
+      "security": null,
+      "timeout_s": null
+    },
+    {
+      "executor": {
+        "ref": "builtin.identity_transform",
+        "type": "builtin"
+      },
+      "id": "start",
+      "inputs": {
+        "value": {
+          "state_key": "items"
+        }
+      },
+      "kind": "transform",
+      "outputs": {
+        "value": {
+          "state_key": "items"
+        }
+      },
+      "params": {},
+      "retry": null,
+      "security": null,
+      "timeout_s": null
+    }
+  ],
+  "policies": {
+    "allow_side_effects": false,
+    "default_timeout_s": 60
+  },
+  "schema_version": "0.1",
+  "state_schema": {
+    "channels": {
+      "item": {
+        "item_type": null,
+        "properties": {},
+        "type": "string"
+      },
+      "items": {
+        "item_type": {
+          "item_type": null,
+          "properties": {},
+          "type": "string"
+        },
+        "properties": {},
+        "type": "array"
+      },
+      "results": {
+        "item_type": {
+          "item_type": null,
+          "properties": {},
+          "type": "string"
+        },
+        "properties": {},
+        "type": "array"
+      }
+    },
+    "input": {
+      "items": {
+        "item_type": {
+          "item_type": null,
+          "properties": {},
+          "type": "string"
+        },
+        "properties": {},
+        "type": "array"
+      }
+    },
+    "output": {
+      "results": {
+        "item_type": {
+          "item_type": null,
+          "properties": {},
+          "type": "string"
+        },
+        "properties": {},
+        "type": "array"
+      }
+    },
+    "private": {},
+    "reducers": {
+      "results": "append"
+    }
+  },
+  "workflow_id": "fanout_map_reduce"
+}

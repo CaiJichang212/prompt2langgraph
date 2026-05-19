@@ -1,0 +1,62 @@
+{
+  "artifact_policy": {
+    "large_objects": "artifact_ref"
+  },
+  "edges": [
+    {
+      "kind": "linear",
+      "source": "compose",
+      "target": "finalize"
+    },
+    {
+      "kind": "loop",
+      "source": "compose",
+      "target": "compose"
+    }
+  ],
+  "entrypoint": "compose",
+  "executor_bindings": {
+    "compose": {
+      "capabilities": [],
+      "executor": "builtin.echo_llm",
+      "type": "builtin"
+    },
+    "finalize": {
+      "capabilities": [],
+      "executor": "builtin.identity_transform",
+      "type": "builtin"
+    }
+  },
+  "interrupt_nodes": [],
+  "nodes": [
+    {
+      "executor": "builtin.echo_llm",
+      "id": "compose",
+      "kind": "llm"
+    },
+    {
+      "executor": "builtin.identity_transform",
+      "id": "finalize",
+      "kind": "transform"
+    }
+  ],
+  "policy_summary": {
+    "node_policies": {
+      "compose": {
+        "requires_approval": false,
+        "timeout_s": 60
+      },
+      "finalize": {
+        "requires_approval": false,
+        "timeout_s": 60
+      }
+    }
+  },
+  "side_effect_nodes": [],
+  "state_keys": [
+    "answer",
+    "question"
+  ],
+  "target": "langgraph-py",
+  "workflow_id": "loop_with_guard"
+}

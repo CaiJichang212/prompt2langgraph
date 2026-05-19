@@ -1,0 +1,80 @@
+{
+  "artifact_policy": {
+    "large_objects": "artifact_ref"
+  },
+  "edges": [
+    {
+      "kind": "linear",
+      "source": "approval",
+      "target": "compose"
+    },
+    {
+      "kind": "conditional",
+      "source": "route",
+      "target": "compose"
+    }
+  ],
+  "entrypoint": "route",
+  "executor_bindings": {
+    "approval": {
+      "capabilities": [],
+      "executor": "builtin.human_gate",
+      "type": "builtin"
+    },
+    "compose": {
+      "capabilities": [],
+      "executor": "builtin.echo_llm",
+      "type": "builtin"
+    },
+    "route": {
+      "capabilities": [],
+      "executor": "builtin.route",
+      "type": "builtin"
+    }
+  },
+  "interrupt_nodes": [
+    "approval"
+  ],
+  "nodes": [
+    {
+      "executor": "builtin.human_gate",
+      "id": "approval",
+      "kind": "human_gate"
+    },
+    {
+      "executor": "builtin.echo_llm",
+      "id": "compose",
+      "kind": "llm"
+    },
+    {
+      "executor": "builtin.route",
+      "id": "route",
+      "kind": "router"
+    }
+  ],
+  "policy_summary": {
+    "node_policies": {
+      "approval": {
+        "requires_approval": false,
+        "timeout_s": 60
+      },
+      "compose": {
+        "requires_approval": false,
+        "timeout_s": 60
+      },
+      "route": {
+        "requires_approval": false,
+        "timeout_s": 60
+      }
+    }
+  },
+  "side_effect_nodes": [],
+  "state_keys": [
+    "answer",
+    "approval",
+    "confidence",
+    "question"
+  ],
+  "target": "langgraph-py",
+  "workflow_id": "conditional_human_gate"
+}

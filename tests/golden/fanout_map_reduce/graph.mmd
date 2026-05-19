@@ -1,0 +1,8 @@
+flowchart LR
+    START(["START"])
+    END(["END"])
+    process_item["process_item"]
+    start["start"]
+    START --> start
+    start -- fanout --> process_item
+    process_item --> END

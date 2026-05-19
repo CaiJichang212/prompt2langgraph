@@ -1,0 +1,87 @@
+{
+  "artifacts": {
+    "lock": "workflow.lock.json",
+    "manifest": "manifest.json",
+    "mermaid": "graph.mmd",
+    "workflow_ir": "workflow.ir.json"
+  },
+  "binding_summary": {
+    "executor_bindings": {
+      "approval": {
+        "capabilities": [],
+        "executor": "builtin.human_gate",
+        "type": "builtin"
+      },
+      "compose": {
+        "capabilities": [],
+        "executor": "builtin.echo_llm",
+        "type": "builtin"
+      },
+      "route": {
+        "capabilities": [],
+        "executor": "builtin.route",
+        "type": "builtin"
+      }
+    }
+  },
+  "compile_id": "<compile_id>",
+  "diagnostics": [],
+  "edges": [
+    {
+      "id": "after_approval",
+      "kind": "linear",
+      "source": "approval",
+      "target": "compose"
+    },
+    {
+      "id": "route_by_confidence",
+      "kind": "conditional",
+      "source": "route",
+      "target": "compose"
+    }
+  ],
+  "nodes": [
+    {
+      "executor": "builtin.human_gate",
+      "id": "approval",
+      "kind": "human_gate"
+    },
+    {
+      "executor": "builtin.echo_llm",
+      "id": "compose",
+      "kind": "llm"
+    },
+    {
+      "executor": "builtin.route",
+      "id": "route",
+      "kind": "router"
+    }
+  ],
+  "ok": true,
+  "registry_hash": "sha256:97a6f3094e9d85e04f9e7ef43bf11e8cb44b50f32c3c00a9c657811b365fd3fa",
+  "state_channels": {
+    "answer": {
+      "item_type": null,
+      "properties": {},
+      "type": "string"
+    },
+    "approval": {
+      "item_type": null,
+      "properties": {},
+      "type": "string"
+    },
+    "confidence": {
+      "item_type": null,
+      "properties": {},
+      "type": "number"
+    },
+    "question": {
+      "item_type": null,
+      "properties": {},
+      "type": "string"
+    }
+  },
+  "timings_ms": "<timings_ms>",
+  "workflow_hash": "sha256:c70817752f4626a2325f4ad89ad797bb21ad517b35b290203415cbfbee9acd1b",
+  "workflow_id": "conditional_human_gate"
+}

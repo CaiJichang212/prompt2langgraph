@@ -1,0 +1,9 @@
+flowchart LR
+    START(["START"])
+    END(["END"])
+    compose["compose"]
+    finalize["finalize"]
+    START --> compose
+    compose --> finalize
+    compose -- loop --> compose
+    finalize --> END

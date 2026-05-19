@@ -1,0 +1,11 @@
+flowchart LR
+    START(["START"])
+    END(["END"])
+    approval["approval"]
+    compose["compose"]
+    route["route"]
+    START --> route
+    approval --> compose
+    route -- true --> approval
+    route -- false --> compose
+    compose --> END

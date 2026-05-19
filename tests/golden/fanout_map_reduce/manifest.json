@@ -1,0 +1,58 @@
+{
+  "artifact_policy": {
+    "large_objects": "artifact_ref"
+  },
+  "edges": [
+    {
+      "kind": "fanout",
+      "source": "start",
+      "target": "process_item"
+    }
+  ],
+  "entrypoint": "start",
+  "executor_bindings": {
+    "process_item": {
+      "capabilities": [],
+      "executor": "builtin.identity_transform",
+      "type": "builtin"
+    },
+    "start": {
+      "capabilities": [],
+      "executor": "builtin.identity_transform",
+      "type": "builtin"
+    }
+  },
+  "interrupt_nodes": [],
+  "nodes": [
+    {
+      "executor": "builtin.identity_transform",
+      "id": "process_item",
+      "kind": "transform"
+    },
+    {
+      "executor": "builtin.identity_transform",
+      "id": "start",
+      "kind": "transform"
+    }
+  ],
+  "policy_summary": {
+    "node_policies": {
+      "process_item": {
+        "requires_approval": false,
+        "timeout_s": 60
+      },
+      "start": {
+        "requires_approval": false,
+        "timeout_s": 60
+      }
+    }
+  },
+  "side_effect_nodes": [],
+  "state_keys": [
+    "item",
+    "items",
+    "results"
+  ],
+  "target": "langgraph-py",
+  "workflow_id": "fanout_map_reduce"
+}

@@ -1,0 +1,68 @@
+{
+  "edges": [],
+  "entrypoint": "compose",
+  "metadata": {},
+  "name": "Linear LLM",
+  "nodes": [
+    {
+      "executor": {
+        "ref": "builtin.echo_llm",
+        "type": "builtin"
+      },
+      "id": "compose",
+      "inputs": {
+        "question": {
+          "state_key": "question"
+        }
+      },
+      "kind": "llm",
+      "outputs": {
+        "answer": {
+          "state_key": "answer"
+        }
+      },
+      "params": {
+        "template": "Answer: {question}"
+      },
+      "retry": null,
+      "security": null,
+      "timeout_s": null
+    }
+  ],
+  "policies": {
+    "allow_side_effects": false,
+    "default_timeout_s": 60
+  },
+  "schema_version": "0.1",
+  "state_schema": {
+    "channels": {
+      "answer": {
+        "item_type": null,
+        "properties": {},
+        "type": "string"
+      },
+      "question": {
+        "item_type": null,
+        "properties": {},
+        "type": "string"
+      }
+    },
+    "input": {
+      "question": {
+        "item_type": null,
+        "properties": {},
+        "type": "string"
+      }
+    },
+    "output": {
+      "answer": {
+        "item_type": null,
+        "properties": {},
+        "type": "string"
+      }
+    },
+    "private": {},
+    "reducers": {}
+  },
+  "workflow_id": "linear_llm"
+}
