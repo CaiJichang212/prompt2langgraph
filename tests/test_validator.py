@@ -83,21 +83,15 @@ def test_validator_accepts_valid_linear_ir() -> None:
     assert report.diagnostics == []
 
 
+def test_validator_accepts_multi_node_retriever_llm_fixture() -> None:
+    report = validate_workflow(load_workflow("linear_retriever_llm.json"))
+
+    assert report.ok is True
+    assert report.diagnostics == []
+
+
 def test_compile_rejects_join_edge_as_unsupported_target_capability(tmp_path: Path) -> None:
-    workflow = WorkflowSpec.model_validate(load_workflow("linear_llm.json"))
-    data = workflow.model_dump(mode="json")
-    data["nodes"].append(
-        {
-            "id": "finish",
-            "kind": "transform",
-            "executor": {"ref": "builtin.identity_transform", "type": "builtin"},
-            "inputs": {"value": {"state_key": "answer"}},
-            "outputs": {"value": {"state_key": "answer"}},
-            "params": {},
-        }
-    )
-    data["edges"] = [{"id": "unsupported_join", "source": "compose", "target": "finish", "kind": "join"}]
-    workflow = WorkflowSpec.model_validate(data)
+    workflow = WorkflowSpec.model_validate(load_workflow("invalid_join_edge.json"))
 
     from prompt2langgraph.runtime.artifacts import compile_workflow_to_artifacts
 
@@ -299,6 +293,44 @@ def test_validator_rejects_unapproved_side_effect() -> None:
 
     assert report.ok is False
     assert any(item.code == "E_SIDE_008" and item.location.node_id == "send_email" for item in report.diagnostics)
+
+
+def test_validator_accepts_allowed_side_effect_fixture() -> None:
+    report = validate_workflow(load_workflow("side_effect_allowed.json"))
+
+    assert report.ok is True
+    assert report.diagnostics == []
+
+
+def test_validator_accepts_tool_node_fixture() -> None:
+    report = validate_workflow(load_workflow("tool_identity.json"))
+
+    assert report.ok is True
+    assert report.diagnostics == []
+
+
+def test_validator_accepts_messages_channel_with_add_messages_reducer() -> None:
+    workflow = load_workflow("linear_llm.json")
+    workflow["workflow_id"] = "messages_reducer"
+    workflow["name"] = "Messages Reducer"
+    workflow["state_schema"]["input"] = {"messages": {"type": "messages"}}
+    workflow["state_schema"]["output"] = {"messages": {"type": "messages"}}
+    workflow["state_schema"]["channels"] = {"messages": {"type": "messages"}}
+    workflow["state_schema"]["reducers"] = {"messages": "add_messages"}
+    workflow["nodes"][0] = {
+        "id": "echo_messages",
+        "kind": "transform",
+        "executor": {"ref": "builtin.identity_transform", "type": "builtin"},
+        "inputs": {"value": {"state_key": "messages"}},
+        "outputs": {"value": {"state_key": "messages"}},
+        "params": {},
+    }
+    workflow["entrypoint"] = "echo_messages"
+
+    report = validate_workflow(workflow)
+
+    assert report.ok is True
+    assert report.diagnostics == []
 
 
 def test_builtin_node_definitions_expose_v01_contract_fields() -> None:

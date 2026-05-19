@@ -30,6 +30,40 @@ def test_run_workflow_invokes_linear_llm_and_returns_declared_output() -> None:
     assert result.events[1].node_id == "compose"
 
 
+def test_run_workflow_invokes_multi_node_retriever_llm_chain() -> None:
+    result = run_workflow(load_workflow("linear_retriever_llm.json"), {"question": "hello"})
+
+    assert result.status == "succeeded"
+    assert result.output == {
+        "docs_ref": "mock://retriever/hello",
+        "answer": "Answer from mock://retriever/hello",
+    }
+    assert [event.node_id for event in result.events if event.type == "node.started"] == [
+        "retrieve",
+        "prepare_context",
+        "compose",
+    ]
+    assert result.diagnostics == []
+
+
+def test_run_workflow_invokes_tool_node_workflow() -> None:
+    result = run_workflow(load_workflow("tool_identity.json"), {"question": "hello"})
+
+    assert result.status == "succeeded"
+    assert result.output == {"tool_result": "hello"}
+    assert [event.node_id for event in result.events if event.type == "node.started"] == ["call_tool"]
+    assert result.diagnostics == []
+
+
+def test_run_workflow_invokes_allowed_side_effect_node() -> None:
+    result = run_workflow(load_workflow("side_effect_allowed.json"), {"question": "hello"})
+
+    assert result.status == "succeeded"
+    assert result.output == {"effect_result": "hello"}
+    assert [event.node_id for event in result.events if event.type == "node.started"] == ["record_effect"]
+    assert result.diagnostics == []
+
+
 def test_run_workflow_returns_metrics() -> None:
     result = run_workflow(load_workflow("linear_llm.json"), {"question": "hello"})
 
@@ -109,21 +143,7 @@ def test_run_workflow_reports_actual_node_events_for_failed_node() -> None:
 
 
 def test_run_workflow_rejects_unsupported_edge_kind_as_target_diagnostic() -> None:
-    data = json.loads((FIXTURES / "linear_llm.json").read_text(encoding="utf-8"))
-    data["nodes"].append(
-        {
-            "id": "finish",
-            "kind": "transform",
-            "executor": {"ref": "builtin.identity_transform", "type": "builtin"},
-            "inputs": {"value": {"state_key": "answer"}},
-            "outputs": {"value": {"state_key": "answer"}},
-            "params": {},
-        }
-    )
-    data["edges"] = [{"id": "unsupported_join", "source": "compose", "target": "finish", "kind": "join"}]
-    workflow = WorkflowSpec.model_validate(data)
-
-    result = run_workflow(workflow, {"question": "hello"})
+    result = run_workflow(load_workflow("invalid_join_edge.json"), {"question": "hello"})
 
     assert result.status == "failed"
     assert result.output == {}

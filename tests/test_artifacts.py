@@ -318,6 +318,25 @@ def test_policy_resolver_preserves_explicit_zero_timeout() -> None:
     assert resolved.node_policies["compose"]["timeout_s"] == 0
 
 
+def test_policy_resolver_applies_compile_options_to_multi_node_workflow() -> None:
+    workflow = load_workflow("linear_retriever_llm.json")
+    workflow.nodes[0].timeout_s = 11
+    workflow.policies.default_timeout_s = 22
+
+    from prompt2langgraph.policy.resolver import resolve_policies
+
+    resolved = resolve_policies(workflow, compile_options={"default_timeout_s": 66})
+
+    assert {
+        node_id: policy["timeout_s"]
+        for node_id, policy in resolved.node_policies.items()
+    } == {
+        "retrieve": 66,
+        "prepare_context": 66,
+        "compose": 66,
+    }
+
+
 def test_policy_resolver_requires_approval_for_disallowed_side_effects() -> None:
     workflow = load_workflow("linear_llm.json")
     workflow.nodes[0].kind = "side_effect"

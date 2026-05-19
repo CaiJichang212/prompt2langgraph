@@ -52,6 +52,25 @@ def test_loads_linear_llm_fixture_into_workflow_spec() -> None:
     assert workflow.nodes[0].executor.ref == "builtin.echo_llm"
 
 
+def test_loads_linear_retriever_llm_fixture_into_workflow_spec() -> None:
+    workflow = WorkflowSpec.model_validate_json(
+        (FIXTURES / "linear_retriever_llm.json").read_text(encoding="utf-8")
+    )
+
+    assert workflow.workflow_id == "linear_retriever_llm"
+    assert workflow.state_schema.channels["docs_ref"].type is TypeName.ARTIFACT_REF
+    assert [node.kind for node in workflow.nodes] == ["retriever", "transform", "llm"]
+    assert [edge.kind.value for edge in workflow.edges] == ["linear", "linear"]
+
+
+def test_type_spec_supports_messages_and_artifact_ref_channels() -> None:
+    messages = TypeSpec(type=TypeName.MESSAGES)
+    artifact = TypeSpec(type=TypeName.ARTIFACT_REF)
+
+    assert messages.type is TypeName.MESSAGES
+    assert artifact.type is TypeName.ARTIFACT_REF
+
+
 def test_workflow_rejects_invalid_identifiers() -> None:
     data = json.loads((FIXTURES / "linear_llm.json").read_text(encoding="utf-8"))
     data["nodes"][0]["id"] = "not-valid"

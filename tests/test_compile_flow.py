@@ -27,3 +27,18 @@ def test_compile_flow_emits_policy_binding_and_timings(tmp_path: Path) -> None:
     assert {"normalize", "validate", "resolve_policies", "bind_workflow", "target_compile", "artifact_write", "total"}.issubset(
         set(report["timings_ms"])
     )
+
+
+def test_compile_flow_accepts_multi_node_retriever_llm_fixture(tmp_path: Path) -> None:
+    result = pt2lg.compile_workflow(load_workflow("linear_retriever_llm.json"), out_dir=tmp_path)
+
+    assert result.ok is True
+    assert result.output_dir == tmp_path / "linear_retriever_llm"
+    assert (result.output_dir / "workflow.lock.json").exists()
+
+    manifest = json.loads((result.output_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert {node["id"] for node in manifest["nodes"]} == {"retrieve", "prepare_context", "compose"}
+    assert {(edge["source"], edge["target"], edge["kind"]) for edge in manifest["edges"]} == {
+        ("retrieve", "prepare_context", "linear"),
+        ("prepare_context", "compose", "linear"),
+    }

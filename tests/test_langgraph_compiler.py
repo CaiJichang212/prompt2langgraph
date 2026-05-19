@@ -26,6 +26,86 @@ def test_compiles_linear_llm_fixture_to_invokable_graph() -> None:
     assert result["answer"] == "Answer: hello"
 
 
+def test_compiles_multi_node_retriever_llm_fixture_to_invokable_graph() -> None:
+    workflow = load_workflow("linear_retriever_llm.json")
+
+    graph = compile_workflow_to_graph(workflow, builtin_executor_registry())
+    result = graph.invoke({"question": "hello"})
+
+    assert result["docs_ref"] == "mock://retriever/hello"
+    assert result["context"] == "mock://retriever/hello"
+    assert result["answer"] == "Answer from mock://retriever/hello"
+
+
+def test_add_messages_reducer_combines_message_updates_across_linear_nodes() -> None:
+    message_type = TypeSpec(type=TypeName.MESSAGES)
+    workflow = WorkflowSpec.model_validate(
+        {
+            "schema_version": "0.1",
+            "workflow_id": "messages_add_messages",
+            "name": "Messages Add Messages",
+            "entrypoint": "first",
+            "state_schema": {
+                "input": {"messages": {"type": "messages"}},
+                "output": {"messages": {"type": "messages"}},
+                "channels": {"messages": {"type": "messages"}},
+                "private": {},
+                "reducers": {"messages": "add_messages"},
+            },
+            "nodes": [
+                {
+                    "id": "first",
+                    "kind": "transform",
+                    "executor": {"ref": "test.first_message", "type": "builtin"},
+                    "inputs": {},
+                    "outputs": {"messages": {"state_key": "messages"}},
+                    "params": {},
+                },
+                {
+                    "id": "second",
+                    "kind": "transform",
+                    "executor": {"ref": "test.second_message", "type": "builtin"},
+                    "inputs": {},
+                    "outputs": {"messages": {"state_key": "messages"}},
+                    "params": {},
+                },
+            ],
+            "edges": [{"id": "first_to_second", "source": "first", "target": "second", "kind": "linear"}],
+            "policies": {},
+            "metadata": {},
+        }
+    )
+    builtins = builtin_executor_registry()
+    registry = ExecutorRegistry(
+        [
+            *[builtins.get(ref) for ref in builtins.refs()],
+            ExecutorDefinition(
+                ref="test.first_message",
+                type=ExecutorType.BUILTIN,
+                input_schema={},
+                output_schema={"messages": message_type},
+                handler=lambda inputs, params: {"messages": [{"role": "user", "content": "hello"}]},
+            ),
+            ExecutorDefinition(
+                ref="test.second_message",
+                type=ExecutorType.BUILTIN,
+                input_schema={},
+                output_schema={"messages": message_type},
+                handler=lambda inputs, params: {"messages": [{"role": "assistant", "content": "hi"}]},
+            ),
+        ]
+    )
+
+    graph = compile_workflow_to_graph(workflow, registry)
+    result = graph.invoke({"messages": [{"role": "system", "content": "seed"}]})
+
+    assert result["messages"] == [
+        {"role": "system", "content": "seed"},
+        {"role": "user", "content": "hello"},
+        {"role": "assistant", "content": "hi"},
+    ]
+
+
 def test_compiles_conditional_edge_to_route_by_expression() -> None:
     workflow = load_workflow("conditional_human_gate.json")
 
