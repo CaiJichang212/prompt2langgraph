@@ -1,0 +1,61 @@
+{
+  "schema_version": "0.1",
+  "workflow_id": "conditional_human_gate",
+  "name": "Conditional Human Gate",
+  "entrypoint": "route",
+  "state_schema": {
+    "input": {"question": {"type": "string"}, "confidence": {"type": "number"}},
+    "output": {"answer": {"type": "string"}},
+    "channels": {
+      "question": {"type": "string"},
+      "confidence": {"type": "number"},
+      "approval": {"type": "string"},
+      "answer": {"type": "string"}
+    },
+    "private": {},
+    "reducers": {}
+  },
+  "nodes": [
+    {
+      "id": "route",
+      "kind": "router",
+      "executor": {"ref": "builtin.route", "type": "builtin"},
+      "inputs": {},
+      "outputs": {},
+      "params": {}
+    },
+    {
+      "id": "approval",
+      "kind": "human_gate",
+      "executor": {"ref": "builtin.human_gate", "type": "builtin"},
+      "inputs": {},
+      "outputs": {"approval": {"state_key": "approval"}},
+      "params": {"message": "Approve low-confidence answer?"}
+    },
+    {
+      "id": "compose",
+      "kind": "llm",
+      "executor": {"ref": "builtin.echo_llm", "type": "builtin"},
+      "inputs": {"question": {"state_key": "question"}},
+      "outputs": {"answer": {"state_key": "answer"}},
+      "params": {"template": "Answer: {question}"}
+    }
+  ],
+  "edges": [
+    {
+      "id": "route_by_confidence",
+      "source": "route",
+      "target": "compose",
+      "kind": "conditional",
+      "condition": {
+        "expr": "confidence < 0.75",
+        "routes": {"true": "approval", "false": "compose"}
+      }
+    },
+    {"id": "after_approval", "source": "approval", "target": "compose", "kind": "linear"}
+  ],
+  "policies": {},
+  "metadata": {
+    "description": "Demonstrates interrupt/resume with a human_gate node."
+  }
+}
