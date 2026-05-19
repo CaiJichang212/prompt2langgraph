@@ -28,6 +28,7 @@ from prompt2langgraph.validate.validator import validate_workflow
 _THREAD_CHECKPOINTERS: dict[tuple[str, str], InMemorySaver] = {}
 _PENDING_INTERRUPTS: set[tuple[str, str]] = set()
 _NO_RESUME = object()
+LOCAL_STATE_FORMAT_VERSION = 1
 
 
 def run_workflow(
@@ -53,8 +54,10 @@ def run_workflow(
         return _failed_result(run_id, thread_id, events, report.diagnostics, started_at)
 
     thread_key = _thread_key(workflow, thread_id)
-    if state_store_dir is not None:
-        _load_thread_state(thread_key, state_store_dir)
+    if is_resume and state_store_dir is not None:
+        state_diagnostic = _load_thread_state(thread_key, state_store_dir)
+        if state_diagnostic is not None:
+            return _failed_result(run_id, thread_id, events, [state_diagnostic], started_at)
     if is_resume and thread_key not in _PENDING_INTERRUPTS:
         return _failed_result(
             run_id,
@@ -165,7 +168,8 @@ def _clear_thread(thread_key: tuple[str, str], state_store_dir: Path | None = No
 # related serialization functions) provide a best-effort local resume format for
 # the CLI. This format is coupled to the current LangGraph InMemorySaver internals
 # and must NOT be treated as a stable interchange format. The structure may change
-# without notice across LangGraph or prompt2langgraph versions. It is intended
+# across LangGraph or prompt2langgraph versions; the version check only prevents
+# restoring incompatible local snapshots as pending interrupts. It is intended
 # solely for short-lived local development workflows and should not be used for
 # long-term storage or cross-system communication.
 def _save_thread_state(thread_key: tuple[str, str], state_store_dir: Path) -> None:
@@ -176,6 +180,7 @@ def _save_thread_state(thread_key: tuple[str, str], state_store_dir: Path) -> No
     workflow_hash, thread_id = thread_key
     state_store_dir.mkdir(parents=True, exist_ok=True)
     payload = {
+        "format_version": LOCAL_STATE_FORMAT_VERSION,
         "workflow_hash": workflow_hash,
         "thread_id": thread_id,
         "pending": thread_key in _PENDING_INTERRUPTS,
@@ -189,14 +194,24 @@ def _save_thread_state(thread_key: tuple[str, str], state_store_dir: Path) -> No
     )
 
 
-def _load_thread_state(thread_key: tuple[str, str], state_store_dir: Path) -> None:
+def _load_thread_state(thread_key: tuple[str, str], state_store_dir: Path) -> Diagnostic | None:
     path = _state_file(thread_key, state_store_dir)
     if not path.exists():
-        return
+        return None
 
     payload = json.loads(path.read_text(encoding="utf-8"))
+    if payload.get("format_version") != LOCAL_STATE_FORMAT_VERSION:
+        return Diagnostic(
+            code=E_RUNTIME_010,
+            severity="error",
+            message="local runtime state format version is missing or unsupported",
+            hint=(
+                "Remove the stale .pt2lg-runtime state file and re-run the workflow "
+                "to create a fresh pending interrupt."
+            ),
+        )
     if payload.get("workflow_hash") != thread_key[0] or payload.get("thread_id") != thread_key[1]:
-        return
+        return None
 
     checkpointer = InMemorySaver()
     _restore_storage(checkpointer, payload.get("storage", []))
@@ -205,6 +220,7 @@ def _load_thread_state(thread_key: tuple[str, str], state_store_dir: Path) -> No
     _THREAD_CHECKPOINTERS[thread_key] = checkpointer
     if payload.get("pending") is True:
         _PENDING_INTERRUPTS.add(thread_key)
+    return None
 
 
 def _state_file(thread_key: tuple[str, str], state_store_dir: Path) -> Path:
