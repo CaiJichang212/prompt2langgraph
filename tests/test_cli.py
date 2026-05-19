@@ -66,6 +66,8 @@ def test_validate_command_reports_schema_errors_as_schema_diagnostics(tmp_path: 
     payload = json.loads(result.stdout)
     assert payload["ok"] is False
     assert any(item["code"] == "E_SCHEMA_002" for item in payload["diagnostics"])
+    assert payload["diagnostics"][0]["location"]["source"] == str(workflow_file)
+    assert payload["diagnostics"][0]["location"]["path"] == "workflow_id"
 
 
 def test_validate_command_reports_json_plan_parse_errors_as_diagnostics(tmp_path: Path) -> None:
@@ -94,7 +96,32 @@ def test_validate_command_reports_json_plan_parse_errors_as_diagnostics(tmp_path
         payload = json.loads(result.stdout)
         assert payload["ok"] is False
         assert any(item["code"] == "E_PARSE_001" for item in payload["diagnostics"])
+        assert payload["diagnostics"][0]["location"]["source"] == str(plan_file)
         assert "Traceback" not in result.stdout
+
+
+def test_validate_command_reports_json_plan_parse_error_path(tmp_path: Path) -> None:
+    plan_file = tmp_path / "bad_edge.json"
+    plan_file.write_text(
+        json.dumps(
+            {
+                "name": "Bad Edge",
+                "nodes": [{"id": "first", "kind": "llm", "executor": "builtin.echo_llm"}],
+                "edges": [{"id": "missing_target", "from": "first"}],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = CliRunner().invoke(app, ["validate", str(plan_file), "--json"])
+
+    assert result.exit_code != 0
+    payload = json.loads(result.stdout)
+    assert payload["ok"] is False
+    diagnostic = payload["diagnostics"][0]
+    assert diagnostic["code"] == "E_PARSE_001"
+    assert diagnostic["location"]["source"] == str(plan_file)
+    assert diagnostic["location"]["path"] == "edges[0].to"
 
 
 def test_compile_command_emits_expected_artifacts(tmp_path: Path) -> None:

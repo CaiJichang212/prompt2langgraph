@@ -1,6 +1,7 @@
 import pytest
 
-from prompt2langgraph.adapters.json_plan import json_plan_to_workflow_spec
+from prompt2langgraph.adapters.base import AdapterParseError
+from prompt2langgraph.adapters.json_plan import JSONPlanAdapter, json_plan_to_workflow_spec
 from prompt2langgraph.ir.models import TypeName, WorkflowSpec
 
 
@@ -90,6 +91,98 @@ def test_json_plan_adapter_rejects_empty_nodes_with_clear_error() -> None:
 
     with pytest.raises(ValueError, match="nodes must contain at least one node"):
         json_plan_to_workflow_spec(plan)
+
+
+def test_json_plan_adapter_reports_source_and_json_path_for_parse_errors() -> None:
+    plan = {
+        "name": "Bad Edge",
+        "nodes": [{"id": "first", "kind": "llm", "executor": "builtin.echo_llm"}],
+        "edges": [{"id": "missing_target", "from": "first"}],
+    }
+
+    with pytest.raises(AdapterParseError) as exc_info:
+        JSONPlanAdapter().parse(plan, source="bad_plan.json")
+
+    assert exc_info.value.source == "bad_plan.json"
+    assert exc_info.value.path == "edges[0].to"
+    assert '"to" or "target"' in str(exc_info.value)
+
+
+def test_json_plan_adapter_reports_path_for_invalid_selector_mapping() -> None:
+    for invalid_inputs in (["question"], []):
+        plan = {
+            "name": "Bad Selectors",
+            "nodes": [
+                {
+                    "id": "first",
+                    "kind": "llm",
+                    "executor": "builtin.echo_llm",
+                    "inputs": invalid_inputs,
+                }
+            ],
+            "edges": [],
+        }
+
+        with pytest.raises(AdapterParseError) as exc_info:
+            JSONPlanAdapter().parse(plan, source="bad_selectors.json")
+
+        assert exc_info.value.source == "bad_selectors.json"
+        assert exc_info.value.path == "nodes[0].inputs"
+
+
+def test_json_plan_adapter_reports_path_for_empty_slug_name() -> None:
+    plan = {
+        "name": "!!!",
+        "nodes": [{"id": "first", "kind": "llm", "executor": "builtin.echo_llm"}],
+        "edges": [],
+    }
+
+    with pytest.raises(AdapterParseError) as exc_info:
+        JSONPlanAdapter().parse(plan, source="bad_name.json")
+
+    assert exc_info.value.source == "bad_name.json"
+    assert exc_info.value.path == "name"
+
+
+def test_json_plan_adapter_reports_path_for_invalid_edge_kind() -> None:
+    plan = {
+        "name": "Bad Edge Kind",
+        "nodes": [
+            {"id": "first", "kind": "llm", "executor": "builtin.echo_llm"},
+            {"id": "second", "kind": "llm", "executor": "builtin.echo_llm"},
+        ],
+        "edges": [{"from": "first", "to": "second", "kind": "unsupported"}],
+    }
+
+    with pytest.raises(AdapterParseError) as exc_info:
+        JSONPlanAdapter().parse(plan, source="bad_edge_kind.json")
+
+    assert exc_info.value.source == "bad_edge_kind.json"
+    assert exc_info.value.path == "edges[0].kind"
+
+
+def test_json_plan_adapter_reports_parent_path_for_nested_edge_validation() -> None:
+    plan = {
+        "name": "Bad Condition",
+        "nodes": [
+            {"id": "first", "kind": "router", "executor": "builtin.route"},
+            {"id": "second", "kind": "llm", "executor": "builtin.echo_llm"},
+        ],
+        "edges": [
+            {
+                "from": "first",
+                "to": "second",
+                "kind": "conditional",
+                "condition": {"routes": {"true": "second"}},
+            }
+        ],
+    }
+
+    with pytest.raises(AdapterParseError) as exc_info:
+        JSONPlanAdapter().parse(plan, source="bad_condition.json")
+
+    assert exc_info.value.source == "bad_condition.json"
+    assert exc_info.value.path == "edges[0].condition.expr"
 
 
 def test_json_plan_adapter_rejects_ambiguous_entrypoint_without_unique_root() -> None:
