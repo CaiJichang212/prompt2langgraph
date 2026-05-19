@@ -9,7 +9,9 @@ from typing import Any
 import typer
 from pydantic import ValidationError
 
-from prompt2langgraph.adapters.json_plan import json_plan_to_workflow_spec
+from prompt2langgraph.adapters.base import AdapterParseError
+from prompt2langgraph.adapters.ir import IRAdapter
+from prompt2langgraph.adapters.json_plan import JSONPlanAdapter
 from prompt2langgraph.diagnostics.codes import E_PARSE_001, E_SCHEMA_002, E_TARGET_009
 from prompt2langgraph.diagnostics.report import Diagnostic, DiagnosticLocation, ValidationReport
 from prompt2langgraph.ir.models import WorkflowSpec
@@ -193,9 +195,9 @@ def _load_workflow_or_report(path: Path) -> WorkflowSpec | ValidationReport:
         return raw
     try:
         if isinstance(raw, dict) and "schema_version" in raw:
-            return WorkflowSpec.model_validate(raw)
+            return IRAdapter().parse(raw, source=str(path))
         if isinstance(raw, dict):
-            return json_plan_to_workflow_spec(raw)
+            return JSONPlanAdapter().parse(raw, source=str(path))
     except ValidationError as exc:
         return ValidationReport(
             diagnostics=[
@@ -203,10 +205,25 @@ def _load_workflow_or_report(path: Path) -> WorkflowSpec | ValidationReport:
                     code=E_SCHEMA_002,
                     severity="error",
                     message="workflow schema validation failed",
-                    location=DiagnosticLocation(path=".".join(str(part) for part in error["loc"])),
+                    location=DiagnosticLocation(
+                        source=str(path),
+                        path=".".join(str(part) for part in error["loc"]),
+                    ),
                     hint=error["msg"],
                 )
                 for error in exc.errors()
+            ]
+        )
+    except AdapterParseError as exc:
+        return ValidationReport(
+            diagnostics=[
+                Diagnostic(
+                    code=E_PARSE_001,
+                    severity="error",
+                    message=f'failed to parse workflow file "{path}"',
+                    location=DiagnosticLocation(source=exc.source or str(path), path=exc.path),
+                    hint=str(exc),
+                )
             ]
         )
     except (KeyError, TypeError, ValueError) as exc:
