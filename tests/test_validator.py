@@ -90,6 +90,13 @@ def test_validator_accepts_multi_node_retriever_llm_fixture() -> None:
     assert report.diagnostics == []
 
 
+def test_validator_accepts_join_edge_as_ir() -> None:
+    report = validate_workflow(load_workflow("invalid_join_edge.json"))
+
+    assert report.ok is True
+    assert report.diagnostics == []
+
+
 def test_compile_rejects_join_edge_as_unsupported_target_capability(tmp_path: Path) -> None:
     workflow = WorkflowSpec.model_validate(load_workflow("invalid_join_edge.json"))
 

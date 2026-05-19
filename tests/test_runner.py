@@ -1,8 +1,11 @@
 import json
 from pathlib import Path
 
+import pytest
+
 from prompt2langgraph.ir.models import ExecutorType, TypeName, TypeSpec, WorkflowSpec
 from prompt2langgraph.registry.executors import ExecutorDefinition, ExecutorRegistry
+from prompt2langgraph.runtime import runner
 from prompt2langgraph.runtime.runner import run_workflow
 
 
@@ -278,6 +281,8 @@ def test_run_workflow_persists_state_to_store_dir_and_removes_on_resume(tmp_path
     assert state_store_dir.exists()
     state_files = list(state_store_dir.glob("*.json"))
     assert len(state_files) == 1, "Expected exactly one state file after interrupt"
+    state_payload = json.loads(state_files[0].read_text(encoding="utf-8"))
+    assert state_payload["format_version"] == runner.LOCAL_STATE_FORMAT_VERSION
 
     # Resume should succeed and clean up state file
     resumed = run_workflow(
@@ -294,3 +299,76 @@ def test_run_workflow_persists_state_to_store_dir_and_removes_on_resume(tmp_path
     # State file should be removed after successful resume
     remaining_state_files = list(state_store_dir.glob("*.json"))
     assert remaining_state_files == [], "State file should be removed after successful resume"
+
+
+@pytest.mark.parametrize("format_version", [None, runner.LOCAL_STATE_FORMAT_VERSION + 1])
+def test_run_workflow_rejects_incompatible_state_store_file_format_version(
+    tmp_path: Path,
+    format_version: int | None,
+) -> None:
+    workflow = load_workflow("conditional_human_gate.json")
+    state_store_dir = tmp_path / ".pt2lg-runtime"
+
+    waiting = run_workflow(
+        workflow,
+        {"question": "hello", "confidence": 0.5},
+        state_store_dir=state_store_dir,
+    )
+    assert waiting.status == "waiting"
+
+    state_file = next(state_store_dir.glob("*.json"))
+    state_payload = json.loads(state_file.read_text(encoding="utf-8"))
+    if format_version is None:
+        state_payload.pop("format_version")
+    else:
+        state_payload["format_version"] = format_version
+    state_file.write_text(json.dumps(state_payload), encoding="utf-8")
+
+    # Simulate a new process where only the local state file is available.
+    runner._clear_thread(runner._thread_key(workflow, waiting.thread_id))
+
+    result = run_workflow(
+        workflow,
+        {},
+        thread_id=waiting.thread_id,
+        resume_payload="approved",
+        state_store_dir=state_store_dir,
+    )
+
+    assert result.status == "failed"
+    assert result.output == {}
+    assert any(
+        diagnostic.code == "E_RUNTIME_010" and "state format version" in diagnostic.message
+        for diagnostic in result.diagnostics
+    )
+
+
+def test_run_workflow_ignores_incompatible_state_store_file_for_new_run(tmp_path: Path) -> None:
+    workflow = load_workflow("conditional_human_gate.json")
+    state_store_dir = tmp_path / ".pt2lg-runtime"
+
+    waiting = run_workflow(
+        workflow,
+        {"question": "hello", "confidence": 0.5},
+        state_store_dir=state_store_dir,
+    )
+    assert waiting.status == "waiting"
+
+    state_file = next(state_store_dir.glob("*.json"))
+    state_payload = json.loads(state_file.read_text(encoding="utf-8"))
+    state_payload.pop("format_version")
+    state_file.write_text(json.dumps(state_payload), encoding="utf-8")
+
+    # Simulate a new process where only the stale local resume file remains.
+    runner._clear_thread(runner._thread_key(workflow, waiting.thread_id))
+
+    result = run_workflow(
+        workflow,
+        {"question": "hello", "confidence": 0.9},
+        thread_id=waiting.thread_id,
+        state_store_dir=state_store_dir,
+    )
+
+    assert result.status == "succeeded"
+    assert result.output == {"answer": "Answer: hello"}
+    assert result.diagnostics == []
