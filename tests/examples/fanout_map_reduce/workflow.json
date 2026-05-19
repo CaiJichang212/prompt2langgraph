@@ -1,0 +1,52 @@
+{
+  "schema_version": "0.1",
+  "workflow_id": "fanout_map_reduce",
+  "name": "Fanout Map Reduce",
+  "entrypoint": "start",
+  "state_schema": {
+    "input": {"items": {"type": "array", "item_type": {"type": "string"}}},
+    "output": {"results": {"type": "array", "item_type": {"type": "string"}}},
+    "channels": {
+      "items": {"type": "array", "item_type": {"type": "string"}},
+      "item": {"type": "string"},
+      "results": {"type": "array", "item_type": {"type": "string"}}
+    },
+    "private": {},
+    "reducers": {"results": "append"}
+  },
+  "nodes": [
+    {
+      "id": "start",
+      "kind": "transform",
+      "executor": {"ref": "builtin.identity_transform", "type": "builtin"},
+      "inputs": {"value": {"state_key": "items"}},
+      "outputs": {"value": {"state_key": "items"}},
+      "params": {}
+    },
+    {
+      "id": "process_item",
+      "kind": "transform",
+      "executor": {"ref": "builtin.identity_transform", "type": "builtin"},
+      "inputs": {"value": {"state_key": "item"}},
+      "outputs": {"value": {"state_key": "results"}},
+      "params": {}
+    }
+  ],
+  "edges": [
+    {
+      "id": "fanout_items",
+      "source": "start",
+      "target": "process_item",
+      "kind": "fanout",
+      "map": {
+        "items_state_key": "items",
+        "item_state_key": "item",
+        "result_state_key": "results"
+      }
+    }
+  ],
+  "policies": {},
+  "metadata": {
+    "description": "Demonstrates fanout Send and append reducer."
+  }
+}
