@@ -1,0 +1,39 @@
+{
+  "schema_version": "0.1",
+  "workflow_id": "invalid_join_edge",
+  "name": "Invalid Join Edge",
+  "entrypoint": "compose",
+  "state_schema": {
+    "input": {"question": {"type": "string"}},
+    "output": {"answer": {"type": "string"}},
+    "channels": {
+      "question": {"type": "string"},
+      "answer": {"type": "string"}
+    },
+    "private": {},
+    "reducers": {}
+  },
+  "nodes": [
+    {
+      "id": "compose",
+      "kind": "llm",
+      "executor": {"ref": "builtin.echo_llm", "type": "builtin"},
+      "inputs": {"question": {"state_key": "question"}},
+      "outputs": {"answer": {"state_key": "answer"}},
+      "params": {"template": "Answer: {question}"}
+    },
+    {
+      "id": "finish",
+      "kind": "transform",
+      "executor": {"ref": "builtin.identity_transform", "type": "builtin"},
+      "inputs": {"value": {"state_key": "answer"}},
+      "outputs": {"value": {"state_key": "answer"}},
+      "params": {}
+    }
+  ],
+  "edges": [
+    {"id": "unsupported_join", "source": "compose", "target": "finish", "kind": "join"}
+  ],
+  "policies": {},
+  "metadata": {}
+}

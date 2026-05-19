@@ -1,0 +1,29 @@
+{
+  "schema_version": "0.1",
+  "workflow_id": "tool_identity",
+  "name": "Tool Identity",
+  "entrypoint": "call_tool",
+  "state_schema": {
+    "input": {"question": {"type": "string"}},
+    "output": {"tool_result": {"type": "string"}},
+    "channels": {
+      "question": {"type": "string"},
+      "tool_result": {"type": "string"}
+    },
+    "private": {},
+    "reducers": {}
+  },
+  "nodes": [
+    {
+      "id": "call_tool",
+      "kind": "tool",
+      "executor": {"ref": "builtin.identity_transform", "type": "builtin"},
+      "inputs": {"value": {"state_key": "question"}},
+      "outputs": {"value": {"state_key": "tool_result"}},
+      "params": {}
+    }
+  ],
+  "edges": [],
+  "policies": {},
+  "metadata": {}
+}
