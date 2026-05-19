@@ -1,0 +1,30 @@
+{
+  "schema_version": "0.1",
+  "workflow_id": "invalid_type_mismatch",
+  "name": "Invalid Type Mismatch",
+  "entrypoint": "compose",
+  "state_schema": {
+    "input": {"question": {"type": "string"}},
+    "output": {"answer": {"type": "string"}},
+    "channels": {
+      "question": {"type": "string"},
+      "docs_ref": {"type": "artifact_ref"},
+      "answer": {"type": "string"}
+    },
+    "private": {},
+    "reducers": {}
+  },
+  "nodes": [
+    {
+      "id": "compose",
+      "kind": "join",
+      "executor": {"ref": "builtin.join", "type": "builtin"},
+      "inputs": {"docs_ref": {"state_key": "question"}},
+      "outputs": {},
+      "params": {}
+    }
+  ],
+  "edges": [],
+  "policies": {},
+  "metadata": {}
+}
