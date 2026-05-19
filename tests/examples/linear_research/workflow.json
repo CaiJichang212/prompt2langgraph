@@ -1,13 +1,18 @@
 {
   "schema_version": "0.1",
-  "workflow_id": "linear_llm",
-  "name": "Linear LLM",
-  "entrypoint": "compose",
+  "workflow_id": "linear_research",
+  "name": "Linear Research",
+  "entrypoint": "retrieve",
   "state_schema": {
     "input": {"question": {"type": "string"}},
-    "output": {"answer": {"type": "string"}},
+    "output": {
+      "docs_ref": {"type": "artifact_ref"},
+      "answer": {"type": "string"}
+    },
     "channels": {
       "question": {"type": "string"},
+      "docs_ref": {"type": "artifact_ref"},
+      "context": {"type": "string"},
       "answer": {"type": "string"}
     },
     "private": {},
@@ -15,15 +20,36 @@
   },
   "nodes": [
     {
+      "id": "retrieve",
+      "kind": "retriever",
+      "executor": {"ref": "builtin.mock_retriever", "type": "builtin"},
+      "inputs": {"question": {"state_key": "question"}},
+      "outputs": {"docs_ref": {"state_key": "docs_ref"}},
+      "params": {}
+    },
+    {
+      "id": "prepare_context",
+      "kind": "transform",
+      "executor": {"ref": "builtin.identity_transform", "type": "builtin"},
+      "inputs": {"value": {"state_key": "docs_ref"}},
+      "outputs": {"value": {"state_key": "context"}},
+      "params": {}
+    },
+    {
       "id": "compose",
       "kind": "llm",
       "executor": {"ref": "builtin.echo_llm", "type": "builtin"},
-      "inputs": {"question": {"state_key": "question"}},
+      "inputs": {"question": {"state_key": "context"}},
       "outputs": {"answer": {"state_key": "answer"}},
-      "params": {"template": "Answer: {question}"}
+      "params": {"template": "Research answer from {question}"}
     }
   ],
-  "edges": [],
+  "edges": [
+    {"id": "retrieved_to_context", "source": "retrieve", "target": "prepare_context", "kind": "linear"},
+    {"id": "context_to_answer", "source": "prepare_context", "target": "compose", "kind": "linear"}
+  ],
   "policies": {},
-  "metadata": {}
+  "metadata": {
+    "description": "Deterministic research-style pipeline using artifact_ref state."
+  }
 }
