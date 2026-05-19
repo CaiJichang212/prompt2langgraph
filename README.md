@@ -180,6 +180,8 @@ print(compile_result.output_dir)
 
 更底层的源码入口：
 
+- `prompt2langgraph.adapters.IRAdapter`
+- `prompt2langgraph.adapters.JSONPlanAdapter`
 - `prompt2langgraph.adapters.json_plan.json_plan_to_workflow_spec`
 - `prompt2langgraph.adapters.skill_dir.analyze_skill_dir`
 - `prompt2langgraph.compiler.langgraph_py.compile_workflow_to_graph`
@@ -312,13 +314,15 @@ print(compile_result.output_dir)
 - `manifest.json`：bundle 清单
 - `compile_report.json`：编译诊断与阶段耗时
 - `graph.mmd`：Mermaid 流程图
-- `generated/*.py`：生成的 Python 代码骨架
+- `generated/*.py`：生成的 Python 入口和元数据薄封装
 
 其中 `workflow.lock.json` 可作为后续 `run`、`graph`、`resume` 的输入入口。
 
 lockfile 会记录 workflow hash、registry hash、target、编译选项 hash、policy hash 和生成文件列表。读取 bundle 时会校验 lockfile 与 `workflow.ir.json` 的 workflow hash 是否一致。
 
 `manifest.json` 会包含 deterministic policy summary 和 executor binding summary；`compile_report.json` 会包含 `compile_id`、阶段 `timings_ms`、诊断和 binding summary。Binding summary 只记录 executor ref、type 和 capability 名称，不写入真实 secret，也不写入 secret 名称。
+
+v0.1 bundle 契约是“可复现且依赖当前 `prompt2langgraph` 库运行”，不是完全自包含的静态 LangGraph 代码包。`generated/graph.py` 会读取同一 bundle 下的 `workflow.ir.json`，再调用库内 `compile_workflow_to_graph()` 构建图；`workflow.ir.json`、lock、manifest、report 和 Mermaid 才是当前可审计契约的核心产物。
 
 如果编译失败，`pt2lg compile` 不会生成可运行 bundle；同一输出目录下的旧 bundle 产物会被清理，目录中的无关文件会保留。
 
