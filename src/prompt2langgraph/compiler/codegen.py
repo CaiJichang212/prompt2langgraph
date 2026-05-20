@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from pprint import pformat
 from pathlib import Path
+from pprint import pformat
 
 from prompt2langgraph.ir.models import ReducerName, TypeName, TypeSpec, WorkflowSpec
 
@@ -39,7 +39,10 @@ def _write_state(workflow: WorkflowSpec, generated: Path) -> None:
         **workflow.state_schema.private,
     }
     field_lines = [
-        f"    {state_key}: {_state_annotation(type_spec, workflow.state_schema.reducers.get(state_key))}"
+        (
+            f"    {state_key}: "
+            f"{_state_annotation(type_spec, workflow.state_schema.reducers.get(state_key))}"
+        )
         for state_key, type_spec in state_fields.items()
     ]
     if not field_lines:
@@ -50,9 +53,7 @@ def _write_state(workflow: WorkflowSpec, generated: Path) -> None:
         f"{_state_imports(state_fields, workflow.state_schema.reducers)}\n\n"
         f"{_merge_dict_definition(workflow.state_schema.reducers)}"
         f"STATE_SCHEMA = {pformat(payload, sort_dicts=True, width=100)}\n\n\n"
-        f"class {state_class_name}(TypedDict, total=False):\n"
-        + "\n".join(field_lines)
-        + "\n\n\n"
+        f"class {state_class_name}(TypedDict, total=False):\n" + "\n".join(field_lines) + "\n\n\n"
         f"State = {state_class_name}\n"
     )
     (generated / "state.py").write_text(text, encoding="utf-8")
@@ -74,9 +75,7 @@ def _state_class_name(workflow: WorkflowSpec) -> str:
     return f"{workflow.workflow_id.title().replace('_', '')}State"
 
 
-def _state_imports(
-    state_fields: dict[str, TypeSpec], reducers: dict[str, ReducerName]
-) -> str:
+def _state_imports(state_fields: dict[str, TypeSpec], reducers: dict[str, ReducerName]) -> str:
     typing_imports = []
     if reducers:
         typing_imports.append("Annotated")
@@ -88,10 +87,7 @@ def _state_imports(
     lines = []
     if typing_imports:
         lines.append(f"from typing import {', '.join(typing_imports)}")
-    if any(
-        reducer in {ReducerName.APPEND, ReducerName.SUM}
-        for reducer in reducers.values()
-    ):
+    if any(reducer in {ReducerName.APPEND, ReducerName.SUM} for reducer in reducers.values()):
         lines.append("import operator")
     if any(reducer is ReducerName.ADD_MESSAGES for reducer in reducers.values()):
         lines.append("from langgraph.graph.message import add_messages")
@@ -126,9 +122,7 @@ def _type_annotation(type_spec: TypeSpec) -> str:
         return "bool"
     if type_spec.type is TypeName.ARRAY:
         item_annotation = (
-            _type_annotation(type_spec.item_type)
-            if type_spec.item_type is not None
-            else "Any"
+            _type_annotation(type_spec.item_type) if type_spec.item_type is not None else "Any"
         )
         return f"list[{item_annotation}]"
     if type_spec.type is TypeName.OBJECT:

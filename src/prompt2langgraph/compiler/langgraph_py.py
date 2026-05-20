@@ -11,9 +11,17 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.types import Send
 from typing_extensions import TypedDict
 
-from prompt2langgraph.ir.models import ConditionSpec, EdgeKind, EdgeSpec, NodeSpec, ReducerName, TypeName, TypeSpec, WorkflowSpec
+from prompt2langgraph.ir.models import (
+    ConditionSpec,
+    EdgeKind,
+    EdgeSpec,
+    NodeSpec,
+    ReducerName,
+    TypeName,
+    TypeSpec,
+    WorkflowSpec,
+)
 from prompt2langgraph.registry.executors import ExecutorRegistry
-
 
 NodeEventSink = Callable[[str, str], None]
 
@@ -75,7 +83,9 @@ def compile_workflow_to_graph(
                 raise ValueError(f'fanout edge "{edge.id}" requires map')
             builder.add_conditional_edges(edge.source, _fanout_router(edge))
         else:
-            raise ValueError(f'edge "{edge.id}" kind "{edge.kind.value}" is not supported by v0.1c compiler')
+            raise ValueError(
+                f'edge "{edge.id}" kind "{edge.kind.value}" is not supported by v0.1c compiler'
+            )
         outgoing_sources.add(edge.source)
 
     for node in workflow.nodes:
@@ -112,7 +122,9 @@ def _python_type_for(type_spec: TypeSpec) -> Any:
     if type_spec.type is TypeName.BOOLEAN:
         return bool
     if type_spec.type is TypeName.ARRAY:
-        item_type = _python_type_for(type_spec.item_type) if type_spec.item_type is not None else Any
+        item_type = (
+            _python_type_for(type_spec.item_type) if type_spec.item_type is not None else Any
+        )
         return list[item_type]
     if type_spec.type is TypeName.OBJECT:
         return dict[str, Any]
@@ -158,7 +170,9 @@ def _node_wrapper(
         update = {}
         for output_name, selector in node.outputs.items():
             if output_name not in raw_outputs:
-                raise RuntimeError(f'node "{node.id}" executor omitted declared output "{output_name}"')
+                raise RuntimeError(
+                    f'node "{node.id}" executor omitted declared output "{output_name}"'
+                )
             output_value = raw_outputs[output_name]
             if (
                 selector.state_key in fanout_result_keys
@@ -253,7 +267,11 @@ def _loop_edges_by_source(workflow: WorkflowSpec) -> dict[str, list[EdgeSpec]]:
 
 
 def _fanout_result_keys(workflow: WorkflowSpec) -> set[str]:
-    return {edge.map.result_state_key for edge in workflow.edges if edge.kind is EdgeKind.FANOUT and edge.map is not None}
+    return {
+        edge.map.result_state_key
+        for edge in workflow.edges
+        if edge.kind is EdgeKind.FANOUT and edge.map is not None
+    }
 
 
 def _loop_router(edge: EdgeSpec) -> Callable[[dict[str, Any]], str]:
