@@ -232,6 +232,8 @@ def test_json_plan_adapter_reports_source_and_json_path_for_parse_errors() -> No
 
     assert exc_info.value.source == "bad_plan.json"
     assert exc_info.value.path == "edges[0].to"
+    assert exc_info.value.line is None
+    assert exc_info.value.column is None
     assert '"to" or "target"' in str(exc_info.value)
 
 

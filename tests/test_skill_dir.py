@@ -55,3 +55,46 @@ def test_analyze_skill_dir_reports_missing_required_frontmatter_fields(tmp_path:
         diagnostic.code == "E_SCHEMA_002" and "description" in diagnostic.message
         for diagnostic in analysis.report.diagnostics
     )
+    frontmatter_locations = [
+        diagnostic.location
+        for diagnostic in analysis.report.diagnostics
+        if diagnostic.code == "E_SCHEMA_002"
+    ]
+    assert all(
+        location is not None and isinstance(location.line, int) and location.line > 0
+        for location in frontmatter_locations
+    )
+    assert {
+        location.path: location.line for location in frontmatter_locations if location is not None
+    } == {"description": 1}
+
+
+def test_analyze_skill_dir_risk_diagnostics_include_source_line() -> None:
+    analysis = analyze_skill_dir(FIXTURES / "skill_basic")
+
+    risk_locations = [
+        diagnostic.location
+        for diagnostic in analysis.report.diagnostics
+        if diagnostic.code == "E_SEC_007"
+    ]
+    assert risk_locations
+    assert all(location is not None for location in risk_locations)
+    assert all(location.source.endswith("SKILL.md") for location in risk_locations if location)
+    assert all(
+        isinstance(location.line, int) and location.line > 0
+        for location in risk_locations
+        if location
+    )
+    assert {
+        diagnostic.message: (
+            diagnostic.location.line if diagnostic.location else None,
+            diagnostic.location.column if diagnostic.location else None,
+        )
+        for diagnostic in analysis.report.diagnostics
+        if diagnostic.code == "E_SEC_007"
+    } == {
+        "skill language mentions file writes": (9, 4),
+        "skill language mentions shell execution": (9, 23),
+        "skill language mentions network access": (10, 4),
+        "skill language mentions secrets": (10, 41),
+    }

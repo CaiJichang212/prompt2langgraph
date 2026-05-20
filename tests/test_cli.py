@@ -121,6 +121,9 @@ def test_validate_command_reports_json_plan_parse_error_path(tmp_path: Path) -> 
     assert diagnostic["code"] == "E_PARSE_001"
     assert diagnostic["location"]["source"] == str(plan_file)
     assert diagnostic["location"]["path"] == "edges[0].to"
+    assert diagnostic["location"]["line"] is None
+    assert diagnostic["location"]["column"] is None
+    assert "Traceback" not in result.stdout
 
 
 def test_compile_command_emits_expected_artifacts(tmp_path: Path) -> None:
