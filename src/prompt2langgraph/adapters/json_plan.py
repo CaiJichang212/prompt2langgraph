@@ -15,8 +15,8 @@ from prompt2langgraph.ir.models import (
     EdgeSpec,
     ExecutorRef,
     ExecutorType,
-    MapSpec,
     LoopGuard,
+    MapSpec,
     NodeSpec,
     RetryPolicy,
     SecurityPolicy,
@@ -109,9 +109,7 @@ def _node_spec(
         raise AdapterParseError(
             f"node {index} must be an object", source=source, path=f"nodes[{index}]"
         )
-    executor_ref = _require_str(
-        node, "executor", source=source, path=f"nodes[{index}].executor"
-    )
+    executor_ref = _require_str(node, "executor", source=source, path=f"nodes[{index}].executor")
     executor = executors.get(executor_ref) if executors.has(executor_ref) else None
     input_schema = executor.input_schema if executor is not None else {}
     output_schema = executor.output_schema if executor is not None else {}
@@ -157,9 +155,7 @@ def _edge_spec(edge: Mapping[str, Any], *, index: int, source: str | None) -> Ed
     edge_source = _edge_endpoint(
         edge, "from", "source", source=source, path=f"edges[{index - 1}].from"
     )
-    target = _edge_endpoint(
-        edge, "to", "target", source=source, path=f"edges[{index - 1}].to"
-    )
+    target = _edge_endpoint(edge, "to", "target", source=source, path=f"edges[{index - 1}].to")
     kind_path = f"edges[{index - 1}].kind"
     try:
         kind = EdgeKind(edge.get("kind", EdgeKind.LINEAR.value))
@@ -223,12 +219,16 @@ def _collect_channels(
         for selector in node.inputs.values():
             input_type = None
             if executor is not None:
-                input_type = _schema_type_for_selector(node.inputs, executor.input_schema, selector.state_key)
+                input_type = _schema_type_for_selector(
+                    node.inputs, executor.input_schema, selector.state_key
+                )
             channels.setdefault(selector.state_key, input_type or _any_type())
         for selector in node.outputs.values():
             output_type = None
             if executor is not None:
-                output_type = _schema_type_for_selector(node.outputs, executor.output_schema, selector.state_key)
+                output_type = _schema_type_for_selector(
+                    node.outputs, executor.output_schema, selector.state_key
+                )
             channels.setdefault(selector.state_key, output_type or _any_type())
     return channels
 
@@ -246,7 +246,9 @@ def _selector_mapping(
         )
     if explicit_mapping:
         return {
-            name: StateSelector.model_validate(value if isinstance(value, Mapping) else {"state_key": value})
+            name: StateSelector.model_validate(
+                value if isinstance(value, Mapping) else {"state_key": value}
+            )
             for name, value in explicit_mapping.items()
         }
     return {name: StateSelector(state_key=name) for name in schema}
@@ -259,9 +261,7 @@ def _validate_nested(model: Any, value: Any, *, source: str | None, path: str) -
         first_error = exc.errors()[0]
         nested_path = ".".join(str(part) for part in first_error["loc"])
         full_path = f"{path}.{nested_path}" if nested_path else path
-        raise AdapterParseError(
-            f"{path} validation failed", source=source, path=full_path
-        ) from exc
+        raise AdapterParseError(f"{path} validation failed", source=source, path=full_path) from exc
 
 
 def _type_mapping(raw: Any) -> dict[str, TypeSpec]:
@@ -298,11 +298,11 @@ def _require_str(
         value = data[key]
     except KeyError as exc:
         raise AdapterParseError(
-            f'{key} must be a non-empty string', source=source, path=path or key
+            f"{key} must be a non-empty string", source=source, path=path or key
         ) from exc
     if not isinstance(value, str) or not value:
         raise AdapterParseError(
-            f'{key} must be a non-empty string', source=source, path=path or key
+            f"{key} must be a non-empty string", source=source, path=path or key
         )
     return value
 
@@ -317,11 +317,9 @@ def _require_list(
     try:
         value = data[key]
     except KeyError as exc:
-        raise AdapterParseError(
-            f'{key} must be a list', source=source, path=path or key
-        ) from exc
+        raise AdapterParseError(f"{key} must be a list", source=source, path=path or key) from exc
     if not isinstance(value, list):
-        raise AdapterParseError(f'{key} must be a list', source=source, path=path or key)
+        raise AdapterParseError(f"{key} must be a list", source=source, path=path or key)
     return value
 
 

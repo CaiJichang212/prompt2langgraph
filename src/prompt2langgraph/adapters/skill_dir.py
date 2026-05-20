@@ -33,9 +33,20 @@ class SkillDirectoryAnalysis(BaseModel):
 
 _NUMBERED_STEP_RE = re.compile(r"^\s*\d+\.\s+(.+?)\s*$")
 _RISK_PATTERNS = (
-    ("file writes", re.compile(r"\b(writes?|write|editing?|edit|create|save)\b.*\b(files?|paths?)\b", re.IGNORECASE)),
-    ("shell execution", re.compile(r"\b(shell|bash|zsh|command|commands|execute|run)\b", re.IGNORECASE)),
-    ("network access", re.compile(r"\b(network|http|https|fetch|download|upload|api)\b", re.IGNORECASE)),
+    (
+        "file writes",
+        re.compile(
+            r"\b(writes?|write|editing?|edit|create|save)\b.*\b(files?|paths?)\b", re.IGNORECASE
+        ),
+    ),
+    (
+        "shell execution",
+        re.compile(r"\b(shell|bash|zsh|command|commands|execute|run)\b", re.IGNORECASE),
+    ),
+    (
+        "network access",
+        re.compile(r"\b(network|http|https|fetch|download|upload|api)\b", re.IGNORECASE),
+    ),
     ("secrets", re.compile(r"\b(secret|secrets|token|password|api[_ -]?key)\b", re.IGNORECASE)),
 )
 
@@ -82,7 +93,10 @@ def analyze_skill_dir(path: Path | str) -> SkillDirectoryAnalysis:
             references=_resource_paths(skill_dir, "references"),
             assets=_resource_paths(skill_dir, "assets"),
         ),
-        draft_nodes=[DraftSkillNode(id=f"step_{index}", summary=step) for index, step in enumerate(steps, start=1)],
+        draft_nodes=[
+            DraftSkillNode(id=f"step_{index}", summary=step)
+            for index, step in enumerate(steps, start=1)
+        ],
         report=ValidationReport(diagnostics=diagnostics),
     )
 
@@ -115,7 +129,9 @@ def _resource_paths(skill_dir: Path, dirname: str) -> list[str]:
     resource_dir = skill_dir / dirname
     if not resource_dir.exists():
         return []
-    return sorted(path.relative_to(skill_dir).as_posix() for path in resource_dir.rglob("*") if path.is_file())
+    return sorted(
+        path.relative_to(skill_dir).as_posix() for path in resource_dir.rglob("*") if path.is_file()
+    )
 
 
 def _risk_warnings(text: str, *, source: str) -> list[Diagnostic]:
