@@ -25,7 +25,11 @@ def validate_workflow(
     executor_registry = executors or builtin_executor_registry()
 
     try:
-        spec = workflow if isinstance(workflow, WorkflowSpec) else WorkflowSpec.model_validate(workflow)
+        spec = (
+            workflow
+            if isinstance(workflow, WorkflowSpec)
+            else WorkflowSpec.model_validate(workflow)
+        )
     except ValidationError as exc:
         return ValidationReport(
             diagnostics=[
@@ -71,7 +75,9 @@ def _check_registries(
                 Diagnostic(
                     code=E_BIND_006,
                     severity="error",
-                    message=f'node "{node.id}" references unregistered executor "{node.executor.ref}"',
+                    message=(
+                        f'node "{node.id}" references unregistered executor "{node.executor.ref}"'
+                    ),
                     location=DiagnosticLocation(node_id=node.id),
                 )
             )

@@ -7,7 +7,9 @@ from prompt2langgraph.registry.executors import ExecutorRegistry
 from prompt2langgraph.registry.nodes import NodeRegistry
 
 
-def check_types(workflow: WorkflowSpec, executors: ExecutorRegistry, nodes: NodeRegistry) -> list[Diagnostic]:
+def check_types(
+    workflow: WorkflowSpec, executors: ExecutorRegistry, nodes: NodeRegistry
+) -> list[Diagnostic]:
     diagnostics: list[Diagnostic] = []
     state_types = {**workflow.state_schema.channels, **workflow.state_schema.private}
 
@@ -23,7 +25,10 @@ def check_types(workflow: WorkflowSpec, executors: ExecutorRegistry, nodes: Node
                     Diagnostic(
                         code=E_SCHEMA_002,
                         severity="error",
-                        message=f'node input "{input_name}" references undeclared state key "{selector.state_key}"',
+                        message=(
+                            f'node input "{input_name}" references undeclared state key '
+                            f'"{selector.state_key}"'
+                        ),
                         location=DiagnosticLocation(node_id=node.id, state_key=selector.state_key),
                     )
                 )
@@ -60,7 +65,10 @@ def check_types(workflow: WorkflowSpec, executors: ExecutorRegistry, nodes: Node
                     Diagnostic(
                         code=E_SCHEMA_002,
                         severity="error",
-                        message=f'node output "{output_name}" references undeclared state key "{selector.state_key}"',
+                        message=(
+                            f'node output "{output_name}" references undeclared state key '
+                            f'"{selector.state_key}"'
+                        ),
                         location=DiagnosticLocation(node_id=node.id, state_key=selector.state_key),
                     )
                 )
@@ -103,7 +111,9 @@ def _types_compatible(expected: TypeSpec, actual: TypeSpec) -> bool:
     return expected.type is actual.type
 
 
-def _check_params(node_id: str, params: dict[str, object], schema: dict[str, TypeSpec]) -> list[Diagnostic]:
+def _check_params(
+    node_id: str, params: dict[str, object], schema: dict[str, TypeSpec]
+) -> list[Diagnostic]:
     diagnostics: list[Diagnostic] = []
     for name, expected in schema.items():
         if name not in params:

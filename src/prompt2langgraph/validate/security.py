@@ -30,4 +30,3 @@ def check_security(workflow: WorkflowSpec, nodes: NodeRegistry) -> list[Diagnost
             )
 
     return diagnostics
-

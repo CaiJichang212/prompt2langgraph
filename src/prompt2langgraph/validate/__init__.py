@@ -1,2 +1,1 @@
 """Workflow validation entry points."""
-

@@ -3,10 +3,15 @@
 import re
 from collections import Counter, defaultdict, deque
 
-from prompt2langgraph.diagnostics.codes import E_LOOP_005, E_REDUCER_012, E_ROUTE_011, E_SCHEMA_002, E_TYPE_003
+from prompt2langgraph.diagnostics.codes import (
+    E_LOOP_005,
+    E_REDUCER_012,
+    E_ROUTE_011,
+    E_SCHEMA_002,
+    E_TYPE_003,
+)
 from prompt2langgraph.diagnostics.report import Diagnostic, DiagnosticLocation
 from prompt2langgraph.ir.models import EdgeKind, TypeName, WorkflowSpec
-
 
 CONDITION_PATTERN = re.compile(r"^\s*([A-Za-z_][A-Za-z0-9_]*)\s*(<=|>=|==|!=|<|>)\s*(.+?)\s*$")
 
