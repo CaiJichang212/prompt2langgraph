@@ -228,7 +228,12 @@ def _load_workflow_or_report(path: Path) -> WorkflowSpec | ValidationReport:
                     code=E_PARSE_001,
                     severity="error",
                     message=f'failed to parse workflow file "{path}"',
-                    location=DiagnosticLocation(source=exc.source or str(path), path=exc.path),
+                    location=DiagnosticLocation(
+                        source=exc.source or str(path),
+                        path=exc.path,
+                        line=exc.line,
+                        column=exc.column,
+                    ),
                     hint=str(exc),
                 )
             ]
