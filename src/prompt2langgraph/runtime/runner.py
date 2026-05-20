@@ -84,7 +84,9 @@ def run_workflow(
         return _failed_result(run_id, thread_id, events, target_diagnostics, started_at)
 
     def record_node_event(event_type: str, node_id: str) -> None:
-        events.append(RunEvent(type=event_type, run_id=run_id, thread_id=thread_id, node_id=node_id))
+        events.append(
+            RunEvent(type=event_type, run_id=run_id, thread_id=thread_id, node_id=node_id)
+        )
 
     try:
         checkpointer = _checkpointer_for(thread_key)
@@ -94,7 +96,9 @@ def run_workflow(
             event_sink=record_node_event,
             checkpointer=checkpointer,
         )
-        graph_input: dict[str, Any] | Command = Command(resume=resume_payload) if is_resume else input_payload
+        graph_input: dict[str, Any] | Command = (
+            Command(resume=resume_payload) if is_resume else input_payload
+        )
         final_state = graph.invoke(
             graph_input,
             config={"configurable": {"thread_id": thread_id}},
@@ -333,7 +337,9 @@ def _extract_interrupt(state: dict[str, Any], events: list[RunEvent]) -> RunInte
 
     interrupt_value = interrupts[0].value
     payload = interrupt_value if isinstance(interrupt_value, dict) else {"value": interrupt_value}
-    node_id = next((event.node_id for event in reversed(events) if event.type == "node.started"), None)
+    node_id = next(
+        (event.node_id for event in reversed(events) if event.type == "node.started"), None
+    )
     node_id = node_id or "unknown"
     run_id = events[0].run_id
     thread_id = events[0].thread_id
@@ -404,7 +410,9 @@ def _check_target_capabilities(workflow: WorkflowSpec) -> list[Diagnostic]:
                 Diagnostic(
                     code=E_TARGET_009,
                     severity="error",
-                    message=f'edge kind "{edge.kind.value}" is not supported by the LangGraph runner',
+                    message=(
+                        f'edge kind "{edge.kind.value}" is not supported by the LangGraph runner'
+                    ),
                     location=DiagnosticLocation(edge_id=edge.id),
                 )
             )

@@ -39,7 +39,7 @@ class BundlePaths:
     generated_dir: Path
 
     @classmethod
-    def from_lockfile(cls, lockfile: Path | str) -> "BundlePaths":
+    def from_lockfile(cls, lockfile: Path | str) -> BundlePaths:
         lock_path = Path(lockfile)
         root = lock_path.parent
         return cls(
@@ -116,15 +116,11 @@ def validate_bundle(bundle: BundlePaths | Path | str) -> tuple[dict[str, Any], W
     if lock.get("schema_version") != "0.1":
         raise ValueError('workflow.lock.json field "schema_version" must be "0.1"')
     if lock.get("workflow_id") != normalized.workflow_id:
-        raise ValueError(
-            'workflow.lock.json field "workflow_id" does not match workflow.ir.json'
-        )
+        raise ValueError('workflow.lock.json field "workflow_id" does not match workflow.ir.json')
 
     workflow_hash = sha256_canonical_json(normalized.model_dump(mode="json"))
     if lock.get("workflow_hash") != workflow_hash:
-        raise ValueError(
-            'workflow.lock.json field "workflow_hash" does not match workflow.ir.json'
-        )
+        raise ValueError('workflow.lock.json field "workflow_hash" does not match workflow.ir.json')
 
     generated_files = lock.get("generated_files")
     if not isinstance(generated_files, list) or not all(
