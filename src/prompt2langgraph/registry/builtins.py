@@ -6,7 +6,6 @@ from prompt2langgraph.ir.models import ExecutorType, TypeName, TypeSpec
 from prompt2langgraph.registry.executors import ExecutorDefinition, ExecutorRegistry
 from prompt2langgraph.registry.nodes import NodeDefinition, NodeRegistry
 
-
 STRING = TypeSpec(type=TypeName.STRING)
 ARTIFACT_REF = TypeSpec(type=TypeName.ARTIFACT_REF)
 ANY = TypeSpec(type=TypeName.ANY)
