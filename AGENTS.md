@@ -4,7 +4,7 @@
 
 - 默认使用中文回复。
 - 代码、测试和文档修改应以当前目录为项目根：`/Users/lzc/TNTprojectZ/AprojectZ/prompt2langgraph/prompt2langgraph`。
-- 不要把上层 `ref-projects/` 的参考工程内容当作本项目源码；本项目源码位于 `src/prompt2langgraph/`，测试位于 `tests/`。
+- 本项目源码位于 `src/prompt2langgraph/`，测试位于 `tests/`。
 - 保持改动聚焦，避免无关重构、格式化 churn 或生成缓存文件提交。
 
 ## 项目定位
@@ -37,13 +37,31 @@
 - skill：`analyze_skill_dir()` 只做 `SKILL.md` frontmatter、编号步骤、资源文件和风险词静态分析，输出 `SkillDirectoryAnalysis`/`draft_nodes` 和诊断；不生成可执行 `WorkflowSpec`，也不执行 skill 脚本。
 - 节点类型 registry：`llm`、`tool`、`retriever`、`transform`、`router`、`human_gate`、`join`、`side_effect`。
 - 内置 executor：`builtin.echo_llm`、`builtin.mock_retriever`、`builtin.identity_transform`、`builtin.route`、`builtin.human_gate`、`builtin.join`。
-- `compile_workflow_to_graph()` 和 `run_workflow()` 当前目标能力支持 `linear`、`conditional`、`loop`、`fanout`；`join` 可存在于 IR/registry/Mermaid 中，但不是当前 LangGraph runner/compiler 的可执行 edge kind。
+- `compile_workflow_to_graph()` 和 `run_workflow()` 当前目标能力支持 `linear`、`conditional`、`loop`、`fanout`。
 - `human_gate` 使用 LangGraph `interrupt()`；CLI 对 lockfile bundle 的等待态会写入 bundle 目录下 `.pt2lg-runtime/`，恢复成功后清理对应状态文件；该本地持久化依赖当前 LangGraph `InMemorySaver` 内部结构，不是稳定交换格式。
 - 编译产物路径已统一：CLI `pt2lg compile` 和 public `compile_workflow()` 都通过 `runtime.artifacts.compile_workflow_to_artifacts()` 写入 bundle，包含 compile id、timing、policy summary 和 binding summary。
 - 编译失败时不能留下可误用的旧 bundle；`compile_workflow_to_artifacts()` 会清理同一输出目录下已知的旧产物文件和 `generated/`，但保留无关文件。
-- binding summary 只记录 executor ref、type 和 required capabilities 名称；manifest、compile report 和 lockfile 不应写入真实 secret，也不应写入 secret 名称。
+- binding summary 只记录 executor ref、type 和 required capabilities 名称。
+
+## Do & Don't
+
+### Do
+- 新增 IR 字段时，同步更新 Pydantic 模型、规范化、校验、编译/运行边界、测试夹具和文档。
+- 新增节点或 executor 时，通过 registry 定义契约，并补充校验和运行测试；内置 executor 必须保持确定性，不能隐式调用外部 LLM 或网络。
+- side effect 节点默认必须要求审批或幂等键，除非 workflow policy 显式允许副作用。
+- 编译产物结构变更时，同步更新 `tests/test_compile_flow.py` 等回归测试。
+
+### Don't
+- 不要把上层 `ref-projects/` 的参考工程内容当作本项目源码。
+- 不要重新引入 `cli._write_compile_artifacts()` 一类的第二套产物写入路径。
+- 不要宣称 `join` edge 可执行（当前 LangGraph runner/compiler 不支持）。
+- 不要在 `tests/test_compile_flow.py` 模块导入阶段执行编译、写文件或打印 smoke output。
+- 不要在 `prompt2langgraph.cli` 模块导入阶段急切导入 `langgraph`。
+- 不要在 manifest、compile report 和 lockfile 中写入真实 secret 或 secret 名称。
 
 ## 开发命令
+
+常用命令：
 
 ```bash
 uv sync
@@ -52,10 +70,26 @@ uv run pt2lg run tests/fixtures/linear_llm.json --input '{"question":"hello"}' -
 uv run pt2lg graph tests/fixtures/linear_llm.json --format mermaid
 ```
 
-当前全量测试基线应通过。修改代码、测试或文档边界后，至少运行：
+全量测试基线：
 
 ```bash
 uv run pytest
+```
+
+单文件验证（优先使用）：
+
+```bash
+# 类型检查
+uv run python -m mypy src/prompt2langgraph/compiler/codegen.py
+
+# 格式化
+uv run ruff format src/prompt2langgraph/compiler/codegen.py
+
+# 运行单个测试文件
+uv run pytest tests/test_compile_flow.py -v
+
+# 运行单个测试函数
+uv run pytest tests/test_compile_flow.py::test_compile_linear -v
 ```
 
 编译产物路径回归验收：
@@ -77,19 +111,20 @@ uv run pt2lg resume build/conditional_human_gate/workflow.lock.json --thread-id 
 
 上述 lockfile 运行和 resume 命令依赖 `pt2lg compile` 先成功生成 bundle；修改编译产物结构、运行恢复逻辑或 lockfile 读取逻辑后，应重新运行这些命令做回归验收。
 
-## 实现约束
+## 安全与权限边界
 
-- CLI 导入必须保持轻量：`prompt2langgraph.cli` 不应在模块导入阶段急切导入 `langgraph`，相关测试在 `tests/test_cli.py`。
-- 新增 IR 字段时，同步更新 Pydantic 模型、规范化、校验、编译/运行边界、测试夹具和文档。
-- 新增节点或 executor 时，通过 registry 定义契约，并补充校验和运行测试；内置 executor 必须保持确定性，不能隐式调用外部 LLM 或网络。
-- side effect 节点默认必须要求审批或幂等键，除非 workflow policy 显式允许副作用。
-- `compile_workflow_to_graph()` / `run_workflow()` 当前支持 linear、conditional、loop、fanout；不要宣称可执行 `join` edge。
-- 条件表达式只支持 `<state_key> <comparison> <literal>`，比较符为 `< <= > >= == !=`。
-- fanout 的 `map.result_state_key` 必须是数组并声明 reducer；loop 必须声明 `loop_guard.max_iterations`。
-- 编译产物必须保持可复现：`workflow.lock.json`、`manifest.json`、`compile_report.json`、`graph.mmd` 和 `generated/*.py` 的结构变更必须同步测试。
-- `runtime/runner.py` 的本地 resume 持久化依赖当前 LangGraph `InMemorySaver` 内部结构，只用于短期本地开发状态，不是稳定交换格式。
-- CLI 导入和 public API 编译路径已由测试覆盖；不要重新引入 `cli._write_compile_artifacts()` 一类的第二套产物写入路径。
-- `tests/test_compile_flow.py` 必须保持标准 pytest 测试函数，不应在模块导入阶段执行编译、写文件或打印 smoke output。
+无需询问可直接执行：
+- 读取文件、列出目录
+- 修改 `src/` 和 `tests/` 目录下的现有文件
+- 运行单文件类型检查、格式化、单测
+- 运行 `uv run pytest` 全量测试
+
+必须询问用户：
+- 安装新依赖（`uv add`）
+- 删除文件或目录
+- 执行 `git commit` 或 `git push`
+- 修改 `pyproject.toml`、CI 配置或其他项目级配置文件
+- 运行涉及网络调用的命令
 
 ## 测试要求
 
