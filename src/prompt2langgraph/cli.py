@@ -18,8 +18,9 @@ from prompt2langgraph.ir.models import WorkflowSpec
 from prompt2langgraph.validate.validator import validate_workflow
 from prompt2langgraph.visualization.mermaid import workflow_to_mermaid
 
-
 app = typer.Typer(no_args_is_help=True)
+COMPILE_OUT_OPTION = typer.Option(Path("build"), "--out")
+RUN_INPUT_OPTION = typer.Option(..., "--input")
 
 
 @app.command()
@@ -44,7 +45,7 @@ def validate(
 def compile(
     workflow_json: Path,
     target: str = typer.Option("langgraph-py", "--target"),
-    out: Path = typer.Option(Path("build"), "--out"),
+    out: Path = COMPILE_OUT_OPTION,
     json_output: bool = typer.Option(False, "--json", help="Emit a machine-readable report."),
 ) -> None:
     """Compile a Workflow IR or simplified JSON plan into local artifacts."""
@@ -66,7 +67,7 @@ def compile(
 @app.command()
 def run(
     workflow_json: Path,
-    input: Path = typer.Option(..., "--input"),
+    input: Path = RUN_INPUT_OPTION,
     json_output: bool = typer.Option(False, "--json", help="Emit a machine-readable result."),
 ) -> None:
     """Run a Workflow IR or simplified JSON plan with a JSON input payload."""
@@ -76,7 +77,9 @@ def run(
         result_payload = {
             "status": "failed",
             "output": {},
-            "diagnostics": [item.model_dump(mode="json") for item in workflow_or_report.diagnostics],
+            "diagnostics": [
+                item.model_dump(mode="json") for item in workflow_or_report.diagnostics
+            ],
         }
         _emit(result_payload, json_output, "run failed")
         raise typer.Exit(1)
@@ -107,7 +110,9 @@ def run(
 def graph(
     workflow_json: Path,
     format: str = typer.Option("mermaid", "--format"),
-    json_output: bool = typer.Option(False, "--json", help="Emit a machine-readable graph payload."),
+    json_output: bool = typer.Option(
+        False, "--json", help="Emit a machine-readable graph payload."
+    ),
 ) -> None:
     """Render a workflow graph."""
 
@@ -142,7 +147,7 @@ def graph(
                 ]
             )
             _emit_validation_report(report, json_output)
-            raise typer.Exit(1)
+            raise typer.Exit(1) from None
         _emit({"format": "mermaid", "graph": mermaid}, json_output, mermaid)
         return
 
@@ -169,7 +174,9 @@ def resume(
         result_payload = {
             "status": "failed",
             "output": {},
-            "diagnostics": [item.model_dump(mode="json") for item in workflow_or_report.diagnostics],
+            "diagnostics": [
+                item.model_dump(mode="json") for item in workflow_or_report.diagnostics
+            ],
         }
         _emit(result_payload, json_output, "resume failed")
         raise typer.Exit(1)

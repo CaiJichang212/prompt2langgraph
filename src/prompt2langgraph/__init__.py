@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from prompt2langgraph.diagnostics.report import Diagnostic, DiagnosticLocation, ValidationReport
 from prompt2langgraph.ir.models import WorkflowSpec
 from prompt2langgraph.validate.validator import validate_workflow
+
+if TYPE_CHECKING:
+    from prompt2langgraph.runtime.artifacts import CompileResult
 
 
 def compile_workflow(workflow: WorkflowSpec, *, out_dir: Path | str) -> CompileResult:
