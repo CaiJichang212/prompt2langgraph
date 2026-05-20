@@ -1,0 +1,40 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install dependencies
+        run: uv sync --all-extras --dev
+      - name: Ruff check
+        run: uv run ruff check src tests scripts
+      - name: Ruff format check
+        run: uv run ruff format --check src tests scripts
+      - name: Tests
+        run: uv run pytest
+      - name: Coverage gate
+        run: uv run pytest --cov=prompt2langgraph --cov-report=term-missing --cov-fail-under=85
+      - name: Golden snapshot check
+        run: uv run python scripts/update_golden.py --all --check
+      - name: CLI smoke
+        run: |
+          uv run pt2lg validate tests/fixtures/linear_llm.json --json
+          uv run pt2lg compile tests/fixtures/linear_llm.json --out build --json
+          uv run pt2lg run build/linear_llm/workflow.lock.json --input '{"question":"hello"}' --json
+      - name: Benchmark smoke
+        run: uv run python scripts/benchmark_compile.py --nodes 20 --max-seconds 2
