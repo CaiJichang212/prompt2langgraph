@@ -33,8 +33,14 @@ def resolve_policies(
             60,
         )
         timeout_s = next(candidate for candidate in timeout_candidates if candidate is not None)
-        requires_approval = bool(node.security.requires_approval) if node.security is not None else False
-        if definition is not None and definition.side_effect and not workflow.policies.allow_side_effects:
+        requires_approval = (
+            bool(node.security.requires_approval) if node.security is not None else False
+        )
+        if (
+            definition is not None
+            and definition.side_effect
+            and not workflow.policies.allow_side_effects
+        ):
             requires_approval = True
         node_policies[node.id] = {
             "timeout_s": timeout_s,
