@@ -4,10 +4,16 @@ from pathlib import Path
 import pytest
 
 from prompt2langgraph.compiler.langgraph_py import compile_workflow_to_graph
-from prompt2langgraph.ir.models import ExecutorType, ReducerName, StateSelector, TypeName, TypeSpec, WorkflowSpec
+from prompt2langgraph.ir.models import (
+    ExecutorType,
+    ReducerName,
+    StateSelector,
+    TypeName,
+    TypeSpec,
+    WorkflowSpec,
+)
 from prompt2langgraph.registry.builtins import builtin_executor_registry
 from prompt2langgraph.registry.executors import ExecutorDefinition, ExecutorRegistry
-
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -70,7 +76,9 @@ def test_add_messages_reducer_combines_message_updates_across_linear_nodes() -> 
                     "params": {},
                 },
             ],
-            "edges": [{"id": "first_to_second", "source": "first", "target": "second", "kind": "linear"}],
+            "edges": [
+                {"id": "first_to_second", "source": "first", "target": "second", "kind": "linear"}
+            ],
             "policies": {},
             "metadata": {},
         }
@@ -91,7 +99,9 @@ def test_add_messages_reducer_combines_message_updates_across_linear_nodes() -> 
                 type=ExecutorType.BUILTIN,
                 input_schema={},
                 output_schema={"messages": message_type},
-                handler=lambda inputs, params: {"messages": [{"role": "assistant", "content": "hi"}]},
+                handler=lambda inputs, params: {
+                    "messages": [{"role": "assistant", "content": "hi"}]
+                },
             ),
         ]
     )
@@ -182,7 +192,10 @@ def test_fanout_mapper_receives_original_state_context() -> None:
             ExecutorDefinition(
                 ref="test.prefix_item",
                 type=ExecutorType.BUILTIN,
-                input_schema={"value": TypeSpec(type=TypeName.STRING), "prefix": TypeSpec(type=TypeName.STRING)},
+                input_schema={
+                    "value": TypeSpec(type=TypeName.STRING),
+                    "prefix": TypeSpec(type=TypeName.STRING),
+                },
                 output_schema={"value": TypeSpec(type=TypeName.STRING)},
                 handler=lambda inputs, params: {"value": f"{inputs['prefix']}:{inputs['value']}"},
             ),

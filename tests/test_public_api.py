@@ -53,7 +53,9 @@ def test_public_compile_workflow_rejects_langgraph_compile_failures(tmp_path: Pa
             "params": {},
         }
     )
-    data["edges"] = [{"id": "unsupported_join", "source": "compose", "target": "finish", "kind": "join"}]
+    data["edges"] = [
+        {"id": "unsupported_join", "source": "compose", "target": "finish", "kind": "join"}
+    ]
     workflow = pt2lg.WorkflowSpec.model_validate(data)
 
     result = pt2lg.compile_workflow(workflow, out_dir=tmp_path)

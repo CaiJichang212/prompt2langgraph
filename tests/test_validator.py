@@ -9,7 +9,6 @@ from prompt2langgraph.registry.builtins import (
 from prompt2langgraph.registry.nodes import NodeDefinition, NodeRegistry
 from prompt2langgraph.validate.validator import validate_workflow
 
-
 FIXTURES = Path(__file__).parent / "fixtures"
 
 
@@ -120,7 +119,10 @@ def test_validator_rejects_unknown_node_kind() -> None:
     report = validate_workflow(load_workflow("invalid_unknown_node.json"))
 
     assert report.ok is False
-    assert any(item.code == "E_DEP_004" and item.location.node_id == "mystery" for item in report.diagnostics)
+    assert any(
+        item.code == "E_DEP_004" and item.location.node_id == "mystery"
+        for item in report.diagnostics
+    )
 
 
 def test_validator_rejects_unknown_executor() -> None:
@@ -130,7 +132,10 @@ def test_validator_rejects_unknown_executor() -> None:
     report = validate_workflow(workflow)
 
     assert report.ok is False
-    assert any(item.code == "E_BIND_006" and item.location.node_id == "compose" for item in report.diagnostics)
+    assert any(
+        item.code == "E_BIND_006" and item.location.node_id == "compose"
+        for item in report.diagnostics
+    )
 
 
 def test_validator_rejects_executor_type_mismatch() -> None:
@@ -140,7 +145,10 @@ def test_validator_rejects_executor_type_mismatch() -> None:
     report = validate_workflow(workflow)
 
     assert report.ok is False
-    assert any(item.code == "E_BIND_006" and item.location.node_id == "compose" for item in report.diagnostics)
+    assert any(
+        item.code == "E_BIND_006" and item.location.node_id == "compose"
+        for item in report.diagnostics
+    )
 
 
 def test_validator_rejects_missing_required_executor_input_mapping() -> None:
@@ -150,7 +158,10 @@ def test_validator_rejects_missing_required_executor_input_mapping() -> None:
     report = validate_workflow(workflow)
 
     assert report.ok is False
-    assert any(item.code == "E_TYPE_003" and item.location.node_id == "compose" for item in report.diagnostics)
+    assert any(
+        item.code == "E_TYPE_003" and item.location.node_id == "compose"
+        for item in report.diagnostics
+    )
 
 
 def test_validator_rejects_missing_required_executor_output_mapping() -> None:
@@ -160,21 +171,30 @@ def test_validator_rejects_missing_required_executor_output_mapping() -> None:
     report = validate_workflow(workflow)
 
     assert report.ok is False
-    assert any(item.code == "E_TYPE_003" and item.location.node_id == "compose" for item in report.diagnostics)
+    assert any(
+        item.code == "E_TYPE_003" and item.location.node_id == "compose"
+        for item in report.diagnostics
+    )
 
 
 def test_validator_rejects_type_mismatch() -> None:
     report = validate_workflow(load_workflow("invalid_type_mismatch.json"))
 
     assert report.ok is False
-    assert any(item.code == "E_TYPE_003" and item.location.state_key == "question" for item in report.diagnostics)
+    assert any(
+        item.code == "E_TYPE_003" and item.location.state_key == "question"
+        for item in report.diagnostics
+    )
 
 
 def test_validator_rejects_loop_without_guard() -> None:
     report = validate_workflow(load_workflow("invalid_loop_without_guard.json"))
 
     assert report.ok is False
-    assert any(item.code == "E_LOOP_005" and item.location.edge_id == "retry" for item in report.diagnostics)
+    assert any(
+        item.code == "E_LOOP_005" and item.location.edge_id == "retry"
+        for item in report.diagnostics
+    )
 
 
 def test_validator_accepts_guarded_loop_with_continuation() -> None:
@@ -188,21 +208,30 @@ def test_validator_rejects_multiple_loop_edges_from_same_source() -> None:
     report = validate_workflow(load_workflow("invalid_loop_multiple_loop_edges_same_source.json"))
 
     assert report.ok is False
-    assert any(item.code == "E_ROUTE_011" and item.location.node_id == "compose" for item in report.diagnostics)
+    assert any(
+        item.code == "E_ROUTE_011" and item.location.node_id == "compose"
+        for item in report.diagnostics
+    )
 
 
 def test_validator_rejects_multiple_loop_continuations_from_same_source() -> None:
     report = validate_workflow(load_workflow("invalid_loop_multiple_continuations.json"))
 
     assert report.ok is False
-    assert any(item.code == "E_ROUTE_011" and item.location.node_id == "compose" for item in report.diagnostics)
+    assert any(
+        item.code == "E_ROUTE_011" and item.location.node_id == "compose"
+        for item in report.diagnostics
+    )
 
 
 def test_validator_rejects_route_conflict() -> None:
     report = validate_workflow(load_workflow("invalid_route_conflict.json"))
 
     assert report.ok is False
-    assert any(item.code == "E_ROUTE_011" and item.location.node_id == "route" for item in report.diagnostics)
+    assert any(
+        item.code == "E_ROUTE_011" and item.location.node_id == "route"
+        for item in report.diagnostics
+    )
 
 
 def test_validator_rejects_condition_expr_with_undeclared_state_key() -> None:
@@ -212,7 +241,10 @@ def test_validator_rejects_condition_expr_with_undeclared_state_key() -> None:
     report = validate_workflow(workflow)
 
     assert report.ok is False
-    assert any(item.code == "E_SCHEMA_002" and item.location.state_key == "score" for item in report.diagnostics)
+    assert any(
+        item.code == "E_SCHEMA_002" and item.location.state_key == "score"
+        for item in report.diagnostics
+    )
 
 
 def test_validator_rejects_unsupported_condition_expr() -> None:
@@ -222,7 +254,10 @@ def test_validator_rejects_unsupported_condition_expr() -> None:
     report = validate_workflow(workflow)
 
     assert report.ok is False
-    assert any(item.code == "E_ROUTE_011" and item.location.edge_id == "route_by_confidence" for item in report.diagnostics)
+    assert any(
+        item.code == "E_ROUTE_011" and item.location.edge_id == "route_by_confidence"
+        for item in report.diagnostics
+    )
 
 
 def test_validator_rejects_conditional_routes_without_true_and_false() -> None:
@@ -232,14 +267,20 @@ def test_validator_rejects_conditional_routes_without_true_and_false() -> None:
     report = validate_workflow(workflow)
 
     assert report.ok is False
-    assert any(item.code == "E_ROUTE_011" and item.location.edge_id == "route_by_confidence" for item in report.diagnostics)
+    assert any(
+        item.code == "E_ROUTE_011" and item.location.edge_id == "route_by_confidence"
+        for item in report.diagnostics
+    )
 
 
 def test_validator_rejects_fanout_without_reducer() -> None:
     report = validate_workflow(load_workflow("invalid_fanout_without_reducer.json"))
 
     assert report.ok is False
-    assert any(item.code == "E_REDUCER_012" and item.location.state_key == "results" for item in report.diagnostics)
+    assert any(
+        item.code == "E_REDUCER_012" and item.location.state_key == "results"
+        for item in report.diagnostics
+    )
 
 
 def test_validator_accepts_fanout_with_append_reducer() -> None:
@@ -257,7 +298,10 @@ def test_validator_rejects_fanout_items_state_that_is_not_array() -> None:
     report = validate_workflow(workflow)
 
     assert report.ok is False
-    assert any(item.code == "E_TYPE_003" and item.location.state_key == "items" for item in report.diagnostics)
+    assert any(
+        item.code == "E_TYPE_003" and item.location.state_key == "items"
+        for item in report.diagnostics
+    )
 
 
 def test_validator_rejects_graph_without_exit_path() -> None:
@@ -277,7 +321,10 @@ def test_validator_rejects_graph_without_exit_path() -> None:
     report = validate_workflow(workflow)
 
     assert report.ok is False
-    assert any(item.code == "E_SCHEMA_002" and item.location.node_id == "compose" for item in report.diagnostics)
+    assert any(
+        item.code == "E_SCHEMA_002" and item.location.node_id == "compose"
+        for item in report.diagnostics
+    )
 
 
 def test_validator_rejects_unapproved_side_effect() -> None:
@@ -299,7 +346,10 @@ def test_validator_rejects_unapproved_side_effect() -> None:
     report = validate_workflow(workflow)
 
     assert report.ok is False
-    assert any(item.code == "E_SIDE_008" and item.location.node_id == "send_email" for item in report.diagnostics)
+    assert any(
+        item.code == "E_SIDE_008" and item.location.node_id == "send_email"
+        for item in report.diagnostics
+    )
 
 
 def test_validator_accepts_allowed_side_effect_fixture() -> None:
@@ -356,7 +406,10 @@ def test_validator_rejects_wrong_param_type() -> None:
     report = validate_workflow(workflow)
 
     assert report.ok is False
-    assert any(item.code == "E_TYPE_003" and item.location.node_id == "compose" for item in report.diagnostics)
+    assert any(
+        item.code == "E_TYPE_003" and item.location.node_id == "compose"
+        for item in report.diagnostics
+    )
 
 
 def test_validator_rejects_array_param_item_type_mismatch() -> None:

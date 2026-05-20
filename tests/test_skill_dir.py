@@ -2,7 +2,6 @@ from pathlib import Path
 
 from prompt2langgraph.adapters.skill_dir import analyze_skill_dir
 
-
 FIXTURES = Path(__file__).parent / "fixtures"
 
 

@@ -3,7 +3,6 @@ from pathlib import Path
 
 import prompt2langgraph as pt2lg
 
-
 FIXTURES = Path(__file__).parent / "fixtures"
 
 
@@ -24,9 +23,15 @@ def test_compile_flow_emits_policy_binding_and_timings(tmp_path: Path) -> None:
     assert "compose" in manifest["policy_summary"]["node_policies"]
     assert "binding_summary" in report
     assert "compose" in report["binding_summary"]["executor_bindings"]
-    assert {"normalize", "validate", "resolve_policies", "bind_workflow", "target_compile", "artifact_write", "total"}.issubset(
-        set(report["timings_ms"])
-    )
+    assert {
+        "normalize",
+        "validate",
+        "resolve_policies",
+        "bind_workflow",
+        "target_compile",
+        "artifact_write",
+        "total",
+    }.issubset(set(report["timings_ms"]))
 
 
 def test_compile_flow_accepts_multi_node_retriever_llm_fixture(tmp_path: Path) -> None:

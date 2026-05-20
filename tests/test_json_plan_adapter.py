@@ -71,7 +71,9 @@ def test_json_plan_accepts_source_target_edge_aliases() -> None:
             {"id": "first", "kind": "llm", "executor": "builtin.echo_llm"},
             {"id": "second", "kind": "transform", "executor": "builtin.identity_transform"},
         ],
-        "edges": [{"id": "first_to_second", "source": "first", "target": "second", "kind": "linear"}],
+        "edges": [
+            {"id": "first_to_second", "source": "first", "target": "second", "kind": "linear"}
+        ],
         "inputs": {"question": "string"},
         "outputs": {"answer": "string"},
     }

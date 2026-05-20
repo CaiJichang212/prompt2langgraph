@@ -7,7 +7,6 @@ from typer.testing import CliRunner
 
 from prompt2langgraph.cli import app
 
-
 FIXTURES = Path(__file__).parent / "fixtures"
 
 
@@ -163,12 +162,16 @@ def test_compile_command_emits_expected_artifacts(tmp_path: Path) -> None:
         "total",
     }.issubset(set(report["timings_ms"]))
     assert "binding_summary" in report
-    assert report["binding_summary"]["executor_bindings"]["compose"]["executor"] == "builtin.echo_llm"
+    assert (
+        report["binding_summary"]["executor_bindings"]["compose"]["executor"] == "builtin.echo_llm"
+    )
     assert "policy_summary" in manifest
     assert manifest["policy_summary"]["node_policies"]["compose"]["timeout_s"] == 60
 
 
-def test_compile_command_reports_unsupported_target_as_json_without_traceback(tmp_path: Path) -> None:
+def test_compile_command_reports_unsupported_target_as_json_without_traceback(
+    tmp_path: Path,
+) -> None:
     result = CliRunner().invoke(
         app,
         [
@@ -222,7 +225,13 @@ def test_run_command_invokes_conditional_workflow_with_input_file(tmp_path: Path
 
     result = CliRunner().invoke(
         app,
-        ["run", str(FIXTURES / "conditional_human_gate.json"), "--input", str(input_file), "--json"],
+        [
+            "run",
+            str(FIXTURES / "conditional_human_gate.json"),
+            "--input",
+            str(input_file),
+            "--json",
+        ],
     )
 
     assert result.exit_code == 0
@@ -259,6 +268,14 @@ def test_cli_module_import_does_not_eagerly_import_langgraph() -> None:
     )
 
     assert result.stdout.strip() == "False"
+
+
+def test_cli_help_lists_core_commands() -> None:
+    result = CliRunner().invoke(app, ["--help"])
+
+    assert result.exit_code == 0
+    for command in ["validate", "compile", "run", "resume", "graph"]:
+        assert command in result.stdout
 
 
 def test_compile_command_emits_generated_bundle_files(tmp_path: Path) -> None:
@@ -327,7 +344,13 @@ def test_graph_command_accepts_workflow_lock_json_after_compile(tmp_path: Path) 
 def test_resume_command_continues_pending_interrupt_from_lockfile(tmp_path: Path) -> None:
     compile_result = CliRunner().invoke(
         app,
-        ["compile", str(FIXTURES / "conditional_human_gate.json"), "--out", str(tmp_path), "--json"],
+        [
+            "compile",
+            str(FIXTURES / "conditional_human_gate.json"),
+            "--out",
+            str(tmp_path),
+            "--json",
+        ],
     )
     assert compile_result.exit_code == 0
     lockfile = tmp_path / "conditional_human_gate" / "workflow.lock.json"
@@ -362,7 +385,13 @@ def test_resume_command_continues_pending_interrupt_from_lockfile(tmp_path: Path
 def test_resume_command_accepts_json_null_payload_from_lockfile(tmp_path: Path) -> None:
     compile_result = CliRunner().invoke(
         app,
-        ["compile", str(FIXTURES / "conditional_human_gate.json"), "--out", str(tmp_path), "--json"],
+        [
+            "compile",
+            str(FIXTURES / "conditional_human_gate.json"),
+            "--out",
+            str(tmp_path),
+            "--json",
+        ],
     )
     assert compile_result.exit_code == 0
     lockfile = tmp_path / "conditional_human_gate" / "workflow.lock.json"
@@ -393,7 +422,8 @@ def test_resume_command_accepts_json_null_payload_from_lockfile(tmp_path: Path) 
     assert resumed["status"] == "failed"
     assert any(event["type"] == "run.resumed" for event in resumed["events"])
     assert not any(
-        item["code"] == "E_SCHEMA_002" and 'required input state key "question" is missing' in item["message"]
+        item["code"] == "E_SCHEMA_002"
+        and 'required input state key "question" is missing' in item["message"]
         for item in resumed["diagnostics"]
     )
 
@@ -401,7 +431,13 @@ def test_resume_command_accepts_json_null_payload_from_lockfile(tmp_path: Path) 
 def test_resume_command_continues_pending_interrupt_across_processes(tmp_path: Path) -> None:
     compile_result = CliRunner().invoke(
         app,
-        ["compile", str(FIXTURES / "conditional_human_gate.json"), "--out", str(tmp_path), "--json"],
+        [
+            "compile",
+            str(FIXTURES / "conditional_human_gate.json"),
+            "--out",
+            str(tmp_path),
+            "--json",
+        ],
     )
     assert compile_result.exit_code == 0
     lockfile = tmp_path / "conditional_human_gate" / "workflow.lock.json"

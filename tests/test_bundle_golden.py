@@ -7,7 +7,6 @@ import pytest
 from prompt2langgraph.ir.models import WorkflowSpec
 from prompt2langgraph.runtime.artifacts import compile_workflow_to_artifacts
 
-
 FIXTURES = Path(__file__).parent / "fixtures"
 GOLDEN = Path(__file__).parent / "golden"
 

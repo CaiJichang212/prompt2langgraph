@@ -8,7 +8,6 @@ from prompt2langgraph.registry.executors import ExecutorDefinition, ExecutorRegi
 from prompt2langgraph.runtime import runner
 from prompt2langgraph.runtime.runner import run_workflow
 
-
 FIXTURES = Path(__file__).parent / "fixtures"
 
 
@@ -54,7 +53,9 @@ def test_run_workflow_invokes_tool_node_workflow() -> None:
 
     assert result.status == "succeeded"
     assert result.output == {"tool_result": "hello"}
-    assert [event.node_id for event in result.events if event.type == "node.started"] == ["call_tool"]
+    assert [event.node_id for event in result.events if event.type == "node.started"] == [
+        "call_tool"
+    ]
     assert result.diagnostics == []
 
 
@@ -63,7 +64,9 @@ def test_run_workflow_invokes_allowed_side_effect_node() -> None:
 
     assert result.status == "succeeded"
     assert result.output == {"effect_result": "hello"}
-    assert [event.node_id for event in result.events if event.type == "node.started"] == ["record_effect"]
+    assert [event.node_id for event in result.events if event.type == "node.started"] == [
+        "record_effect"
+    ]
     assert result.diagnostics == []
 
 
@@ -127,11 +130,16 @@ def test_run_workflow_fails_when_executor_omits_declared_output() -> None:
         ]
     )
 
-    result = run_workflow(load_workflow("linear_llm.json"), {"question": "hello"}, executors=registry)
+    result = run_workflow(
+        load_workflow("linear_llm.json"), {"question": "hello"}, executors=registry
+    )
 
     assert result.status == "failed"
     assert result.output == {}
-    assert any(diagnostic.code == "E_RUNTIME_010" and "answer" in diagnostic.hint for diagnostic in result.diagnostics)
+    assert any(
+        diagnostic.code == "E_RUNTIME_010" and "answer" in diagnostic.hint
+        for diagnostic in result.diagnostics
+    )
 
 
 def test_run_workflow_reports_actual_node_events_for_failed_node() -> None:
@@ -213,7 +221,9 @@ def test_run_workflow_rejects_second_resume_after_interrupt_completes() -> None:
     waiting = run_workflow(workflow, {"question": "hello", "confidence": 0.5})
     resumed = run_workflow(workflow, {}, thread_id=waiting.thread_id, resume_payload="approved")
 
-    second_resume = run_workflow(workflow, {}, thread_id=waiting.thread_id, resume_payload="approved again")
+    second_resume = run_workflow(
+        workflow, {}, thread_id=waiting.thread_id, resume_payload="approved again"
+    )
 
     assert resumed.status == "succeeded"
     assert second_resume.status == "failed"
@@ -226,12 +236,16 @@ def test_run_workflow_rejects_second_resume_after_interrupt_completes() -> None:
 
 def test_run_workflow_rejects_resume_when_workflow_changed_for_same_thread() -> None:
     workflow = load_workflow("conditional_human_gate.json")
-    changed_data = json.loads((FIXTURES / "conditional_human_gate.json").read_text(encoding="utf-8"))
+    changed_data = json.loads(
+        (FIXTURES / "conditional_human_gate.json").read_text(encoding="utf-8")
+    )
     changed_data["nodes"][2]["params"] = {"template": "Changed: {question}"}
     changed_workflow = WorkflowSpec.model_validate(changed_data)
     waiting = run_workflow(workflow, {"question": "hello", "confidence": 0.5})
 
-    result = run_workflow(changed_workflow, {}, thread_id=waiting.thread_id, resume_payload="approved")
+    result = run_workflow(
+        changed_workflow, {}, thread_id=waiting.thread_id, resume_payload="approved"
+    )
 
     assert result.status == "failed"
     assert result.output == {}
@@ -263,7 +277,7 @@ def test_run_workflow_invokes_fanout_map_reduce() -> None:
 
 
 def test_run_workflow_persists_state_to_store_dir_and_removes_on_resume(tmp_path: Path) -> None:
-    """Test that runtime state is isolated in .pt2lg-runtime and cleaned up after successful resume."""
+    """Test runtime state isolation and cleanup after successful resume."""
     workflow = load_workflow("conditional_human_gate.json")
     state_store_dir = tmp_path / ".pt2lg-runtime"
 

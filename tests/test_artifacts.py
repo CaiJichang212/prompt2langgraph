@@ -1,8 +1,8 @@
-import json
 import importlib.util
-from typing import Annotated, get_args, get_origin
+import json
 from dataclasses import replace
 from pathlib import Path
+from typing import Annotated, get_args, get_origin
 
 import pytest
 
@@ -23,14 +23,11 @@ from prompt2langgraph.registry.nodes import NodeDefinition, NodeRegistry
 from prompt2langgraph.runtime.artifacts import load_bundle_workflow
 from prompt2langgraph.visualization.mermaid import workflow_to_mermaid
 
-
 FIXTURES = Path(__file__).parent / "fixtures"
 
 
 def load_workflow(name: str) -> WorkflowSpec:
-    return WorkflowSpec.model_validate(
-        json.loads((FIXTURES / name).read_text(encoding="utf-8"))
-    )
+    return WorkflowSpec.model_validate(json.loads((FIXTURES / name).read_text(encoding="utf-8")))
 
 
 def import_generated_module(path: Path, module_name: str):
@@ -249,9 +246,7 @@ def test_compile_report_contains_hashes_tables_and_compile_id() -> None:
     assert report["compile_id"] == "compile_test"
     assert report["workflow_hash"].startswith("sha256:")
     assert report["registry_hash"].startswith("sha256:")
-    assert report["nodes"] == [
-        {"id": "compose", "kind": "llm", "executor": "builtin.echo_llm"}
-    ]
+    assert report["nodes"] == [{"id": "compose", "kind": "llm", "executor": "builtin.echo_llm"}]
     assert report["edges"] == []
     assert "question" in report["state_channels"]
     assert "answer" in report["state_channels"]
@@ -262,12 +257,8 @@ def test_compile_report_contains_hashes_tables_and_compile_id() -> None:
 def test_compile_report_compile_id_changes_per_compile() -> None:
     workflow = load_workflow("linear_llm.json")
 
-    first = build_compile_report(
-        workflow, compile_id="compile_a", timings_ms={"total": 1.0}
-    )
-    second = build_compile_report(
-        workflow, compile_id="compile_b", timings_ms={"total": 2.0}
-    )
+    first = build_compile_report(workflow, compile_id="compile_a", timings_ms={"total": 1.0})
+    second = build_compile_report(workflow, compile_id="compile_b", timings_ms={"total": 2.0})
 
     assert first["compile_id"] == "compile_a"
     assert second["compile_id"] == "compile_b"
@@ -346,10 +337,7 @@ def test_policy_resolver_applies_compile_options_to_multi_node_workflow() -> Non
 
     resolved = resolve_policies(workflow, compile_options={"default_timeout_s": 66})
 
-    assert {
-        node_id: policy["timeout_s"]
-        for node_id, policy in resolved.node_policies.items()
-    } == {
+    assert {node_id: policy["timeout_s"] for node_id, policy in resolved.node_policies.items()} == {
         "retrieve": 66,
         "prepare_context": 66,
         "compose": 66,
@@ -513,9 +501,7 @@ def test_emit_generated_bundle_writes_importable_graph_module(tmp_path: Path) ->
 
     assert state_module.STATE_SCHEMA["workflow_id"] == "fanout_map_reduce"
     assert "json.loads" not in (generated / "state.py").read_text(encoding="utf-8")
-    assert "class FanoutMapReduceState" in (generated / "state.py").read_text(
-        encoding="utf-8"
-    )
+    assert "class FanoutMapReduceState" in (generated / "state.py").read_text(encoding="utf-8")
     assert state_module.FanoutMapReduceState.__annotations__["items"] == list[str]
     results_annotation = state_module.FanoutMapReduceState.__annotations__["results"]
     assert get_origin(results_annotation) is Annotated
@@ -535,9 +521,7 @@ def test_manifest_contains_executor_bindings_from_compile_path(tmp_path: Path) -
 
     result = compile_workflow(workflow, out_dir=tmp_path)
 
-    manifest = json.loads(
-        (result.output_dir / "manifest.json").read_text(encoding="utf-8")
-    )
+    manifest = json.loads((result.output_dir / "manifest.json").read_text(encoding="utf-8"))
     assert manifest["executor_bindings"]["compose"]["executor"] == "builtin.echo_llm"
     assert manifest["executor_bindings"]["compose"]["type"] == "builtin"
     assert manifest["executor_bindings"]["compose"]["capabilities"] == []
@@ -551,35 +535,27 @@ def test_manifest_contains_policy_summary_from_compile_path(tmp_path: Path) -> N
 
     result = compile_workflow(workflow, out_dir=tmp_path)
 
-    manifest = json.loads(
-        (result.output_dir / "manifest.json").read_text(encoding="utf-8")
-    )
+    manifest = json.loads((result.output_dir / "manifest.json").read_text(encoding="utf-8"))
     assert "policy_summary" in manifest
     assert "node_policies" in manifest["policy_summary"]
     assert manifest["policy_summary"]["node_policies"]["compose"]["timeout_s"] == 120
-    assert (
-        manifest["policy_summary"]["node_policies"]["compose"]["requires_approval"]
-        is False
-    )
+    assert manifest["policy_summary"]["node_policies"]["compose"]["requires_approval"] is False
 
 
 def test_compile_report_contains_binding_summary_from_compile_path(
     tmp_path: Path,
 ) -> None:
-    """Test that compile_report includes binding summary when compiled through the full compile path."""
+    """Test compile_report binding summary through the full compile path."""
     workflow = load_workflow("linear_llm.json")
     from prompt2langgraph import compile_workflow
 
     result = compile_workflow(workflow, out_dir=tmp_path)
 
-    report = json.loads(
-        (result.output_dir / "compile_report.json").read_text(encoding="utf-8")
-    )
+    report = json.loads((result.output_dir / "compile_report.json").read_text(encoding="utf-8"))
     assert "binding_summary" in report
     assert "executor_bindings" in report["binding_summary"]
     assert (
-        report["binding_summary"]["executor_bindings"]["compose"]["executor"]
-        == "builtin.echo_llm"
+        report["binding_summary"]["executor_bindings"]["compose"]["executor"] == "builtin.echo_llm"
     )
 
 
@@ -589,9 +565,7 @@ def test_failed_compile_removes_stale_bundle_artifacts_but_keeps_unrelated_files
     workflow = load_workflow("linear_llm.json")
     from prompt2langgraph.runtime.artifacts import compile_workflow_to_artifacts
 
-    successful_report, output_dir = compile_workflow_to_artifacts(
-        workflow, out_dir=tmp_path
-    )
+    successful_report, output_dir = compile_workflow_to_artifacts(workflow, out_dir=tmp_path)
     assert successful_report.ok is True
     assert (output_dir / "workflow.lock.json").exists()
 

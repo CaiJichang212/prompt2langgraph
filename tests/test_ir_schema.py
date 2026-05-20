@@ -8,7 +8,6 @@ from prompt2langgraph.diagnostics.report import Diagnostic, ValidationReport
 from prompt2langgraph.ir.models import LoopGuard, TypeName, TypeSpec, WorkflowSpec
 from prompt2langgraph.ir.normalize import normalize_workflow
 
-
 FIXTURES = Path(__file__).parent / "fixtures"
 
 

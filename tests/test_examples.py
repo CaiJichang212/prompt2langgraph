@@ -7,7 +7,6 @@ import pytest
 
 import prompt2langgraph as pt2lg
 
-
 EXAMPLES = Path(__file__).parent / "examples"
 
 VALID_EXAMPLE_INPUTS = [
@@ -29,9 +28,7 @@ VALID_EXAMPLE_INPUTS = [
 
 
 def load_workflow(path: Path) -> pt2lg.WorkflowSpec:
-    return pt2lg.WorkflowSpec.model_validate(
-        json.loads(path.read_text(encoding="utf-8"))
-    )
+    return pt2lg.WorkflowSpec.model_validate(json.loads(path.read_text(encoding="utf-8")))
 
 
 def load_json(path: Path):
@@ -55,15 +52,9 @@ def test_linear_research_example_validates_and_runs() -> None:
 
 def test_conditional_human_gate_example_covers_direct_and_waiting_paths() -> None:
     workflow = load_workflow(EXAMPLES / "conditional_human_gate" / "workflow.json")
-    high_confidence = load_json(
-        EXAMPLES / "conditional_human_gate" / "input_high_confidence.json"
-    )
-    low_confidence = load_json(
-        EXAMPLES / "conditional_human_gate" / "input_low_confidence.json"
-    )
-    resume_payload = load_json(
-        EXAMPLES / "conditional_human_gate" / "resume_approved.json"
-    )
+    high_confidence = load_json(EXAMPLES / "conditional_human_gate" / "input_high_confidence.json")
+    low_confidence = load_json(EXAMPLES / "conditional_human_gate" / "input_low_confidence.json")
+    resume_payload = load_json(EXAMPLES / "conditional_human_gate" / "resume_approved.json")
 
     direct = pt2lg.run_workflow(workflow, high_confidence)
     waiting = pt2lg.run_workflow(workflow, low_confidence)
@@ -95,9 +86,7 @@ def test_fanout_map_reduce_example_validates_runs_and_compiles(tmp_path: Path) -
     assert (compile_result.output_dir / "workflow.lock.json").exists()
 
 
-@pytest.mark.parametrize(
-    ("example_name", "input_name", "expected_output"), VALID_EXAMPLE_INPUTS
-)
+@pytest.mark.parametrize(("example_name", "input_name", "expected_output"), VALID_EXAMPLE_INPUTS)
 def test_valid_examples_compile_to_executable_generated_graph(
     tmp_path: Path,
     example_name: str,
@@ -171,7 +160,5 @@ def test_invalid_join_edge_example_is_rejected_by_compile_target(
     result = pt2lg.compile_workflow(workflow, out_dir=tmp_path)
 
     assert result.ok is False
-    assert any(
-        diagnostic["code"] == "E_TARGET_009" for diagnostic in result.diagnostics
-    )
+    assert any(diagnostic["code"] == "E_TARGET_009" for diagnostic in result.diagnostics)
     assert not (result.output_dir / "workflow.lock.json").exists()
