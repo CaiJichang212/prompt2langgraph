@@ -5,7 +5,8 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import asdict
-from importlib.metadata import PackageNotFoundError, version as package_version
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as package_version
 from typing import Any
 
 from prompt2langgraph.binding.binder import bind_workflow
@@ -15,7 +16,6 @@ from prompt2langgraph.ir.normalize import normalize_workflow
 from prompt2langgraph.registry.builtins import builtin_executor_registry, builtin_node_registry
 from prompt2langgraph.registry.executors import ExecutorRegistry
 from prompt2langgraph.registry.nodes import NodeRegistry
-
 
 REQUIRED_GENERATED_FILES = {
     "workflow.ir.json",
@@ -71,13 +71,17 @@ def build_workflow_lock(
         "schema_version": "0.1",
         "workflow_id": normalized.workflow_id,
         "workflow_hash": sha256_canonical_json(normalized.model_dump(mode="json")),
-        "registry_hash": sha256_canonical_json(_registry_contract(node_registry, executor_registry)),
+        "registry_hash": sha256_canonical_json(
+            _registry_contract(node_registry, executor_registry)
+        ),
         "target": target,
         "prompt2langgraph_version": _package_version("prompt2langgraph"),
         "langgraph_version": _package_version("langgraph"),
         "compile_options_hash": sha256_canonical_json(compile_options),
         "policy_hash": sha256_canonical_json(policy),
-        "generated_files": list(generated_files) if generated_files is not None else list(DEFAULT_GENERATED_FILES),
+        "generated_files": list(generated_files)
+        if generated_files is not None
+        else list(DEFAULT_GENERATED_FILES),
     }
 
 
@@ -116,9 +120,7 @@ def build_manifest(
             for node in normalized.nodes
             if node.kind == "human_gate" or node.executor.type.value == "human"
         ],
-        "side_effect_nodes": [
-            node.id for node in normalized.nodes if node.kind == "side_effect"
-        ],
+        "side_effect_nodes": [node.id for node in normalized.nodes if node.kind == "side_effect"],
         "executor_bindings": bound.executor_bindings,
         "artifact_policy": {"large_objects": "artifact_ref"},
     }
@@ -141,12 +143,16 @@ def build_compile_report(
     normalized = normalize_workflow(workflow)
     diagnostic_items = _diagnostic_items(diagnostics)
     report = {
-        "ok": ok if ok is not None else not any(item["severity"] == "error" for item in diagnostic_items),
+        "ok": ok
+        if ok is not None
+        else not any(item["severity"] == "error" for item in diagnostic_items),
         "compile_id": compile_id,
         "workflow_id": normalized.workflow_id,
         "workflow_hash": sha256_canonical_json(normalized.model_dump(mode="json")),
         "registry_hash": registry_hash
-        or sha256_canonical_json(_registry_contract(builtin_node_registry(), builtin_executor_registry())),
+        or sha256_canonical_json(
+            _registry_contract(builtin_node_registry(), builtin_executor_registry())
+        ),
         "timings_ms": dict(timings_ms),
         "nodes": [
             {"id": node.id, "kind": node.kind, "executor": node.executor.ref}
@@ -183,7 +189,10 @@ def _diagnostic_items(
         items = diagnostics.diagnostics
     else:
         items = diagnostics
-    return [item.model_dump(mode="json") if isinstance(item, Diagnostic) else dict(item) for item in items]
+    return [
+        item.model_dump(mode="json") if isinstance(item, Diagnostic) else dict(item)
+        for item in items
+    ]
 
 
 def _package_version(name: str) -> str:
@@ -199,8 +208,7 @@ def _registry_contract(
 ) -> dict[str, Any]:
     return {
         "nodes": [
-            _normalize_dataclass(asdict(node_registry.get(kind)))
-            for kind in node_registry.kinds()
+            _normalize_dataclass(asdict(node_registry.get(kind))) for kind in node_registry.kinds()
         ],
         "executors": [
             _normalize_dataclass(asdict(executor_registry.get(ref)))
@@ -211,7 +219,9 @@ def _registry_contract(
 
 def _normalize_dataclass(value: Any) -> Any:
     if isinstance(value, dict):
-        return {key: _normalize_dataclass(inner) for key, inner in value.items() if key != "handler"}
+        return {
+            key: _normalize_dataclass(inner) for key, inner in value.items() if key != "handler"
+        }
     if isinstance(value, list):
         return [_normalize_dataclass(item) for item in value]
     if isinstance(value, tuple):

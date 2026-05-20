@@ -3,11 +3,10 @@
 from __future__ import annotations
 
 import re
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, Field, field_validator, model_validator
-
 
 ID_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
@@ -18,7 +17,7 @@ def _validate_identifier(value: str) -> str:
     return value
 
 
-class TypeName(str, Enum):
+class TypeName(StrEnum):
     STRING = "string"
     NUMBER = "number"
     INTEGER = "integer"
@@ -30,7 +29,7 @@ class TypeName(str, Enum):
     ANY = "any"
 
 
-class EdgeKind(str, Enum):
+class EdgeKind(StrEnum):
     LINEAR = "linear"
     CONDITIONAL = "conditional"
     LOOP = "loop"
@@ -38,7 +37,7 @@ class EdgeKind(str, Enum):
     JOIN = "join"
 
 
-class ExecutorType(str, Enum):
+class ExecutorType(StrEnum):
     BUILTIN = "builtin"
     PYTHON_CALLABLE = "python_callable"
     LANGCHAIN_TOOL = "langchain_tool"
@@ -46,7 +45,7 @@ class ExecutorType(str, Enum):
     HUMAN = "human"
 
 
-class ReducerName(str, Enum):
+class ReducerName(StrEnum):
     APPEND = "append"
     ADD_MESSAGES = "add_messages"
     SUM = "sum"
