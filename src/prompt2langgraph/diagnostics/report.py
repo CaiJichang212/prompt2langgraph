@@ -11,6 +11,8 @@ class DiagnosticLocation(BaseModel):
     edge_id: str | None = None
     state_key: str | None = None
     path: str | None = None
+    line: int | None = None
+    column: int | None = None
 
 
 class Diagnostic(BaseModel):
