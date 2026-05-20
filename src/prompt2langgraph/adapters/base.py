@@ -18,10 +18,14 @@ class AdapterParseError(ValueError):
         *,
         source: str | None = None,
         path: str | None = None,
+        line: int | None = None,
+        column: int | None = None,
     ) -> None:
         super().__init__(message)
         self.source = source
         self.path = path
+        self.line = line
+        self.column = column
 
 
 class SourceAdapter(ABC):

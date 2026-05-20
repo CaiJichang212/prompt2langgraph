@@ -40,7 +40,13 @@ class JSONPlanAdapter(SourceAdapter):
             return json_plan_to_workflow_spec(data, executors=self.executors, source=source)
         except AdapterParseError as exc:
             if exc.source is None and source is not None:
-                raise AdapterParseError(str(exc), source=source, path=exc.path) from exc
+                raise AdapterParseError(
+                    str(exc),
+                    source=source,
+                    path=exc.path,
+                    line=exc.line,
+                    column=exc.column,
+                ) from exc
             raise
 
 
