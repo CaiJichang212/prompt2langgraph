@@ -63,3 +63,25 @@ def test_public_compile_workflow_rejects_langgraph_compile_failures(tmp_path: Pa
     assert result.ok is False
     assert not (result.output_dir / "workflow.lock.json").exists()
     assert any(item["code"] == "E_TARGET_009" for item in result.diagnostics)
+
+
+class _FakeModel:
+    def invoke(self, messages):
+        return type(
+            "Response",
+            (),
+            {
+                "content": '{"name":"Demo","inputs":{"question":"string"},"outputs":{"answer":"string"},'
+                '"nodes":[{"id":"compose","kind":"llm","executor":"builtin.echo_llm"}],"edges":[]}'
+            },
+        )()
+
+
+def test_public_api_exports_prompt_planning_entrypoints() -> None:
+    request = pt2lg.PromptPlanRequest(prompt="answer a question")
+    workflow = pt2lg.plan_prompt_to_workflow_spec(request, model_client=_FakeModel())
+
+    assert workflow.workflow_id == "demo"
+    assert "PromptPlanRequest" in pt2lg.__all__
+    assert "PromptPlanResult" in pt2lg.__all__
+    assert "plan_prompt_to_workflow_spec" in pt2lg.__all__
