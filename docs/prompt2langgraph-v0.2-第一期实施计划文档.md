@@ -6,7 +6,7 @@
 
 **Architecture:** 第一期只新增 Prompt 输入层与前置解析诊断层，不改写现有 compiler / runner / validator 主结构。LLM 仅承担“计划生成器”角色，输出结果必须先收敛为简化 JSON plan，再通过现有 `JSONPlanAdapter` 转换为 `WorkflowSpec`，随后进入既有校验与执行链路。
 
-**Tech Stack:** Python 3.11, Typer, Pydantic, pytest, `langchain_openai`, 现有 `prompt2langgraph` adapter/validator/runtime 架构。
+**Tech Stack:** Python 3.11, Typer, Pydantic, pytest, `langchain_openai`, `.env` 配置加载，现有 `prompt2langgraph` adapter/validator/runtime 架构。
 
 ---
 
@@ -16,6 +16,8 @@
 
 - Prompt 文本输入；
 - 基于 `langchain_openai` 的 LLM 计划生成；
+- 默认从 `.env` 加载 `MODEL`、`BASE_URL`、`API_KEY` 的最小配置，并支持在已加载配置基础上选择可用模型；
+- 以兼容 Qwen 模型、vLLM 部署暴露的 OpenAI-style API 以及其他第三方兼容接口为优先目标；
 - 输出 JSON 解析与诊断；
 - 复用现有 `JSONPlanAdapter` 与 `validate_workflow()`；
 - CLI / Public API Prompt 入口；
@@ -48,6 +50,8 @@
   - Prompt 输入层包入口。
 - `src/prompt2langgraph/prompting/planner.py`
   - 封装基于 `langchain_openai` 的 Prompt → JSON plan 文本生成逻辑。
+- `src/prompt2langgraph/prompting/config.py`
+  - 从 `.env` 加载 `MODEL`、`BASE_URL`、`API_KEY`，并提供最小配置解析能力。
 - `src/prompt2langgraph/prompting/parser.py`
   - 把 LLM 文本输出解析为 JSON 对象，并产出 Prompt 前置诊断。
 - `tests/test_prompt_planner.py`
@@ -58,7 +62,7 @@
 ### 2.2 预计修改文件
 
 - `pyproject.toml`
-  - 增加第一期所需依赖 `langchain_openai`。
+  - 增加第一期所需依赖 `langchain_openai` 与 `.env` 配置加载依赖。
 - `src/prompt2langgraph/__init__.py`
   - 暴露 Prompt 入口相关 public API。
 - `src/prompt2langgraph/cli.py`
@@ -91,10 +95,11 @@
 
 ## 三、实施任务拆解
 
-### Task 1：引入 Prompt 计划生成基础依赖与模块骨架
+### Task 1：引入 Prompt 计划生成基础依赖、配置加载与模块骨架
 
 **Files:**
 - Create: `src/prompt2langgraph/prompting/__init__.py`
+- Create: `src/prompt2langgraph/prompting/config.py`
 - Create: `src/prompt2langgraph/prompting/planner.py`
 - Modify: `pyproject.toml`
 - Test: `tests/test_prompt_planner.py`
@@ -111,6 +116,20 @@ def test_prompting_module_exports_request_and_result_types() -> None:
 
     assert request.prompt == "build a simple answer workflow"
     assert result.raw_text.startswith("{")
+
+
+def test_load_prompt_planner_config_reads_env(monkeypatch) -> None:
+    from prompt2langgraph.prompting.config import load_prompt_planner_config
+
+    monkeypatch.setenv("MODEL", "qwen-plus")
+    monkeypatch.setenv("BASE_URL", "https://example.com/v1")
+    monkeypatch.setenv("API_KEY", "secret")
+
+    config = load_prompt_planner_config()
+
+    assert config.model == "qwen-plus"
+    assert config.base_url == "https://example.com/v1"
+    assert config.api_key == "secret"
 ```
 
 - [ ] **Step 2: 运行测试确认失败**
@@ -128,12 +147,38 @@ dependencies = [
   "langgraph>=1.0,<2.0",
   "langsmith>=0.3.0",
   "pydantic>=2.8,<3.0",
+  "python-dotenv>=1.0,<2.0",
   "typer>=0.12,<1.0",
   "typing-extensions>=4.12",
 ]
 ```
 
-- [ ] **Step 4: 创建 Prompt 模块骨架**
+- [ ] **Step 4: 创建 Prompt 模块骨架与 `.env` 配置加载**
+
+`src/prompt2langgraph/prompting/config.py`
+
+```python
+from __future__ import annotations
+
+import os
+from pydantic import BaseModel
+from dotenv import load_dotenv
+
+
+class PromptPlannerConfig(BaseModel):
+    model: str | None = None
+    base_url: str | None = None
+    api_key: str | None = None
+
+
+def load_prompt_planner_config() -> PromptPlannerConfig:
+    load_dotenv()
+    return PromptPlannerConfig(
+        model=os.getenv("MODEL"),
+        base_url=os.getenv("BASE_URL"),
+        api_key=os.getenv("API_KEY"),
+    )
+```
 
 `src/prompt2langgraph/prompting/planner.py`
 
@@ -160,9 +205,15 @@ class PromptPlanResult(BaseModel):
 `src/prompt2langgraph/prompting/__init__.py`
 
 ```python
+from prompt2langgraph.prompting.config import PromptPlannerConfig, load_prompt_planner_config
 from prompt2langgraph.prompting.planner import PromptPlanRequest, PromptPlanResult
 
-__all__ = ["PromptPlanRequest", "PromptPlanResult"]
+__all__ = [
+    "PromptPlanRequest",
+    "PromptPlanResult",
+    "PromptPlannerConfig",
+    "load_prompt_planner_config",
+]
 ```
 
 - [ ] **Step 5: 运行测试确认通过**
@@ -334,6 +385,8 @@ from pydantic import BaseModel, Field
 
 from langchain_openai import ChatOpenAI
 
+from prompt2langgraph.prompting.config import load_prompt_planner_config
+
 
 class PromptPlanRequest(BaseModel):
     prompt: str = Field(min_length=1)
@@ -356,10 +409,11 @@ Do not include markdown fences or explanations.
 
 
 def build_model_client(request: PromptPlanRequest) -> ChatOpenAI:
+    config = load_prompt_planner_config()
     return ChatOpenAI(
-        model=request.model or "gpt-4o-mini",
-        base_url=request.base_url,
-        api_key=request.api_key,
+        model=request.model or config.model or "qwen-plus",
+        base_url=request.base_url or config.base_url,
+        api_key=request.api_key or config.api_key,
         temperature=request.temperature,
     )
 
@@ -386,7 +440,11 @@ def generate_plan_text(
 from prompt2langgraph.prompting.planner import PromptPlanRequest, build_model_client
 
 
-def test_build_model_client_accepts_openai_style_config() -> None:
+def test_build_model_client_accepts_openai_style_config(monkeypatch) -> None:
+    monkeypatch.setenv("MODEL", "qwen-turbo")
+    monkeypatch.setenv("BASE_URL", "https://env.example.com/v1")
+    monkeypatch.setenv("API_KEY", "env-key")
+
     request = PromptPlanRequest(
         prompt="build a workflow",
         model="qwen-plus",
@@ -401,13 +459,28 @@ def test_build_model_client_accepts_openai_style_config() -> None:
     assert str(client.openai_api_base) == "https://example.com/v1"
 ```
 
-- [ ] **Step 5: 运行测试确认通过**
+- [ ] **Step 5: 增加纯 `.env` 配置回退测试**
+
+```python
+def test_build_model_client_uses_env_defaults_when_request_fields_missing(monkeypatch) -> None:
+    monkeypatch.setenv("MODEL", "qwen-plus")
+    monkeypatch.setenv("BASE_URL", "https://env.example.com/v1")
+    monkeypatch.setenv("API_KEY", "env-key")
+
+    request = PromptPlanRequest(prompt="build a workflow")
+    client = build_model_client(request)
+
+    assert client.model_name == "qwen-plus"
+    assert str(client.openai_api_base) == "https://env.example.com/v1"
+```
+
+- [ ] **Step 6: 运行测试确认通过**
 
 Run: `uv run pytest tests/test_prompt_planner.py -v`
 
 Expected: PASS
 
-- [ ] **Step 6: 提交本任务**
+- [ ] **Step 7: 提交本任务**
 
 ```bash
 git add src/prompt2langgraph/prompting/planner.py tests/test_prompt_planner.py
@@ -631,7 +704,7 @@ Expected: FAIL，提示 `plan` 命令不存在。
 
 - [ ] **Step 3: 在 CLI 中增加 Prompt 命令**
 
-建议新增独立命令 `plan`，避免污染现有 `validate / compile / run` 参数语义。命令实现应复用现有 CLI 的错误处理风格：捕获 `AdapterParseError` 并转换为 `ValidationReport` / JSON payload，而不是直接把异常抛到终端。
+建议新增独立命令 `plan`，避免污染现有 `validate / compile / run` 参数语义。命令实现应复用现有 CLI 的错误处理风格：捕获 `AdapterParseError` 并转换为 `ValidationReport` / JSON payload，而不是直接把异常抛到终端。配置口径应与开发计划保持一致：默认从 `.env` 读取 `MODEL`、`BASE_URL`、`API_KEY`，CLI 显式参数优先覆盖环境配置。
 
 ```python
 @app.command()
@@ -786,7 +859,8 @@ git commit -m "refactor: align prompt planning with existing workflow pipeline"
 应补充：
 - 新增 Prompt 输入能力；
 - Prompt 计划生成依赖外部 LLM；
-- 采用 `langchain_openai`，目标兼容 OpenAI-style / 第三方兼容 API；
+- 采用 `langchain_openai`，优先兼容 Qwen、vLLM 暴露的 OpenAI-style / 第三方兼容 API；
+- 默认从 `.env` 读取 `MODEL`、`BASE_URL`、`API_KEY`，命令参数可覆盖；
 - 当前 Prompt 只生成简化 JSON plan，不代表 runtime `llm` 节点具备真实执行能力。
 
 建议新增示例：
@@ -800,6 +874,7 @@ uv run pt2lg plan --prompt "Build a workflow that answers a question with one ll
 应补充：
 - 当前支持的上层输入新增 Prompt；
 - Prompt 入口仅用于生成简化 JSON plan；
+- Prompt 计划生成默认从 `.env` 读取 `MODEL`、`BASE_URL`、`API_KEY`；
 - 文档修改时需同步 `README.md`、`CLAUDE.md`、`AGENTS.md`；
 - 修改 Prompt 入口后需跑 CLI / Public API / 全量 pytest 回归。
 
@@ -808,6 +883,7 @@ uv run pt2lg plan --prompt "Build a workflow that answers a question with one ll
 应补充：
 - Prompt 输入能力的边界说明；
 - 第一期仍不支持真实 workflow `llm` 执行；
+- Prompt 计划生成默认从 `.env` 读取 `MODEL`、`BASE_URL`、`API_KEY`；
 - Prompt 相关改动的回归命令要求。
 
 - [ ] **Step 4: 提交文档修改**
