@@ -12,7 +12,7 @@ from pydantic import ValidationError
 from prompt2langgraph.adapters.base import AdapterParseError
 from prompt2langgraph.adapters.ir import IRAdapter
 from prompt2langgraph.adapters.json_plan import JSONPlanAdapter
-from prompt2langgraph.diagnostics.codes import E_PARSE_001, E_SCHEMA_002, E_TARGET_009
+from prompt2langgraph.diagnostics.codes import E_PARSE_001, E_RUNTIME_010, E_SCHEMA_002, E_TARGET_009
 from prompt2langgraph.diagnostics.report import Diagnostic, DiagnosticLocation, ValidationReport
 from prompt2langgraph.ir.models import WorkflowSpec
 from prompt2langgraph.validate.validator import validate_workflow
@@ -158,6 +158,65 @@ def graph(
 
     mermaid = workflow_to_mermaid(workflow_or_report)
     _emit({"format": "mermaid", "graph": mermaid}, json_output, mermaid)
+
+
+@app.command()
+def plan(
+    prompt: str = typer.Option(..., "--prompt"),
+    model: str | None = typer.Option(None, "--model"),
+    base_url: str | None = typer.Option(None, "--base-url"),
+    api_key: str | None = typer.Option(None, "--api-key"),
+    json_output: bool = typer.Option(False, "--json", help="Emit a machine-readable plan."),
+) -> None:
+    """Generate a simplified JSON plan from a prompt using an LLM."""
+
+    from prompt2langgraph.prompting import PromptPlanRequest
+    from prompt2langgraph.prompting.parser import parse_prompt_plan_text
+    from prompt2langgraph.prompting.planner import generate_plan_text
+
+    request = PromptPlanRequest(
+        prompt=prompt,
+        model=model,
+        base_url=base_url,
+        api_key=api_key,
+    )
+    try:
+        result = generate_plan_text(request)
+        plan_data = parse_prompt_plan_text(result.raw_text)
+    except AdapterParseError as exc:
+        report = ValidationReport(
+            diagnostics=[
+                Diagnostic(
+                    code=E_PARSE_001,
+                    severity="error",
+                    message="failed to parse generated prompt plan",
+                    location=DiagnosticLocation(
+                        source=exc.source or "prompt",
+                        path=exc.path,
+                        line=exc.line,
+                        column=exc.column,
+                    ),
+                    hint=str(exc),
+                )
+            ]
+        )
+        _emit_validation_report(report, json_output)
+        raise typer.Exit(1) from None
+    except Exception as exc:
+        report = ValidationReport(
+            diagnostics=[
+                Diagnostic(
+                    code=E_RUNTIME_010,
+                    severity="error",
+                    message="LLM call failed during prompt plan generation",
+                    location=DiagnosticLocation(source="prompt"),
+                    hint=str(exc),
+                )
+            ]
+        )
+        _emit_validation_report(report, json_output)
+        raise typer.Exit(1) from None
+    _emit({"ok": True, "plan": plan_data}, json_output, _json_dumps(plan_data))
 
 
 @app.command()
