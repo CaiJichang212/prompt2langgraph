@@ -2,6 +2,7 @@ from prompt2langgraph.prompting.planner import (
     PromptPlanRequest,
     PromptPlanResult,
     generate_plan_text,
+    plan_prompt_to_workflow_spec,
 )
 
 
@@ -125,3 +126,80 @@ def test_generate_plan_text_handles_list_content() -> None:
 
     assert result.raw_text.startswith("{")
     assert '"name":"Demo"' in result.raw_text
+
+
+class FakeWorkflowModel:
+    def invoke(self, messages):
+        return type(
+            "Response",
+            (),
+            {
+                "content": (
+                    '{"name":"Demo","inputs":{"question":"string"},'
+                    '"outputs":{"answer":"string"},'
+                    '"nodes":[{"id":"compose","kind":"llm","executor":"builtin.echo_llm"}],'
+                    '"edges":[]}'
+                )
+            },
+        )()
+
+
+def test_plan_prompt_to_workflow_spec_reuses_json_plan_adapter() -> None:
+    workflow = plan_prompt_to_workflow_spec(
+        PromptPlanRequest(prompt="answer a question"),
+        model_client=FakeWorkflowModel(),
+    )
+
+    assert workflow.workflow_id == "demo"
+    assert workflow.entrypoint == "compose"
+
+
+class FakeBadModel:
+    def invoke(self, messages):
+        return type("Response", (), {"content": "[1,2,3]"})()
+
+
+def test_plan_prompt_to_workflow_spec_raises_parse_error_for_non_object_output() -> None:
+    import pytest
+
+    from prompt2langgraph.adapters.base import AdapterParseError
+
+    with pytest.raises(AdapterParseError):
+        plan_prompt_to_workflow_spec(
+            PromptPlanRequest(prompt="bad plan"),
+            model_client=FakeBadModel(),
+        )
+
+
+class FakeInvalidJsonModel:
+    def invoke(self, messages):
+        return type("Response", (), {"content": "I don't know"})()
+
+
+def test_plan_prompt_to_workflow_spec_raises_parse_error_for_invalid_json() -> None:
+    import pytest
+
+    from prompt2langgraph.adapters.base import AdapterParseError
+
+    with pytest.raises(AdapterParseError):
+        plan_prompt_to_workflow_spec(
+            PromptPlanRequest(prompt="invalid json"),
+            model_client=FakeInvalidJsonModel(),
+        )
+
+
+class FakeMissingFieldsModel:
+    def invoke(self, messages):
+        return type("Response", (), {"content": '{"name":"Demo"}'})()
+
+
+def test_plan_prompt_to_workflow_spec_raises_parse_error_for_missing_required_fields() -> None:
+    import pytest
+
+    from prompt2langgraph.adapters.base import AdapterParseError
+
+    with pytest.raises(AdapterParseError):
+        plan_prompt_to_workflow_spec(
+            PromptPlanRequest(prompt="missing fields"),
+            model_client=FakeMissingFieldsModel(),
+        )
