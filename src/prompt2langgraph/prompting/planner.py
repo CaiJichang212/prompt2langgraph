@@ -4,7 +4,10 @@ from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, Field
 
+from prompt2langgraph.adapters.json_plan import JSONPlanAdapter
+from prompt2langgraph.ir.models import WorkflowSpec
 from prompt2langgraph.prompting.config import load_prompt_planner_config
+from prompt2langgraph.prompting.parser import parse_prompt_plan_text
 
 if TYPE_CHECKING:
     from langchain_openai import ChatOpenAI
@@ -56,3 +59,13 @@ def generate_plan_text(
     )
     content = response.content if isinstance(response.content, str) else "".join(response.content)
     return PromptPlanResult(raw_text=content)
+
+
+def plan_prompt_to_workflow_spec(
+    request: PromptPlanRequest,
+    *,
+    model_client: object | None = None,
+) -> WorkflowSpec:
+    result = generate_plan_text(request, model_client=model_client)
+    result.plan = parse_prompt_plan_text(result.raw_text)
+    return JSONPlanAdapter().parse(result.plan, source="prompt")
