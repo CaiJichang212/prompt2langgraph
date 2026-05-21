@@ -29,11 +29,15 @@
 - CLI：`src/prompt2langgraph/cli.py`
 - public API：`src/prompt2langgraph/__init__.py`
 
-当前不是 prompt-to-code 生成器，也没有实现 `prompt_text` 或 `plan_text` 适配器。内置 executor 仅覆盖本地确定性 mock/纯函数/人工中断占位，不应隐式调用外部 LLM、网络服务或 shell 命令；`tool` 和 `side_effect` 是节点类型契约，不代表存在可直接执行外部工具或副作用的内置 executor。
+当前不是 prompt-to-code 生成器。内置 executor 仅覆盖本地确定性 mock/纯函数/人工中断占位，不应隐式调用外部 LLM、网络服务或 shell 命令；`tool` 和 `side_effect` 是节点类型契约，不代表存在可直接执行外部工具或副作用的内置 executor。
+
+Prompt 计划生成能力已落地：通过 `plan_prompt_to_workflow_spec()` 或 CLI `pt2lg plan` 命令，可由自然语言 Prompt 经 LLM 生成简化 JSON plan，再经 `JSONPlanAdapter` 转为 `WorkflowSpec`。Prompt 计划生成基于 `langchain_openai`，默认从 `.env` 读取 `MODEL`、`BASE_URL`、`API_KEY`，优先兼容 Qwen、vLLM 暴露的 OpenAI-style API 及其他第三方兼容接口。当前 Prompt 只生成简化 JSON plan，不代表 runtime `llm` 节点具备真实执行能力。
 
 ## 当前能力边界
 
-- 输入：规范 Workflow IR，或通过 `json_plan_to_workflow_spec()` 适配的简化 JSON plan。
+- 输入：规范 Workflow IR，或通过 `json_plan_to_workflow_spec()` 适配的简化 JSON plan，或通过 `plan_prompt_to_workflow_spec()` 由 Prompt 经 LLM 生成简化 JSON plan。
+- Prompt 计划生成：`prompting/planner.py` 封装 LLM 调用，`prompting/parser.py` 解析 JSON 输出并产出 `AdapterParseError` 诊断，`prompting/config.py` 从 `.env` 加载 `MODEL`、`BASE_URL`、`API_KEY`。
+- Prompt 只生成简化 JSON plan，不代表 runtime `llm` 节点具备真实执行能力；当前仍不支持真实 workflow `llm` 执行。
 - skill：`analyze_skill_dir()` 只做 `SKILL.md` frontmatter、编号步骤、资源文件和风险词静态分析，输出 `SkillDirectoryAnalysis`/`draft_nodes` 和诊断；不生成可执行 `WorkflowSpec`，也不执行 skill 脚本。
 - 节点类型 registry：`llm`、`tool`、`retriever`、`transform`、`router`、`human_gate`、`join`、`side_effect`。
 - 内置 executor：`builtin.echo_llm`、`builtin.mock_retriever`、`builtin.identity_transform`、`builtin.route`、`builtin.human_gate`、`builtin.join`。
@@ -50,14 +54,18 @@
 - 新增节点或 executor 时，通过 registry 定义契约，并补充校验和运行测试；内置 executor 必须保持确定性，不能隐式调用外部 LLM 或网络。
 - side effect 节点默认必须要求审批或幂等键，除非 workflow policy 显式允许副作用。
 - 编译产物结构变更时，同步更新 `tests/test_compile_flow.py` 等回归测试。
+- 修改 Prompt 入口后，跑 `tests/test_prompt_planner.py`、`tests/test_prompt_parser.py`、`tests/test_public_api.py`、`tests/test_cli.py` 回归。
+- 文档修改需同步 `README.md`、`CLAUDE.md`、`AGENTS.md`。
 
 ### Don't
 - 不要把上层 `ref-projects/` 的参考工程内容当作本项目源码。
 - 不要重新引入 `cli._write_compile_artifacts()` 一类的第二套产物写入路径。
 - 不要宣称 `join` edge 可执行（当前 LangGraph runner/compiler 不支持）。
 - 不要在 `tests/test_compile_flow.py` 模块导入阶段执行编译、写文件或打印 smoke output。
-- 不要在 `prompt2langgraph.cli` 模块导入阶段急切导入 `langgraph`。
+- 不要在 `prompt2langgraph.cli` 模块导入阶段急切导入 `langgraph` 或 `langchain_openai`。
 - 不要在 manifest、compile report 和 lockfile 中写入真实 secret 或 secret 名称。
+- 不要让 Prompt 入口直接生成并执行 Workflow IR；Prompt 只生成简化 JSON plan。
+- 不要把 `plan` 命令演化成直接运行 workflow 的命令。
 
 ## 命令输出保护
 
@@ -81,6 +89,7 @@ uv sync
 uv run pt2lg validate tests/fixtures/linear_llm.json --json
 uv run pt2lg run tests/fixtures/linear_llm.json --input '{"question":"hello"}' --json
 uv run pt2lg graph tests/fixtures/linear_llm.json --format mermaid
+uv run pt2lg plan --prompt "Build a workflow that answers a question with one llm node" --json
 ```
 
 全量测试基线：
@@ -144,4 +153,5 @@ uv run pt2lg resume build/conditional_human_gate/workflow.lock.json --thread-id 
 - 修改行为前先阅读对应测试；新增行为必须补充或更新 `tests/`。
 - 至少运行 `uv run pytest`。
 - 若全量测试失败，最终说明精确失败位置和错误；修复后再以 `uv run pytest` 作为完成标准。
+- 若改动涉及 Prompt 入口（`prompting/`、`cli.py plan`、`__init__.py`），额外跑 `tests/test_prompt_planner.py`、`tests/test_prompt_parser.py`、`tests/test_public_api.py`、`tests/test_cli.py`。
 - 若只修改文档，也应运行 `uv run pytest` 做回归确认；如因环境问题无法通过，最终说明原因。
