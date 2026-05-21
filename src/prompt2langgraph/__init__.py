@@ -7,7 +7,11 @@ from typing import TYPE_CHECKING, Any
 
 from prompt2langgraph.diagnostics.report import Diagnostic, DiagnosticLocation, ValidationReport
 from prompt2langgraph.ir.models import WorkflowSpec
-from prompt2langgraph.prompting import PromptPlanRequest, PromptPlanResult, plan_prompt_to_workflow_spec
+from prompt2langgraph.prompting import (
+    PromptPlanRequest,
+    PromptPlanResult,
+    plan_prompt_to_workflow_spec,
+)
 from prompt2langgraph.validate.validator import validate_workflow
 
 if TYPE_CHECKING:
