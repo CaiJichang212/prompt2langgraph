@@ -277,7 +277,7 @@ def test_cli_help_lists_core_commands() -> None:
     result = CliRunner().invoke(app, ["--help"])
 
     assert result.exit_code == 0
-    for command in ["validate", "compile", "run", "resume", "graph"]:
+    for command in ["validate", "compile", "run", "resume", "graph", "plan"]:
         assert command in result.stdout
 
 
@@ -429,6 +429,109 @@ def test_resume_command_accepts_json_null_payload_from_lockfile(tmp_path: Path) 
         and 'required input state key "question" is missing' in item["message"]
         for item in resumed["diagnostics"]
     )
+
+
+def test_prompt_plan_command_emits_json_plan_payload(monkeypatch) -> None:
+    class FakeModel:
+        def invoke(self, messages):
+            return type(
+                "Response",
+                (),
+                {
+                    "content": '{"name":"Demo","nodes":[{"id":"compose","kind":"llm","executor":"builtin.echo_llm"}],"edges":[]}'
+                },
+            )()
+
+    def fake_build_model_client(request):
+        return FakeModel()
+
+    monkeypatch.setattr(
+        "prompt2langgraph.prompting.planner.build_model_client",
+        fake_build_model_client,
+    )
+
+    result = CliRunner().invoke(
+        app,
+        ["plan", "--prompt", "build a simple workflow", "--json"],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["ok"] is True
+    assert payload["plan"]["name"] == "Demo"
+
+
+def test_prompt_plan_command_reports_parse_failure_as_json(monkeypatch) -> None:
+    class FakeModel:
+        def invoke(self, messages):
+            return type("Response", (), {"content": "[1,2,3]"})()
+
+    def fake_build_model_client(request):
+        return FakeModel()
+
+    monkeypatch.setattr(
+        "prompt2langgraph.prompting.planner.build_model_client",
+        fake_build_model_client,
+    )
+
+    result = CliRunner().invoke(
+        app,
+        ["plan", "--prompt", "bad workflow", "--json"],
+    )
+
+    assert result.exit_code != 0
+    payload = json.loads(result.stdout)
+    assert payload["ok"] is False
+    assert any(item["code"] == "E_PARSE_001" for item in payload["diagnostics"])
+
+
+def test_prompt_plan_command_reports_json_decode_failure_as_diagnostic(monkeypatch) -> None:
+    class FakeModel:
+        def invoke(self, messages):
+            return type("Response", (), {"content": "not valid json at all"})()
+
+    def fake_build_model_client(request):
+        return FakeModel()
+
+    monkeypatch.setattr(
+        "prompt2langgraph.prompting.planner.build_model_client",
+        fake_build_model_client,
+    )
+
+    result = CliRunner().invoke(
+        app,
+        ["plan", "--prompt", "broken output", "--json"],
+    )
+
+    assert result.exit_code != 0
+    payload = json.loads(result.stdout)
+    assert payload["ok"] is False
+    assert any(item["code"] == "E_PARSE_001" for item in payload["diagnostics"])
+
+
+def test_prompt_plan_command_reports_llm_call_failure_as_diagnostic(monkeypatch) -> None:
+    def fake_build_model_client(request):
+        class FakeModel:
+            def invoke(self, messages):
+                raise RuntimeError("connection refused")
+
+        return FakeModel()
+
+    monkeypatch.setattr(
+        "prompt2langgraph.prompting.planner.build_model_client",
+        fake_build_model_client,
+    )
+
+    result = CliRunner().invoke(
+        app,
+        ["plan", "--prompt", "trigger llm error", "--json"],
+    )
+
+    assert result.exit_code != 0
+    payload = json.loads(result.stdout)
+    assert payload["ok"] is False
+    assert any(item["code"] == "E_RUNTIME_010" for item in payload["diagnostics"])
+    assert "Traceback" not in result.stdout
 
 
 def test_resume_command_continues_pending_interrupt_across_processes(tmp_path: Path) -> None:
