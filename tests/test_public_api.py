@@ -71,8 +71,12 @@ class _FakeModel:
             "Response",
             (),
             {
-                "content": '{"name":"Demo","inputs":{"question":"string"},"outputs":{"answer":"string"},'
-                '"nodes":[{"id":"compose","kind":"llm","executor":"builtin.echo_llm"}],"edges":[]}'
+                "content": (
+                    '{"name":"Demo","inputs":{"question":"string"},'
+                    '"outputs":{"answer":"string"},'
+                    '"nodes":[{"id":"compose","kind":"llm","executor":"builtin.echo_llm"}],'
+                    '"edges":[]}'
+                )
             },
         )()
 
@@ -85,3 +89,13 @@ def test_public_api_exports_prompt_planning_entrypoints() -> None:
     assert "PromptPlanRequest" in pt2lg.__all__
     assert "PromptPlanResult" in pt2lg.__all__
     assert "plan_prompt_to_workflow_spec" in pt2lg.__all__
+
+
+def test_public_prompt_workflow_can_be_validated() -> None:
+    workflow = pt2lg.plan_prompt_to_workflow_spec(
+        pt2lg.PromptPlanRequest(prompt="answer a question"),
+        model_client=_FakeModel(),
+    )
+    report = pt2lg.validate_workflow(workflow)
+
+    assert report.ok is True
