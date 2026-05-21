@@ -15,11 +15,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 以 `src/prompt2langgraph/` 和 `tests/` 的实际行为为准。内置 executor 仅用于本地确定性 mock/纯函数/人工中断占位，不应隐式调用外部 LLM、网络服务或 shell。`tool` / `side_effect` 是节点类型契约，不代表存在可直接执行外部工具或副作用的内置 executor。
 
-当前可执行输入只有两类：
+当前可执行输入有三类：
 - 规范 `WorkflowSpec` IR
 - 通过 `json_plan_to_workflow_spec()` 适配的简化 JSON plan
+- 通过 `plan_prompt_to_workflow_spec()` 由 Prompt 文本经 LLM 生成简化 JSON plan，再经 `JSONPlanAdapter` 转为 `WorkflowSpec`
 
-未实现 `prompt_text` / `plan_text` 适配器。`analyze_skill_dir()` 只做 `SKILL.md` 与资源文件静态分析，不生成可执行工作流，也不执行 skill 脚本。
+Prompt 计划生成基于 `langchain_openai`，默认从 `.env` 读取 `MODEL`、`BASE_URL`、`API_KEY`，优先兼容 Qwen、vLLM 暴露的 OpenAI-style API 及其他第三方兼容接口。当前 Prompt 只生成简化 JSON plan，不代表 runtime `llm` 节点具备真实执行能力。
+
+`analyze_skill_dir()` 只做 `SKILL.md` 与资源文件静态分析，不生成可执行工作流，也不执行 skill 脚本。
 
 ## 常用命令
 
@@ -42,6 +45,9 @@ uv run pt2lg compile tests/fixtures/linear_llm.json --out build --json
 uv run pt2lg run tests/fixtures/linear_llm.json --input '{"question":"hello"}' --json
 uv run pt2lg graph tests/fixtures/linear_llm.json --format mermaid
 
+# Prompt 计划生成
+uv run pt2lg plan --prompt "Build a workflow that answers a question with one llm node" --json
+
 # bundle / resume
 uv run pt2lg run build/linear_llm/workflow.lock.json --input '{"question":"hello"}' --json
 uv run pt2lg graph build/linear_llm/workflow.lock.json --format mermaid --json
@@ -57,25 +63,29 @@ uv run pt2lg run tests/fixtures/fanout_map_reduce.json --input '{"items":["alpha
 ## 架构速览
 
 核心流水线：
-1. `cli.py` 读取 JSON，按 IR 或简化 JSON plan 分流。
-2. `adapters/` 转成规范 `WorkflowSpec`。
-3. `ir/normalize.py` 规范化。
-4. `validate/validator.py` 组合 schema / registry / graph / type / security 校验。
-5. `policy/resolver.py` 与 `binding/binder.py` 生成策略摘要和 executor 绑定。
-6. `compiler/langgraph_py.py` 编译为 LangGraph `StateGraph`。
-7. `runtime/artifacts.py` 写入或读取 bundle。
-8. `runtime/runner.py` 执行图、记录事件，并处理 interrupt/resume。
+1. `cli.py` 读取 JSON，按 IR 或简化 JSON plan 分流；`plan` 命令通过 Prompt 生成简化 JSON plan。
+2. `prompting/planner.py` 调用 LLM 生成 JSON plan 文本；`prompting/parser.py` 解析并产出诊断；`prompting/config.py` 从 `.env` 加载配置。
+3. `adapters/` 转成规范 `WorkflowSpec`。
+4. `ir/normalize.py` 规范化。
+5. `validate/validator.py` 组合 schema / registry / graph / type / security 校验。
+6. `policy/resolver.py` 与 `binding/binder.py` 生成策略摘要和 executor 绑定。
+7. `compiler/langgraph_py.py` 编译为 LangGraph `StateGraph`。
+8. `runtime/artifacts.py` 写入或读取 bundle。
+9. `runtime/runner.py` 执行图、记录事件，并处理 interrupt/resume。
 
 关键模块职责：
 - `ir/models.py`：规范 IR、节点/边、state schema 的 Pydantic 模型。
 - `adapters/ir.py`、`adapters/json_plan.py`：源 JSON → `WorkflowSpec`。
+- `prompting/planner.py`：Prompt → LLM → JSON plan 文本生成，`plan_prompt_to_workflow_spec()` 串联生成与适配。
+- `prompting/parser.py`：LLM 输出 JSON 解析与 `AdapterParseError` 诊断。
+- `prompting/config.py`：从 `.env` 加载 `MODEL`、`BASE_URL`、`API_KEY`。
 - `adapters/skill_dir.py`：skill 目录静态预分析。
 - `registry/`：节点类型与 executor 注册表，builtins 在 `registry/builtins.py`。
 - `compiler/langgraph_py.py`：实现 conditional / loop / fanout 路由与 state schema lowering。
 - `runtime/artifacts.py`：bundle 生成、lockfile/manifest/report、bundle 校验、旧产物清理。
 - `runtime/runner.py`：运行时事件、`human_gate` interrupt、`.pt2lg-runtime/` 本地恢复状态。
 - `visualization/mermaid.py`：Mermaid 渲染。
-- `__init__.py`：稳定 public API：`WorkflowSpec`、`validate_workflow`、`run_workflow`、`compile_workflow`。
+- `__init__.py`：稳定 public API：`WorkflowSpec`、`validate_workflow`、`run_workflow`、`compile_workflow`、`PromptPlanRequest`、`PromptPlanResult`、`plan_prompt_to_workflow_spec`。
 
 ## 当前执行能力
 
@@ -95,13 +105,17 @@ uv run pt2lg run tests/fixtures/fanout_map_reduce.json --input '{"items":["alpha
 - `side_effect` 节点默认需要审批或幂等键，除非 workflow policy 明确允许副作用。
 - 修改编译产物结构时，同步更新编译/lockfile/bundle 相关回归测试。
 - 不要重新引入第二套产物写入路径；产物统一经 `runtime.artifacts` 生成。
-- 不要在 `prompt2langgraph.cli` 模块导入阶段急切导入 `langgraph`。
+- 不要在 `prompt2langgraph.cli` 模块导入阶段急切导入 `langgraph` 或 `langchain_openai`。
 - 不要在 manifest、compile report、lockfile 中写入真实 secret 或 secret 名称。
 - 不要把 `join` edge 当成当前可执行能力。
+- 不要让 Prompt 入口直接生成并执行 Workflow IR；Prompt 只生成简化 JSON plan。
+- 不要把 `plan` 命令演化成直接运行 workflow 的命令。
 
 ## 测试要求
 
 - 修改行为前先读对应测试，新增行为必须更新 `tests/`。
 - 完成后至少运行 `uv run pytest`。
 - 若改动涉及编译产物、bundle 读取、resume 或 lockfile 路径，额外跑相关 CLI fixture 回归命令。
+- 若改动涉及 Prompt 入口（`prompting/`、`cli.py plan`、`__init__.py`），额外跑 `tests/test_prompt_planner.py`、`tests/test_prompt_parser.py`、`tests/test_public_api.py`、`tests/test_cli.py`。
+- 文档修改需同步 `README.md`、`CLAUDE.md`、`AGENTS.md`。
 - 即使只改文档，也优先运行 `uv run pytest` 做回归确认。
