@@ -1,4 +1,8 @@
-from prompt2langgraph.prompting.planner import PromptPlanRequest, PromptPlanResult
+from prompt2langgraph.prompting.planner import (
+    PromptPlanRequest,
+    PromptPlanResult,
+    generate_plan_text,
+)
 
 
 def test_prompting_module_exports_request_and_result_types() -> None:
@@ -25,3 +29,99 @@ def test_load_prompt_planner_config_reads_env(monkeypatch) -> None:
     assert config.model == "qwen-plus"
     assert config.base_url == "https://example.com/v1"
     assert config.api_key == "secret"
+
+
+class FakeModel:
+    def invoke(self, messages):
+        return type(
+            "Response",
+            (),
+            {
+                "content": (
+                    '{"name":"Demo","nodes":[{"id":"compose",'
+                    '"kind":"llm","executor":"builtin.echo_llm"}],"edges":[]}'
+                )
+            },
+        )()
+
+
+def test_generate_plan_text_uses_model_and_returns_text() -> None:
+    request = PromptPlanRequest(prompt="build a simple answer workflow")
+
+    result = generate_plan_text(request, model_client=FakeModel())
+
+    assert result.raw_text.startswith("{")
+    assert '"name":"Demo"' in result.raw_text
+
+
+def test_build_model_client_accepts_openai_style_config(monkeypatch) -> None:
+    from prompt2langgraph.prompting.planner import build_model_client
+
+    monkeypatch.setenv("MODEL", "qwen-turbo")
+    monkeypatch.setenv("BASE_URL", "https://env.example.com/v1")
+    monkeypatch.setenv("API_KEY", "env-key")
+
+    request = PromptPlanRequest(
+        prompt="build a workflow",
+        model="qwen-plus",
+        base_url="https://example.com/v1",
+        api_key="test-key",
+        temperature=0.2,
+    )
+
+    client = build_model_client(request)
+
+    assert client.model_name == "qwen-plus"
+    assert str(client.openai_api_base) == "https://example.com/v1"
+
+
+def test_build_model_client_uses_env_defaults_when_request_fields_missing(monkeypatch) -> None:
+    from prompt2langgraph.prompting.planner import build_model_client
+
+    monkeypatch.setenv("MODEL", "qwen-plus")
+    monkeypatch.setenv("BASE_URL", "https://env.example.com/v1")
+    monkeypatch.setenv("API_KEY", "env-key")
+
+    request = PromptPlanRequest(prompt="build a workflow")
+    client = build_model_client(request)
+
+    assert client.model_name == "qwen-plus"
+    assert str(client.openai_api_base) == "https://env.example.com/v1"
+
+
+def test_build_model_client_defaults_to_qwen_plus_when_no_config(monkeypatch) -> None:
+    from prompt2langgraph.prompting.config import PromptPlannerConfig
+    from prompt2langgraph.prompting.planner import build_model_client
+
+    monkeypatch.setattr(
+        "prompt2langgraph.prompting.planner.load_prompt_planner_config",
+        lambda: PromptPlannerConfig(),
+    )
+
+    request = PromptPlanRequest(prompt="build a workflow", api_key="dummy-key")
+    client = build_model_client(request)
+
+    assert client.model_name == "qwen-plus"
+
+
+class FakeListModel:
+    def invoke(self, messages):
+        return type(
+            "Response",
+            (),
+            {
+                "content": [
+                    '{"name":"Demo","nodes":[{"id":"compose",'
+                    '"kind":"llm","executor":"builtin.echo_llm"}],"edges":[]}'
+                ]
+            },
+        )()
+
+
+def test_generate_plan_text_handles_list_content() -> None:
+    request = PromptPlanRequest(prompt="build a simple answer workflow")
+
+    result = generate_plan_text(request, model_client=FakeListModel())
+
+    assert result.raw_text.startswith("{")
+    assert '"name":"Demo"' in result.raw_text
