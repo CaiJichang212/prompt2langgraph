@@ -28,7 +28,7 @@ def test_parse_prompt_plan_text_rejects_empty_string() -> None:
 
 
 def test_parse_prompt_plan_text_rejects_json_primitives() -> None:
-    for text in ['42', '"hello"', "true", "null"]:
+    for text in ["42", '"hello"', "true", "null"]:
         with pytest.raises(AdapterParseError, match="must contain an object"):
             parse_prompt_plan_text(text)
 
