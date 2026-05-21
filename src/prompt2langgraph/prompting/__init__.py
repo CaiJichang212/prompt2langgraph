@@ -5,6 +5,7 @@ from prompt2langgraph.prompting.planner import (
     PromptPlanResult,
     build_model_client,
     generate_plan_text,
+    plan_prompt_to_workflow_spec,
 )
 
 __all__ = [
@@ -15,4 +16,5 @@ __all__ = [
     "generate_plan_text",
     "load_prompt_planner_config",
     "parse_prompt_plan_text",
+    "plan_prompt_to_workflow_spec",
 ]
