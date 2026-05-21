@@ -8,7 +8,7 @@ prompt2langgraph 应采用“编译器前端【？】 + Workflow IR + LangGraph 
 - LangChain 可作为模型、工具、结构化输出和工具封装层，但不应替代底层图编译。
 - Deep Agents 的技能、文件、任务规划能力值得借鉴，但本项目核心目标是生成确定性 LangGraph 图，因此不把 Deep Agents 作为首发运行时。
 - PlanCompiler 的注册表和静态校验模式应作为编译器核心设计参考。
-- LLMCompiler 的编号计划、依赖引用、并行调度和 replan 思路应作为 prompt/plan 前端设计参考。
+- LLMCompiler 的依赖引用、并行调度和 replan 思路应作为 prompt/plan 前端设计参考。
 - skills-to-dify-workflow 和 dify-workflow-dsl-skill 的 skill 解析、安全审查、节点/边 DSL 思路应作为 skill 前端设计参考。
 
 ## 2. 总体架构
@@ -63,7 +63,6 @@ prompt2langgraph/
 │       ├── adapters/
 │       │   ├── base.py
 │       │   ├── json_plan.py
-│       │   ├── text_plan.py
 │       │   ├── prompt_planner.py
 │       │   └── skill_dir.py
 │       ├── ir/
@@ -121,20 +120,9 @@ prompt2langgraph/
 | 适配器 | 输入 | 输出 |
 |---|---|---|
 | `JsonPlanAdapter` | JSON/YAML plan | `DraftPlan` |
-| `TextPlanAdapter` | 编号文本计划 | `DraftPlan` |
 | `PromptPlannerAdapter` | 用户 prompt | `DraftPlan` |
 | `SkillDirAdapter` | skill 目录 | `DraftPlan` |
 | `IRAdapter` | Workflow IR | `WorkflowSpec` |
-
-`TextPlanAdapter` 可借鉴 LLMCompiler 的规则：
-
-```text
-1. search("keyword")
-2. summarize("$1")
-3. join()
-```
-
-其中 `$1`、`${1}` 表示依赖引用，解析器据此推断边。
 
 `SkillDirAdapter` 可借鉴 skills-to-dify-workflow：
 
@@ -721,7 +709,6 @@ build/research_answer/
 
 借鉴：
 
-- 文本计划协议。
 - `$id` 依赖引用。
 - join 节点。
 - 可并行任务识别。
@@ -729,7 +716,7 @@ build/research_answer/
 
 架构落点：
 
-- `TextPlanAdapter` 和后续 Planner。
+- 后续 Planner。
 
 ### 14.4 skills-to-dify-workflow
 
@@ -767,9 +754,8 @@ build/research_answer/
 - LangGraph Python compiler。
 - 本地 runner。
 
-### 阶段 2：Plan 和 Skill 前端
+### 阶段 2：Prompt 和 Skill 前端
 
-- 文本计划解析。
 - prompt planner。
 - skill 目录解析。
 - 安全扫描。
@@ -810,7 +796,6 @@ build/research_answer/
 3. 用手写 JSON plan 打通 LangGraph compiler。
 4. 确认生成图能 `compile()` 和 `invoke()`。
 5. 增加 Mermaid 和 lock。
-6. 增加 TextPlanAdapter。
-7. 增加 SkillDirAdapter。
+6. 增加 SkillDirAdapter。
 
 这个顺序能最快证明核心价值：不是生成漂亮计划，而是把被校验的计划稳定编译为可运行 LangGraph 图。

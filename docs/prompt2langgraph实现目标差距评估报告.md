@@ -77,8 +77,8 @@
 #### 差距 1：Prompt 输入层（完成度：0%）
 
 - **目标要求**: 接受自然语言 Prompt 作为输入
-- **当前状态**: 完全不支持 `prompt_text` 或 `plan_text` 适配器
-- **证据**: AGENTS.md 明确说明 "没有实现 `prompt_text` 或 `plan_text` 适配器"
+- **当前状态**: 完全不支持 `prompt_text` 适配器
+- **证据**: AGENTS.md 明确说明 "没有实现 `prompt_text` 适配器"
 - **影响**: 用户必须直接提供结构化的 Workflow IR 或简化 JSON plan，无法从自然语言生成工作流
 
 #### 差距 2：LLM 计划生成层（完成度：0%）
@@ -147,7 +147,7 @@
 
 | 需求 | 技术要求 | 实现路径 | 优先级 |
 |------|---------|---------|--------|
-| **Prompt → Plan 适配器** | 实现 `prompt_text` / `plan_text` 适配器，调用 LLM 生成 JSON plan | 1. 定义 prompt 解析模块<br>2. 集成 LLM 客户端<br>3. 实现输出到 JSON plan 的转换 | P0 |
+| **Prompt → Plan 适配器** | 实现 `prompt_text` 适配器，调用 LLM 生成 JSON plan | 1. 定义 prompt 解析模块<br>2. 集成 LLM 客户端<br>3. 实现输出到 JSON plan 的转换 | P0 |
 | **真实 LLM 执行器** | 实现调用 OpenAI/Anthropic/本地模型的执行器 | 1. 定义 LLM provider 配置<br>2. 实现 `llm` executor 的真实版本<br>3. 支持 messages 格式和流式输出 | P0 |
 | **Tool 执行器** | 实现可调用外部工具（函数/API）的执行器 | 1. 定义 tool 配置 schema<br>2. 实现工具发现与调用<br>3. 支持 LangChain Tool 集成 | P0 |
 | **Skill → WorkflowSpec 转换** | 将 `SkillDirectoryAnalysis` 转换为可执行 `WorkflowSpec` | 1. 设计 skill 到节点的映射规则<br>2. 实现转换器<br>3. 支持参数注入 | P1 |

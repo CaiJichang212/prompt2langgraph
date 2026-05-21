@@ -27,7 +27,7 @@ v0.2 采用 **方案A：目标链路优先**。
 v0.2 的总体目标是：
 
 - 在现有 v0.1 的 IR 校验、编译、运行框架基础上，补齐输入层与关键执行层能力；
-- 让系统从“只能处理结构化 Workflow IR / 简化 JSON plan”的状态，演进为“可以从 Prompt 或受约束文本计划出发，生成并执行工作流”的状态；
+- 让系统从“只能处理结构化 Workflow IR / 简化 JSON plan”的状态，演进为“可以从 Prompt 出发，生成并执行工作流”的状态；
 - 为后续 Skill 到可执行工作流、Join 控制流补齐、生产级持久化等能力奠定基础。
 
 ---
@@ -38,31 +38,26 @@ v0.2 的总体目标是：
 
 ### 4.1 阶段目标
 
-打通 `Prompt / Text Plan / JSON Plan → WorkflowSpec` 的最小闭环，使用户不必直接编写完整 Workflow IR，也能够进入现有的校验、编译、运行流程。
+打通 `Prompt / JSON Plan → WorkflowSpec` 的最小闭环，使用户不必直接编写完整 Workflow IR，也能够进入现有的校验、编译、运行流程。
 
 ### 4.2 主要任务
 
-1. **文本计划适配器正式化**
-   - 梳理现有 `text_plan` 相关实现的真实状态与边界。
-   - 明确受支持的 `plan_text` 输入格式。
-   - 将文本计划稳定转换为规范 `WorkflowSpec`，并复用现有验证与编译运行链路。
-
-2. **Prompt → JSON Plan 生成入口**
+1. **Prompt → JSON Plan 生成入口**
    - 设计并实现基于 LLM 的计划生成入口。
    - 先生成简化 JSON plan，再进入现有适配器与校验流程。
    - 对 LLM 输出增加 JSON 解析、结构校验与诊断输出，确保不能绕过现有验证体系直接执行。
 
-3. **CLI / Public API 输入扩展**
-   - 为文本计划或 Prompt 输入增加清晰的 CLI 入口。
+2. **CLI / Public API 输入扩展**
+   - 为 Prompt 输入增加清晰的 CLI 入口。
    - 对外暴露对应的 Public API，保持现有接口行为兼容。
 
-4. **诊断与测试补齐**
+3. **诊断与测试补齐**
    - 补充非法 JSON、字段缺失、未知节点、类型不匹配等输入错误的诊断场景。
-   - 增加文本计划 / Prompt 相关 fixtures 与 CLI / API 回归测试。
+   - 增加 Prompt 相关 fixtures 与 CLI / API 回归测试。
 
 ### 4.3 阶段交付重点
 
-- 用户可从 Prompt 或受约束文本计划出发，得到可校验的 `WorkflowSpec`。
+- 用户可从 Prompt 出发，得到可校验的 `WorkflowSpec`。
 - 生成结果能够继续进入 `validate / compile / run / graph` 流程。
 - 输入链路完成后，项目从“仅结构化输入”升级为“支持上层输入适配”的编译运行系统。
 

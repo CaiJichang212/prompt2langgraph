@@ -24,7 +24,7 @@
 
 需要改进的点：
 
-1. MVP 范围仍偏宽。`prompt_text`、`plan_text`、`skill_dir`、运行时、中断、fan-out、Mermaid、lock、诊断都被列为早期能力，但缺少优先级切分。
+1. MVP 范围仍偏宽。`prompt_text`、`skill_dir`、运行时、中断、fan-out、Mermaid、lock、诊断都被列为早期能力，但缺少优先级切分。
 2. 需求与架构边界混杂。需求文档中出现较多内部类名和 lowering（降级） 细节，容易让验收标准被实现细节绑死。
 3. Skill 编译风险描述不足。`SKILL.md` 常包含开放式自然语言、脚本、引用资料和人工流程，v0.1 不宜承诺完整自动编译。
 4. LangGraph 关键约束需要转成需求。动态路由不能和同一节点的静态边混用，`Command(resume=...)` 只用于从 interrupt 恢复，list/message 状态必须有 reducer。
@@ -33,14 +33,14 @@
 v0.1 需求收敛原则：
 
 - 优先支持 `WorkflowIR` 和 `json_plan`。
-- `skill_dir` 只做静态预分析；`prompt_text` 和 `plan_text` 属于后续候选输入，不进入当前 release baseline。
+- `skill_dir` 只做静态预分析；`prompt_text` 属于后续候选输入，不进入当前 release baseline。
 - LangGraph Python 是唯一首发执行后端。
 - 编译器后端全程确定性，不调用 LLM。
 - 任意外部副作用默认不执行，必须显式授权或人工审批。
 
 ## 2. 产品定位
 
-prompt2langgraph 是一个面向 LangGraph 的计划编译器。v0.1 release baseline 接收规范 Workflow IR 或简化 JSON plan，转换为可校验的 Workflow IR，再由确定性后端编译为可运行的 LangGraph Python 图；prompt、文本计划和技能目录生成可执行 Workflow IR 属于后续阶段。
+prompt2langgraph 是一个面向 LangGraph 的计划编译器。v0.1 release baseline 接收规范 Workflow IR 或简化 JSON plan，转换为可校验的 Workflow IR，再由确定性后端编译为可运行的 LangGraph Python 图；prompt 和技能目录生成可执行 Workflow IR 属于后续阶段。
 
 项目核心价值不是“让 LLM 写 LangGraph 代码”，而是：
 
@@ -81,9 +81,8 @@ v0.1 必须支持：
 
 ### 3.3 v0.1 可选完成
 
-v0.1 文档中下列能力只作为后续候选方向，不属于当前 release baseline；当前源码没有实现 `plan_text` 或 `prompt_text` 适配器，也不会隐式调用 LLM：
+v0.1 文档中下列能力只作为后续候选方向，不属于当前 release baseline；当前源码没有实现 `prompt_text` 适配器，也不会隐式调用 LLM：
 
-- `plan_text` 的编号步骤解析。
 - `SKILL.md` 的保守信息抽取。
 - `prompt_text` 调用 LLM 生成 draft plan。
 - SQLite checkpointer。
@@ -96,7 +95,7 @@ v0.1 不做：
 - 生产级 Web UI。
 - LangGraph.js 后端。
 - Dify YAML 后端。
-- `plan_text` 或 `prompt_text` 适配器。
+- `prompt_text` 适配器。
 - 隐式外部 LLM 调用。
 - 任意 Python 代码生成和自动执行。
 - 自动运行 skill 目录中的脚本。
@@ -170,7 +169,6 @@ E_TYPE_003: edge retrieve -> summarize expects docs_ref, got text.
 | `json_plan` | P0 | 简化结构化计划，必须支持 |
 | `tool_registry` | P0 | 工具和执行器注册配置，必须支持 |
 | `compile_options` | P0 | 目标、严格模式、安全策略，必须支持 |
-| `plan_text` | 后续 P1 | 编号文本计划，当前 release baseline 未实现适配器 |
 | `skill_dir` | P1 | `SKILL.md` 预分析，不执行脚本 |
 | `prompt_text` | 后续 P2 | LLM 生成 draft plan，当前 release baseline 不调用外部 LLM |
 
@@ -617,7 +615,6 @@ v0.1 完成时必须满足：
 
 必须借鉴：
 
-- 编号计划。
 - `$id` 依赖引用。
 - join。
 - 并行任务识别。

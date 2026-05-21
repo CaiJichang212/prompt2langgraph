@@ -107,7 +107,6 @@ prompt2langgraph/
 │       │   ├── base.py
 │       │   ├── json_plan.py
 │       │   ├── ir.py
-│       │   ├── text_plan.py
 │       │   └── skill_dir.py
 │       ├── ir/
 │       │   ├── models.py
@@ -264,7 +263,7 @@ flowchart TD
 
 | 阶段 | 输入 | 输出 | 是否允许 LLM |
 |---|---|---|---|
-| Parse | source | `WorkflowSpec` 或简化 JSON plan | 否；当前 release baseline 不包含 `prompt_text`/`plan_text` 适配器 |
+| Parse | source | `WorkflowSpec` 或简化 JSON plan | 否；当前 release baseline 不包含 `prompt_text` 适配器 |
 | Normalize | `WorkflowSpec` 或简化 JSON plan | `WorkflowSpec` | 否 |
 | Validate | `WorkflowSpec` | `ValidationReport` | 否 |
 | Policy Resolve | `WorkflowSpec` | `ResolvedWorkflow` | 否 |
@@ -297,25 +296,7 @@ v0.1 已落地轻量 `SourceAdapter` 抽象，当前 CLI 通过 `IRAdapter` 或 
 - 生成 `WorkflowSpec`。
 - 对缺失字段、非 object node/edge、无法推断 entrypoint 等 parse error 保留 source 与 JSON path。
 
-### 7.3 TextPlanAdapter
-
-后续 P1 候选能力；当前 release baseline 未实现 `plan_text` 适配器。
-
-借鉴 LLMCompiler：
-
-```text
-1. search_docs(query)
-2. summarize($1)
-3. join()
-```
-
-职责：
-
-- 解析编号步骤。
-- 解析 `$1`、`$step_id` 依赖。
-- 对不明确条件输出诊断。
-
-### 7.4 SkillDirAdapter
+### 7.3 SkillDirAdapter
 
 v0.1 作为 P1。
 
@@ -755,11 +736,10 @@ RunResult: 需审计
 - PlanCompiler 强 DAG，prompt2langgraph 允许 LangGraph 循环。
 - 循环必须有 `loop_guard` 和 `max_iterations`。
 
-### 19.2 LLMCompiler -> Text Plan 和并行识别
+### 19.2 LLMCompiler -> 并行识别
 
 采用：
 
-- 编号任务。
 - `$id` 依赖引用。
 - join。
 - 可并行任务识别。
@@ -804,9 +784,8 @@ v0.1 不采用：
 - JSON plan。
 - golden tests。
 
-### v0.2：Plan 和 Skill 前端
+### v0.2：Prompt 和 Skill 前端
 
-- `plan_text` 稳定解析。
 - `skill_dir` 更强抽取。
 - prompt planner。
 - LLM structured output。

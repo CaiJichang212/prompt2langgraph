@@ -34,7 +34,6 @@ prompt / plan / skill
 第一阶段优先实现 Python LangGraph 后端，完成从结构化计划到可运行图的最小闭环：
 
 - 支持 `json_plan` 输入。
-- 支持有限的 `plan_text` 输入解析。
 - 支持读取单个 skill 目录中的 `SKILL.md`，抽取步骤、工具、分支、循环意图。
 - 生成规范化 `WorkflowIR`。
 - 校验节点、边、状态通道、输入输出类型、工具绑定和安全策略。
@@ -130,7 +129,6 @@ E_TYPE_003: edge retrieve -> summarize expects docs_ref, got text.
 | 输入类型 | 说明 | MVP 支持 |
 |---|---|---|
 | `prompt_text` | 用户自然语言目标 | 部分支持，通过 Planner 生成 draft plan |
-| `plan_text` | LLM 生成的文本计划 | 部分支持，优先解析编号步骤和依赖引用 |
 | `json_plan` | 结构化计划 | 必须支持 |
 | `workflow_ir` | 规范化 IR | 必须支持 |
 | `skill_dir` | 包含 `SKILL.md` 的技能目录 | 必须支持基础读取与分析 |
@@ -139,9 +137,8 @@ E_TYPE_003: edge retrieve -> summarize expects docs_ref, got text.
 
 ### 4.2 计划语言约束
 
-借鉴 LLMCompiler 和 PlanCompiler，计划应尽量结构化。文本计划至少支持以下约定：
+借鉴 LLMCompiler 和 PlanCompiler，计划应尽量结构化：
 
-- 每个步骤有稳定 ID。
 - 工具调用必须引用注册表中的工具。
 - 参数可引用前序步骤输出，例如 `$step_id`。
 - 分支条件必须能映射到 state 字段。
@@ -201,10 +198,9 @@ MVP 对 `SKILL.md` 的解析以保守抽取为主：
 系统应提供多种源适配器：
 
 - `JsonPlanAdapter`：读取结构化计划。
-- `TextPlanAdapter`：解析编号文本计划。【每条计划还是纯文本text，如何转换成IR】
 - `PromptPlannerAdapter`：调用 LLM 生成 draft plan。
 - `SkillAdapter`：读取 skill 目录。
-- `IRAdapter`：直接读取 Workflow IR。【json-plan和IR的区别？json-plan和text-plan类似？】
+- `IRAdapter`：直接读取 Workflow IR。【json-plan和IR的区别？】
 
 验收标准：
 
@@ -505,9 +501,8 @@ MVP 类型集合：
 - 生成并运行最小图。
 - 输出 lock、manifest、Mermaid。
 
-### M3：文本计划与 skill 编译
+### M3：skill 编译
 
-- 实现基础文本计划解析。
 - 实现 `SKILL.md` 解析器。
 - 加入安全扫描。
 
