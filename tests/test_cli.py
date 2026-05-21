@@ -438,7 +438,11 @@ def test_prompt_plan_command_emits_json_plan_payload(monkeypatch) -> None:
                 "Response",
                 (),
                 {
-                    "content": '{"name":"Demo","nodes":[{"id":"compose","kind":"llm","executor":"builtin.echo_llm"}],"edges":[]}'
+                    "content": (
+                        '{"name":"Demo",'
+                        '"nodes":[{"id":"compose","kind":"llm",'
+                        '"executor":"builtin.echo_llm"}],"edges":[]}'
+                    )
                 },
             )()
 
