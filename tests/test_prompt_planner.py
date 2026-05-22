@@ -203,3 +203,29 @@ def test_plan_prompt_to_workflow_spec_raises_parse_error_for_missing_required_fi
             PromptPlanRequest(prompt="missing fields"),
             model_client=FakeMissingFieldsModel(),
         )
+
+
+class FakeNoneContentModel:
+    def invoke(self, messages):
+        return type("Response", (), {"content": None})()
+
+
+def test_generate_plan_text_handles_none_content() -> None:
+    request = PromptPlanRequest(prompt="build a simple answer workflow")
+
+    result = generate_plan_text(request, model_client=FakeNoneContentModel())
+
+    assert result.raw_text == ""
+
+
+class FakeIntContentModel:
+    def invoke(self, messages):
+        return type("Response", (), {"content": 42})()
+
+
+def test_generate_plan_text_handles_unexpected_content_type() -> None:
+    request = PromptPlanRequest(prompt="build a simple answer workflow")
+
+    result = generate_plan_text(request, model_client=FakeIntContentModel())
+
+    assert result.raw_text == "42"
