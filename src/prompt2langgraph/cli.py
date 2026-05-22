@@ -175,6 +175,8 @@ def plan(
     model: str | None = typer.Option(None, "--model"),
     base_url: str | None = typer.Option(None, "--base-url"),
     api_key: str | None = typer.Option(None, "--api-key"),
+    temperature: float = typer.Option(0.0, "--temperature"),
+    validate_output: bool = typer.Option(False, "--validate"),
     json_output: bool = typer.Option(False, "--json", help="Emit a machine-readable plan."),
 ) -> None:
     """Generate a simplified JSON plan from a prompt using an LLM."""
@@ -188,6 +190,7 @@ def plan(
         model=model,
         base_url=base_url,
         api_key=api_key,
+        temperature=temperature,
     )
     try:
         result = generate_plan_text(request)
@@ -225,7 +228,37 @@ def plan(
         )
         _emit_validation_report(report, json_output)
         raise typer.Exit(1) from None
-    _emit({"ok": True, "plan": plan_data}, json_output, _json_dumps(plan_data))
+
+    payload: dict[str, Any] = {"ok": True, "plan": plan_data}
+
+    if validate_output:
+        try:
+            workflow = JSONPlanAdapter().parse(plan_data, source="prompt")
+        except (AdapterParseError, ValidationError) as exc:
+            validation_report = ValidationReport(
+                diagnostics=[
+                    Diagnostic(
+                        code=E_PARSE_001 if isinstance(exc, AdapterParseError) else E_SCHEMA_002,
+                        severity="error",
+                        message="generated plan failed adapter validation",
+                        location=DiagnosticLocation(source="prompt"),
+                        hint=str(exc),
+                    )
+                ]
+            )
+            payload["validation"] = validation_report.model_dump(mode="json")
+            payload["validation"]["ok"] = False
+            _emit(payload, json_output, _json_dumps(plan_data))
+            raise typer.Exit(1) from None
+
+        validation_report = validate_workflow(workflow)
+        payload["validation"] = validation_report.model_dump(mode="json")
+        payload["validation"]["ok"] = validation_report.ok
+        if not validation_report.ok:
+            _emit(payload, json_output, _json_dumps(plan_data))
+            raise typer.Exit(1) from None
+
+    _emit(payload, json_output, _json_dumps(plan_data))
 
 
 @app.command()
