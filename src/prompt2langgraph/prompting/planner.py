@@ -18,7 +18,7 @@ class PromptPlanRequest(BaseModel):
     model: str | None = None
     base_url: str | None = None
     api_key: str | None = None
-    temperature: float = 0.0
+    temperature: float = Field(default=0.0, ge=0.0, le=2.0)
 
 
 class PromptPlanResult(BaseModel):
@@ -30,6 +30,42 @@ class PromptPlanResult(BaseModel):
 SYSTEM_PROMPT = """You generate simplified JSON plan objects for prompt2langgraph.
 Return only a JSON object compatible with the project's simplified JSON plan format.
 Do not include markdown fences or explanations.
+
+The JSON object must conform to this schema:
+{
+  "name": string (required, workflow name),
+  "nodes": [
+    {
+      "id": string (required, unique node identifier),
+      "kind": string (required, one of: "llm", "tool", "retriever", "transform", "router", "human_gate", "join", "side_effect"),
+      "executor": string (required, executor reference, e.g. "builtin.echo_llm", "builtin.mock_retriever", "builtin.identity_transform", "builtin.route", "builtin.human_gate", "builtin.join"),
+      "inputs": object (optional, mapping of executor input names to state keys or {"state_key": "..."} objects),
+      "outputs": object (optional, mapping of executor output names to state keys or {"state_key": "..."} objects),
+      "params": object (optional, executor parameters, e.g. {"template": "Answer: {question}"})
+    }
+  ],
+  "edges": [
+    {
+      "from": string (required, source node id),
+      "to": string (required, target node id),
+      "kind": string (optional, one of: "linear", "conditional", "loop", "fanout"; defaults to "linear"),
+      "condition": object (optional, required when kind="conditional", e.g. {"expr": "confidence < 0.75", "routes": {"true": "node_a", "false": "node_b"}}),
+      "loop_guard": object (optional, required when kind="loop", e.g. {"max_iterations": 3}),
+      "map": object (optional, required when kind="fanout", e.g. {"items_state_key": "items", "item_state_key": "item", "result_state_key": "results"})
+    }
+  ],
+  "entrypoint": string (optional, id of the first node; if omitted, inferred as the node with no incoming edges),
+  "inputs": object (optional, mapping of input names to type strings, e.g. {"question": "string"}),
+  "outputs": object (optional, mapping of output names to type strings, e.g. {"answer": "string"})
+}
+
+Rules:
+- "nodes" must contain at least one node.
+- Every edge "from"/"to" must reference an existing node id.
+- Use "builtin.echo_llm" for llm nodes, "builtin.identity_transform" for transform nodes, "builtin.route" for router nodes, "builtin.human_gate" for human_gate nodes.
+- For conditional edges, "routes" must map "true" and "false" to valid node ids.
+- For loop edges, "loop_guard.max_iterations" must be a positive integer.
+- For fanout edges, the workflow must define a reducer (e.g. "append") for the result state key.
 """
 
 
