@@ -538,6 +538,146 @@ def test_prompt_plan_command_reports_llm_call_failure_as_diagnostic(monkeypatch)
     assert "Traceback" not in result.stdout
 
 
+def test_prompt_plan_command_passes_temperature_to_request(monkeypatch) -> None:
+    captured_temperature = None
+
+    class FakeModel:
+        def invoke(self, messages):
+            return type(
+                "Response",
+                (),
+                {
+                    "content": (
+                        '{"name":"Demo",'
+                        '"nodes":[{"id":"compose","kind":"llm",'
+                        '"executor":"builtin.echo_llm"}],"edges":[]}'
+                    )
+                },
+            )()
+
+    def fake_build_model_client(request):
+        nonlocal captured_temperature
+        captured_temperature = request.temperature
+        return FakeModel()
+
+    monkeypatch.setattr(
+        "prompt2langgraph.prompting.planner.build_model_client",
+        fake_build_model_client,
+    )
+
+    result = CliRunner().invoke(
+        app,
+        ["plan", "--prompt", "build a simple workflow", "--temperature", "0.7", "--json"],
+    )
+
+    assert result.exit_code == 0
+    assert captured_temperature == 0.7
+
+
+def test_prompt_plan_command_validate_flag_includes_validation_result(monkeypatch) -> None:
+    class FakeModel:
+        def invoke(self, messages):
+            return type(
+                "Response",
+                (),
+                {
+                    "content": (
+                        '{"name":"Demo",'
+                        '"nodes":[{"id":"compose","kind":"llm",'
+                        '"executor":"builtin.echo_llm"}],"edges":[]}'
+                    )
+                },
+            )()
+
+    def fake_build_model_client(request):
+        return FakeModel()
+
+    monkeypatch.setattr(
+        "prompt2langgraph.prompting.planner.build_model_client",
+        fake_build_model_client,
+    )
+
+    result = CliRunner().invoke(
+        app,
+        ["plan", "--prompt", "build a simple workflow", "--validate", "--json"],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["ok"] is True
+    assert "validation" in payload
+    assert payload["validation"]["ok"] is True
+
+
+def test_prompt_plan_command_validate_flag_reports_invalid_plan(monkeypatch) -> None:
+    class FakeModel:
+        def invoke(self, messages):
+            return type(
+                "Response",
+                (),
+                {
+                    "content": (
+                        '{"name":"Bad",'
+                        '"nodes":[{"id":"n1","kind":"llm",'
+                        '"executor":"builtin.nonexistent"}],"edges":[]}'
+                    )
+                },
+            )()
+
+    def fake_build_model_client(request):
+        return FakeModel()
+
+    monkeypatch.setattr(
+        "prompt2langgraph.prompting.planner.build_model_client",
+        fake_build_model_client,
+    )
+
+    result = CliRunner().invoke(
+        app,
+        ["plan", "--prompt", "build a bad workflow", "--validate", "--json"],
+    )
+
+    assert result.exit_code != 0
+    payload = json.loads(result.stdout)
+    assert "validation" in payload
+    assert payload["validation"]["ok"] is False
+
+
+def test_prompt_plan_command_validate_flag_reports_adapter_parse_error(monkeypatch) -> None:
+    class FakeModel:
+        def invoke(self, messages):
+            return type(
+                "Response",
+                (),
+                {
+                    "content": (
+                        '{"name":"BadEdge",'
+                        '"nodes":[{"id":"n1","kind":"llm","executor":"builtin.echo_llm"}],'
+                        '"edges":[{"from":"n1"}]}'
+                    )
+                },
+            )()
+
+    def fake_build_model_client(request):
+        return FakeModel()
+
+    monkeypatch.setattr(
+        "prompt2langgraph.prompting.planner.build_model_client",
+        fake_build_model_client,
+    )
+
+    result = CliRunner().invoke(
+        app,
+        ["plan", "--prompt", "build a workflow with bad edge", "--validate", "--json"],
+    )
+
+    assert result.exit_code != 0
+    payload = json.loads(result.stdout)
+    assert "validation" in payload
+    assert payload["validation"]["ok"] is False
+    assert any(item["code"] == "E_PARSE_001" for item in payload["validation"]["diagnostics"])
+
+
 def test_resume_command_continues_pending_interrupt_across_processes(tmp_path: Path) -> None:
     compile_result = CliRunner().invoke(
         app,
