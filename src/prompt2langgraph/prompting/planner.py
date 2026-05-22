@@ -57,7 +57,15 @@ def generate_plan_text(
             {"role": "user", "content": request.prompt},
         ]
     )
-    content = response.content if isinstance(response.content, str) else "".join(response.content)
+    raw = response.content
+    if isinstance(raw, str):
+        content = raw
+    elif isinstance(raw, list):
+        content = "".join(str(item) for item in raw)
+    elif raw is None:
+        content = ""
+    else:
+        content = str(raw)
     return PromptPlanResult(raw_text=content)
 
 
