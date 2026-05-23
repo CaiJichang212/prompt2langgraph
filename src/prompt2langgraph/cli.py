@@ -105,27 +105,7 @@ def run(
 
     from prompt2langgraph.runtime.runner import run_workflow
 
-    from prompt2langgraph.ir.models import ExecutorType
-
-    model_client = None
-    tool_registry = None
-
-    has_llm_node = any(
-        n.executor.type is ExecutorType.LLM for n in workflow_or_report.nodes
-    )
-    has_tool_node = any(
-        n.executor.type is ExecutorType.PYTHON_CALLABLE for n in workflow_or_report.nodes
-    )
-
-    if has_llm_node and workflow_or_report.policies.external_call:
-        from prompt2langgraph.llm.provider import build_llm_client
-
-        model_client = build_llm_client()
-
-    if has_tool_node:
-        from prompt2langgraph.registry.tool_executor import ToolCallableRegistry
-
-        tool_registry = ToolCallableRegistry()
+    model_client, tool_registry = _build_runtime_clients(workflow_or_report)
 
     result = run_workflow(
         workflow_or_report,
@@ -309,16 +289,47 @@ def resume(
     resume_payload = _parse_resume_payload(resume)
     from prompt2langgraph.runtime.runner import run_workflow
 
+    model_client, tool_registry = _build_runtime_clients(workflow_or_report)
+
     result = run_workflow(
         workflow_or_report,
         {},
         thread_id=thread_id,
         resume_payload=resume_payload,
+        model_client=model_client,
+        tool_registry=tool_registry,
         state_store_dir=_runtime_state_store_dir(workflow_json),
     )
     _emit(result.model_dump(mode="json"), json_output, result.status)
     if result.status != "succeeded":
         raise typer.Exit(1)
+
+
+def _build_runtime_clients(workflow: WorkflowSpec) -> tuple[Any, Any]:
+    """根据 workflow 节点类型构造 model_client 和 tool_registry。"""
+    from prompt2langgraph.ir.models import ExecutorType
+
+    model_client = None
+    tool_registry = None
+
+    has_llm_node = any(
+        n.executor.type is ExecutorType.LLM for n in workflow.nodes
+    )
+    has_tool_node = any(
+        n.executor.type is ExecutorType.PYTHON_CALLABLE for n in workflow.nodes
+    )
+
+    if has_llm_node and workflow.policies.external_call:
+        from prompt2langgraph.llm.provider import build_llm_client
+
+        model_client = build_llm_client()
+
+    if has_tool_node:
+        from prompt2langgraph.registry.tool_executor import ToolCallableRegistry
+
+        tool_registry = ToolCallableRegistry()
+
+    return model_client, tool_registry
 
 
 def _load_workflow_or_report(path: Path) -> WorkflowSpec | ValidationReport:
