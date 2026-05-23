@@ -105,9 +105,33 @@ def run(
 
     from prompt2langgraph.runtime.runner import run_workflow
 
+    from prompt2langgraph.ir.models import ExecutorType
+
+    model_client = None
+    tool_registry = None
+
+    has_llm_node = any(
+        n.executor.type is ExecutorType.LLM for n in workflow_or_report.nodes
+    )
+    has_tool_node = any(
+        n.executor.type is ExecutorType.PYTHON_CALLABLE for n in workflow_or_report.nodes
+    )
+
+    if has_llm_node and workflow_or_report.policies.external_call:
+        from prompt2langgraph.llm.provider import build_llm_client
+
+        model_client = build_llm_client()
+
+    if has_tool_node:
+        from prompt2langgraph.registry.tool_executor import ToolCallableRegistry
+
+        tool_registry = ToolCallableRegistry()
+
     result = run_workflow(
         workflow_or_report,
         input_payload,
+        model_client=model_client,
+        tool_registry=tool_registry,
         state_store_dir=_runtime_state_store_dir(workflow_json),
     )
     _emit(result.model_dump(mode="json"), json_output, result.status)
