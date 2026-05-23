@@ -22,7 +22,7 @@ from prompt2langgraph.ir.models import EdgeKind, WorkflowSpec
 from prompt2langgraph.ir.normalize import normalize_workflow
 from prompt2langgraph.registry.builtins import builtin_executor_registry
 from prompt2langgraph.registry.executors import ExecutorRegistry
-from prompt2langgraph.runtime.events import RunEvent, RunInterrupt, RunMetrics, RunResult
+from prompt2langgraph.runtime.events import ExternalCallRecord, RunEvent, RunInterrupt, RunMetrics, RunResult
 from prompt2langgraph.validate.validator import validate_workflow
 
 _THREAD_CHECKPOINTERS: dict[tuple[str, str], InMemorySaver] = {}
@@ -39,6 +39,8 @@ def run_workflow(
     thread_id: str | None = None,
     resume_payload: Any = _NO_RESUME,
     state_store_dir: Path | None = None,
+    model_client: Any | None = None,
+    tool_registry: Any | None = None,
 ) -> RunResult:
     started_at = perf_counter()
     run_id = _new_id("run")
@@ -83,6 +85,24 @@ def run_workflow(
             _clear_thread(thread_key, state_store_dir)
         return _failed_result(run_id, thread_id, events, target_diagnostics, started_at)
 
+    external_calls: list[ExternalCallRecord] = []
+
+    def _error_sink(exc: Exception) -> None:
+        from prompt2langgraph.registry.executors import ExecutorError
+
+        if isinstance(exc, ExecutorError):
+            external_calls.append(
+                ExternalCallRecord(
+                    node_id=exc.node_id or "unknown",
+                    executor_ref="unknown",
+                    status="failed",
+                    error_code=exc.code,
+                )
+            )
+
+    def _metrics_sink(record: ExternalCallRecord) -> None:
+        external_calls.append(record)
+
     def record_node_event(event_type: str, node_id: str) -> None:
         events.append(
             RunEvent(type=event_type, run_id=run_id, thread_id=thread_id, node_id=node_id)
@@ -95,6 +115,11 @@ def run_workflow(
             executor_registry,
             event_sink=record_node_event,
             checkpointer=checkpointer,
+            policies=workflow.policies,
+            model_client=model_client,
+            tool_registry=tool_registry,
+            error_sink=_error_sink,
+            metrics_sink=_metrics_sink,
         )
         graph_input: dict[str, Any] | Command = (
             Command(resume=resume_payload) if is_resume else input_payload
@@ -119,6 +144,7 @@ def run_workflow(
                 )
             ],
             started_at,
+            external_calls=external_calls,
         )
 
     interrupt = _extract_interrupt(final_state, events)
@@ -134,7 +160,12 @@ def run_workflow(
             events=events,
             diagnostics=[],
             interrupt=interrupt,
-            metrics=RunMetrics(duration_ms=_duration_ms(started_at)),
+            metrics=RunMetrics(
+                duration_ms=_duration_ms(started_at),
+                call_count=len(external_calls),
+                total_latency_ms=sum(r.latency_ms for r in external_calls if r.latency_ms is not None) or None,
+            ),
+            external_calls=external_calls,
         )
 
     _clear_thread(thread_key, state_store_dir)
@@ -146,7 +177,12 @@ def run_workflow(
         output=_declared_output(workflow, final_state),
         events=events,
         diagnostics=[],
-        metrics=RunMetrics(duration_ms=_duration_ms(started_at)),
+        metrics=RunMetrics(
+            duration_ms=_duration_ms(started_at),
+            call_count=len(external_calls),
+            total_latency_ms=sum(r.latency_ms for r in external_calls if r.latency_ms is not None) or None,
+        ),
+        external_calls=external_calls,
     )
 
 
@@ -373,8 +409,10 @@ def _failed_result(
     events: list[RunEvent],
     diagnostics: list[Diagnostic],
     started_at: float,
+    external_calls: list[ExternalCallRecord] | None = None,
 ) -> RunResult:
     events.append(RunEvent(type="run.failed", run_id=run_id, thread_id=thread_id))
+    calls = external_calls or []
     return RunResult(
         status="failed",
         run_id=run_id,
@@ -382,7 +420,12 @@ def _failed_result(
         output={},
         events=events,
         diagnostics=diagnostics,
-        metrics=RunMetrics(duration_ms=_duration_ms(started_at)),
+        metrics=RunMetrics(
+            duration_ms=_duration_ms(started_at),
+            call_count=len(calls),
+            total_latency_ms=sum(r.latency_ms for r in calls if r.latency_ms is not None) or None,
+        ),
+        external_calls=calls,
     )
 
 
