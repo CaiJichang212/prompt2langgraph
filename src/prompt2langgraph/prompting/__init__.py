@@ -8,6 +8,9 @@ from prompt2langgraph.prompting.planner import (
     plan_prompt_to_workflow_spec,
 )
 
+# PromptPlannerConfig and load_prompt_planner_config are deprecated;
+# use prompt2langgraph.llm.config.LLMConfig and load_llm_config instead.
+
 __all__ = [
     "PromptPlanRequest",
     "PromptPlanResult",
