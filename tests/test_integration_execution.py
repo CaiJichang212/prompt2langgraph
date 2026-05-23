@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from prompt2langgraph.ir.models import (
+    ConditionSpec,
     EdgeKind,
     EdgeSpec,
     ExecutorRef,
@@ -458,3 +459,90 @@ class TestToolFailure:
         # Bug fix: should be exactly 1, not 2 (was double-recorded)
         assert len(result.external_calls) == 1
         assert result.metrics.call_count == 1
+
+
+# ---------------------------------------------------------------------------
+# 6. Conditional edge + LLM node full-chain execution
+# ---------------------------------------------------------------------------
+
+
+def _conditional_llm_workflow() -> WorkflowSpec:
+    """Conditional edge routing to LLM node based on confidence."""
+    return WorkflowSpec(
+        schema_version="0.1",
+        workflow_id="test_conditional_llm",
+        name="Test Conditional LLM",
+        entrypoint="router",
+        state_schema=StateSchema(
+            input={"question": STRING, "confidence": TypeSpec(type=TypeName.NUMBER)},
+            output={"answer": STRING},
+            channels={
+                "question": STRING,
+                "confidence": TypeSpec(type=TypeName.NUMBER),
+                "answer": STRING,
+            },
+        ),
+        nodes=[
+            NodeSpec(
+                id="router",
+                kind="transform",
+                executor=ExecutorRef(ref="builtin.identity_transform", type=ExecutorType.BUILTIN),
+                inputs={"value": {"state_key": "question"}},
+                outputs={"value": {"state_key": "question"}},
+            ),
+            NodeSpec(
+                id="llm_high",
+                kind="llm",
+                executor=ExecutorRef(ref="llm.qwen-plus", type=ExecutorType.LLM),
+                inputs={"question": {"state_key": "question"}},
+                outputs={"answer": {"state_key": "answer"}},
+            ),
+            NodeSpec(
+                id="llm_low",
+                kind="llm",
+                executor=ExecutorRef(ref="builtin.echo_llm", type=ExecutorType.BUILTIN),
+                inputs={"question": {"state_key": "question"}},
+                outputs={"answer": {"state_key": "answer"}},
+                params={"template": "Low confidence fallback: {question}"},
+            ),
+        ],
+        edges=[
+            EdgeSpec(
+                id="e1",
+                source="router",
+                target="llm_high",
+                kind=EdgeKind.CONDITIONAL,
+                condition=ConditionSpec(
+                    expr="confidence >= 0.5",
+                    routes={"true": "llm_high", "false": "llm_low"},
+                ),
+            ),
+        ],
+        policies=PolicySpec(external_call=True, allowed_models=["qwen-plus"]),
+    )
+
+
+class TestConditionalLLM:
+    def test_conditional_routes_to_llm_high_confidence(self) -> None:
+        workflow = _conditional_llm_workflow()
+        model = fake_chat_model("high confidence answer")
+
+        result = run_workflow(
+            workflow,
+            {"question": "hello", "confidence": 0.8},
+            model_client=model,
+        )
+
+        assert result.status == "succeeded"
+        assert result.output["answer"] == "high confidence answer"
+
+    def test_conditional_routes_to_builtin_low_confidence(self) -> None:
+        workflow = _conditional_llm_workflow()
+
+        result = run_workflow(
+            workflow,
+            {"question": "hello", "confidence": 0.3},
+        )
+
+        assert result.status == "succeeded"
+        assert result.output["answer"] == "Low confidence fallback: hello"
