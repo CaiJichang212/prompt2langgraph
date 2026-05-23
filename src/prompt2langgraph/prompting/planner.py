@@ -6,7 +6,6 @@ from pydantic import BaseModel, Field
 
 from prompt2langgraph.adapters.json_plan import JSONPlanAdapter
 from prompt2langgraph.ir.models import WorkflowSpec
-from prompt2langgraph.prompting.config import load_prompt_planner_config
 from prompt2langgraph.prompting.parser import parse_prompt_plan_text
 
 if TYPE_CHECKING:
@@ -70,13 +69,12 @@ Rules:
 
 
 def build_model_client(request: PromptPlanRequest) -> ChatOpenAI:
-    from langchain_openai import ChatOpenAI
+    from prompt2langgraph.llm.provider import build_llm_client
 
-    config = load_prompt_planner_config()
-    return ChatOpenAI(
-        model=request.model or config.model or "qwen-plus",
-        base_url=request.base_url or config.base_url,
-        api_key=request.api_key or config.api_key,
+    return build_llm_client(
+        model=request.model,
+        base_url=request.base_url,
+        api_key=request.api_key,
         temperature=request.temperature,
     )
 
