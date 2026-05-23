@@ -418,8 +418,7 @@ class TestToolFailure:
         assert len(result.external_calls) == 1
         call = result.external_calls[0]
         assert call.node_id == "tool_node"
-        # _error_sink in runner.py hardcodes executor_ref="unknown"
-        # because ExecutorError does not carry the executor ref
+        assert call.executor_ref == "fake.fail"
         assert call.status == "failed"
         assert call.error_code is not None
 

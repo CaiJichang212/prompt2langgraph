@@ -452,3 +452,19 @@ def test_run_metrics_populated_from_external_calls() -> None:
     # builtin executor 不产生 external_calls，所以 call_count 应为 0
     assert result.metrics.call_count == 0
     assert result.metrics.total_latency_ms is None
+
+
+def test_executor_error_carries_executor_ref() -> None:
+    """ExecutorError.executor_ref 字段正确传递到 _error_sink 的 ExternalCallRecord。"""
+    from prompt2langgraph.registry.executors import ExecutorError
+
+    err = ExecutorError("E_SEC_013", "test error", executor_ref="llm.qwen-plus")
+    assert err.executor_ref == "llm.qwen-plus"
+
+
+def test_executor_error_executor_ref_default_none() -> None:
+    """ExecutorError.executor_ref 默认为 None。"""
+    from prompt2langgraph.registry.executors import ExecutorError
+
+    err = ExecutorError("E_SEC_013", "test error")
+    assert err.executor_ref is None

@@ -736,3 +736,29 @@ def test_resume_command_continues_pending_interrupt_across_processes(tmp_path: P
     assert resumed["status"] == "succeeded"
     assert resumed["output"] == {"answer": "Answer: hello"}
     assert list(state_store.glob("*.json")) == []
+
+
+def test_resume_command_calls_build_runtime_clients(tmp_path: Path) -> None:
+    """resume 命令应调用 _build_runtime_clients 构造 model_client 和 tool_registry。"""
+    # 使用 monkeypatch 验证 _build_runtime_clients 被调用
+    # 由于 resume 路径和 run 路径共享 _build_runtime_clients，
+    # 我们通过检查 resume 命令是否正确传递 model_client 来验证
+    from unittest.mock import patch
+
+    with patch("prompt2langgraph.cli._build_runtime_clients") as mock_build:
+        mock_build.return_value = (None, None)
+        # 即使 workflow 没有 LLM 节点，_build_runtime_clients 也应被调用
+        result = CliRunner().invoke(
+            app,
+            [
+                "resume",
+                str(FIXTURES / "linear_llm.json"),
+                "--thread-id",
+                "test_thread",
+                "--resume",
+                '"approved"',
+                "--json",
+            ],
+        )
+        # 验证 _build_runtime_clients 被调用
+        mock_build.assert_called_once()
