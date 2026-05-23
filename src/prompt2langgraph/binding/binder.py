@@ -4,7 +4,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from prompt2langgraph.ir.models import WorkflowSpec
+from prompt2langgraph.ir.models import ExecutorType, WorkflowSpec
 from prompt2langgraph.registry.builtins import builtin_executor_registry
 from prompt2langgraph.registry.executors import ExecutorRegistry
 
@@ -27,5 +27,8 @@ def bind_workflow(
             "executor": executor.ref,
             "type": executor.type.value,
             "capabilities": list(executor.required_capabilities),
+            "dynamic": executor.dynamic,
+            "allowed_models": list(workflow.policies.allowed_models) if executor.type is ExecutorType.LLM else [],
+            "external_call": workflow.policies.external_call,
         }
     return BoundWorkflow(workflow=workflow, executor_bindings=bindings)
