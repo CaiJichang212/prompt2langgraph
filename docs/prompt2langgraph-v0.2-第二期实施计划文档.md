@@ -399,6 +399,22 @@ def test_dict_messages_to_langchain_assistant_message() -> None:
 
 def test_dict_messages_to_langchain_unknown_role_raises() -> None:
     with pytest.raises(ValueError, match="unsupported role"):
+        dict_messages_to_langchain([{"role": "function", "content": "result"}])
+
+
+def test_dict_messages_to_langchain_tool_message() -> None:
+    from langchain_core.messages import ToolMessage
+
+    messages = [{"role": "tool", "content": "42", "tool_call_id": "call_abc123"}]
+    result = dict_messages_to_langchain(messages)
+
+    assert isinstance(result[0], ToolMessage)
+    assert result[0].content == "42"
+    assert result[0].tool_call_id == "call_abc123"
+
+
+def test_dict_messages_to_langchain_tool_message_missing_call_id_raises() -> None:
+    with pytest.raises(ValueError, match="tool_call_id"):
         dict_messages_to_langchain([{"role": "tool", "content": "result"}])
 ```
 
@@ -452,12 +468,15 @@ def load_llm_config() -> LLMConfig:
 
 from __future__ import annotations
 
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
 
 _ROLE_MAP = {
     "system": SystemMessage,
     "user": HumanMessage,
     "assistant": AIMessage,
+    # tool role 预留：当前第二期不启用 LANGCHAIN_TOOL executor，
+    # 但预留映射以降低后续实现 tool calling 场景的改动成本
+    "tool": ToolMessage,
 }
 
 
@@ -473,7 +492,14 @@ def dict_messages_to_langchain(messages: list[dict[str, str]]) -> list[BaseMessa
             )
         if not isinstance(content, str):
             raise ValueError(f"message content must be a string, got {type(content).__name__}")
-        result.append(cls(content=content))
+        # ToolMessage 需要 tool_call_id 参数
+        if role == "tool":
+            tool_call_id = msg.get("tool_call_id", "")
+            if not tool_call_id:
+                raise ValueError("tool role messages require a 'tool_call_id' field")
+            result.append(ToolMessage(content=content, tool_call_id=tool_call_id))
+        else:
+            result.append(cls(content=content))
     return result
 ```
 
@@ -484,6 +510,7 @@ def dict_messages_to_langchain(messages: list[dict[str, str]]) -> list[BaseMessa
 
 from __future__ import annotations
 
+from pydantic import SecretStr
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_openai import ChatOpenAI
 
@@ -505,16 +532,16 @@ def build_llm_client(
     """
     config: LLMConfig = load_llm_config()
     return ChatOpenAI(
-        model=model or config.model,
-        base_url=base_url or config.base_url,
+        model=model if model is not None else config.model,
+        base_url=base_url if base_url is not None else config.base_url,
         api_key=(
             SecretStr(api_key).get_secret_value()
             if api_key
             else (config.api_key.get_secret_value() if config.api_key else None)
         ),
         temperature=temperature if temperature is not None else config.temperature,
-        max_tokens=max_tokens or config.max_tokens,
-        timeout=timeout_s or config.request_timeout_s,
+        max_tokens=max_tokens if max_tokens is not None else config.max_tokens,
+        timeout=timeout_s if timeout_s is not None else config.request_timeout_s,
     )
 ```
 
@@ -769,8 +796,24 @@ def test_llm_executor_invalid_message_role_raises() -> None:
     executor = LLMExecutor(model_client=FakeBaseChatModel())
     with pytest.raises(ExecutorError, match="E_LLM_003"):
         executor(
-            {"messages": [{"role": "tool", "content": "result"}]}, {}
+            {"messages": [{"role": "function", "content": "result"}]}, {}
         )
+
+
+def test_llm_executor_missing_api_key_raises() -> None:
+    """当 API_KEY 缺失时，LLM executor 应返回明确诊断而非崩溃。"""
+    from prompt2langgraph.llm.provider import build_llm_client
+
+    # 模拟 API_KEY 缺失的场景：build_llm_client() 在无 API_KEY 时
+    # 应能构造 client（延迟验证），但调用时 API 会返回认证错误
+    # 此测试验证 LLMExecutor 对认证错误的包装
+    class AuthErrorModel:
+        def invoke(self, messages):
+            raise RuntimeError("Authentication error: Invalid API key")
+
+    executor = LLMExecutor(model_client=AuthErrorModel())
+    with pytest.raises(ExecutorError, match="E_LLM_002"):
+        executor({"messages": [{"role": "user", "content": "Hello"}]}, {})
 ```
 
 - [ ] **Step 2: 运行测试确认失败**
@@ -870,7 +913,13 @@ class LLMExecutor:
         if "messages" in inputs:
             raw = inputs["messages"]
             if isinstance(raw, list):
-                return dict_messages_to_langchain(raw)
+                try:
+                    return dict_messages_to_langchain(raw)
+                except ValueError as exc:
+                    raise ExecutorError(
+                        E_LLM_003,
+                        f"invalid message format: {exc}",
+                    ) from exc
             raise ExecutorError(
                 E_LLM_003,
                 "messages input must be a list of {role, content} dicts",
@@ -1257,6 +1306,26 @@ def test_check_tool_refs_registered_and_allowed_passes() -> None:
     diags = check_tool_refs(wf, tool_registry)
 
     assert len(diags) == 0
+
+
+def test_check_tool_refs_no_whitelist_configured_reports_error() -> None:
+    """当全局和节点级均未配置 allowed_tool_refs 时，应报 E_SEC_015 诊断。"""
+    nodes = [
+        NodeSpec(
+            id="n1",
+            kind="tool",
+            executor=ExecutorRef(ref="tool.echo", type=ExecutorType.PYTHON_CALLABLE),
+        )
+    ]
+    # allowed_tool_refs 使用默认值 []，即空白名单
+    wf = _make_workflow(nodes=nodes, policies=PolicySpec(allowed_tool_refs=[]))
+    tool_registry = ToolCallableRegistry()
+    tool_registry.register("tool.echo", lambda i, p: {"r": i.get("x", "")})
+
+    diags = check_tool_refs(wf, tool_registry)
+
+    assert len(diags) == 1
+    assert diags[0].code == E_SEC_015
 ```
 
 - [ ] **Step 2: 运行测试确认失败**
@@ -1352,7 +1421,9 @@ def check_tool_refs(
             else None
         )
         effective_allowed = node_allowed if node_allowed is not None else global_allowed
-        if ref not in effective_allowed:
+        # 当 effective_allowed 为 None 时，表示全局和节点级均未配置白名单，
+        # 按默认安全原则，不允许任何 tool 执行
+        if effective_allowed is None or ref not in effective_allowed:
             diagnostics.append(
                 Diagnostic(
                     code=E_SEC_015,
@@ -1419,6 +1490,54 @@ def validate_workflow(
     diagnostics.extend(check_external_policy(spec))
     diagnostics.extend(check_model_whitelist(spec))
     diagnostics.extend(check_tool_refs(spec, _tool_registry))
+```
+
+同时修改 `_check_registries()` 函数，增加对 `dynamic=True` executor 的显式放行逻辑：
+
+```python
+def _check_registries(
+    spec: WorkflowSpec,
+    node_registry: NodeRegistry,
+    executor_registry: ExecutorRegistry,
+) -> list[Diagnostic]:
+    diagnostics: list[Diagnostic] = []
+    for node in spec.nodes:
+        # ... 现有 kind 校验逻辑不变 ...
+
+        # executor ref 校验
+        if not executor_registry.has(node.executor.ref):
+            # dynamic=True 的 schema-only definition 必须预先注册
+            diagnostics.append(
+                Diagnostic(
+                    code=E_VAL_003,
+                    severity="error",
+                    message=f'node "{node.id}" executor ref "{node.executor.ref}" is not registered',
+                    location=DiagnosticLocation(node_id=node.id),
+                )
+            )
+            continue
+
+        definition = executor_registry.get(node.executor.ref)
+
+        # dynamic executor 允许 handler=None，跳过 handler 校验
+        if definition.handler is None and not definition.dynamic:
+            diagnostics.append(
+                Diagnostic(
+                    code=E_VAL_003,
+                    severity="error",
+                    message=(
+                        f'node "{node.id}" executor "{node.executor.ref}" has no handler '
+                        f'and is not marked as dynamic'
+                    ),
+                    location=DiagnosticLocation(node_id=node.id),
+                    hint="Either provide a handler or set dynamic=True on the executor definition.",
+                )
+            )
+            continue
+
+        # 非 dynamic executor 继续走现有 handler 调用校验逻辑
+        # ...
+    return diagnostics
 ```
 
 - [ ] **Step 5: 运行测试确认通过**
@@ -1552,6 +1671,7 @@ def compile_workflow_to_graph(
     model_client: Any | None = None,
     tool_registry: ToolCallableRegistry | None = None,
     error_sink: NodeErrorSink | None = None,
+    metrics_sink: Callable[[ExternalCallRecord], None] | None = None,
 ):
     # ... 现有逻辑 ...
     _policies = policies or workflow.policies
@@ -1570,6 +1690,7 @@ def compile_workflow_to_graph(
                 model_client=model_client,
                 tool_registry=tool_registry,
                 error_sink=error_sink,
+                metrics_sink=metrics_sink,
             ),
         )
 ```
@@ -1589,6 +1710,7 @@ def _node_wrapper(
     model_client: Any | None = None,
     tool_registry: ToolCallableRegistry | None = None,
     error_sink: NodeErrorSink | None = None,
+    metrics_sink: Callable[[ExternalCallRecord], None] | None = None,
 ):
     executor = executors.get(node.executor.ref)
 
@@ -1607,6 +1729,7 @@ def _node_wrapper(
                 policies=policies,
                 model_client=model_client,
                 tool_registry=tool_registry,
+                metrics_sink=metrics_sink,
             )
         except ExecutorError as exc:
             exc.node_id = node.id
@@ -1650,8 +1773,22 @@ def _invoke_executor(
     policies: PolicySpec | None = None,
     model_client: Any | None = None,
     tool_registry: ToolCallableRegistry | None = None,
+    metrics_sink: Callable[[ExternalCallRecord], None] | None = None,
 ) -> dict[str, Any]:
-    """Dispatch executor invocation based on executor type and dynamic flag."""
+    """Dispatch executor invocation based on executor type and dynamic flag.
+
+    When ``policies.collect_metrics`` is True and ``metrics_sink`` is provided,
+    successful external calls are recorded via ``metrics_sink`` with timing info.
+    Failed calls are recorded by the ``error_sink`` in the caller.
+    """
+    import time
+
+    is_external = (
+        (executor.dynamic and executor.type is ExecutorType.LLM)
+        or (executor.dynamic and executor.type is ExecutorType.PYTHON_CALLABLE)
+    )
+    should_record = is_external and policies is not None and policies.collect_metrics and metrics_sink is not None
+
     if executor.dynamic and executor.type is ExecutorType.LLM:
         if model_client is None:
             raise ExecutorError(
@@ -1661,7 +1798,19 @@ def _invoke_executor(
             )
         from prompt2langgraph.registry.llm_executor import LLMExecutor
         llm = LLMExecutor(model_client=model_client)
-        return llm(inputs, node.params)
+        start = time.monotonic()
+        result = llm(inputs, node.params)
+        if should_record:
+            elapsed_ms = (time.monotonic() - start) * 1000
+            model_id = node.executor.ref[len("llm."):] if node.executor.ref.startswith("llm.") else None
+            metrics_sink(ExternalCallRecord(
+                node_id=node.id,
+                executor_ref=node.executor.ref,
+                model=model_id,
+                latency_ms=round(elapsed_ms, 1),
+                status="succeeded",
+            ))
+        return result
 
     if executor.dynamic and executor.type is ExecutorType.PYTHON_CALLABLE:
         if tool_registry is None:
@@ -1680,11 +1829,29 @@ def _invoke_executor(
             tool_ref=node.executor.ref,
             timeout_s=timeout_s,
         )
-        return tool(inputs, node.params)
+        start = time.monotonic()
+        result = tool(inputs, node.params)
+        if should_record:
+            elapsed_ms = (time.monotonic() - start) * 1000
+            metrics_sink(ExternalCallRecord(
+                node_id=node.id,
+                executor_ref=node.executor.ref,
+                latency_ms=round(elapsed_ms, 1),
+                status="succeeded",
+            ))
+        return result
 
     # Fall through to existing handler path for BUILTIN etc.
     return executor.invoke(inputs, node.params)
 ```
+
+> **预留路径：LangGraph 原生 RetryPolicy 映射**
+>
+> 当前第二期不实现自动重试，但为后续版本预留以下映射路径：
+>
+> 当 `NodeSpec.retry.max_attempts > 1` 时，可将 `langgraph.types.RetryPolicy` 传给 `builder.add_node()` 的 `retry_policy=` 参数，让 LangGraph 框架层统一管理重试。当前 `_invoke_executor()` 中 LLM/Tool 的 `TimeoutError` / `RuntimeError` 已转为 `ExecutorError` 抛出，与 LangGraph 的 `RetryPolicy` 默认重试行为（默认重试非 `ValueError`/`TypeError` 等编程错误的异常）天然兼容。
+>
+> 参考文档：[LangGraph Fault tolerance](https://docs.langchain.com/oss/python/langgraph/fault-tolerance)
 
 - [ ] **Step 5: 运行测试确认通过**
 
@@ -1745,6 +1912,19 @@ def test_run_result_has_external_calls_default_empty() -> None:
         thread_id="thread_1",
     )
     assert result.external_calls == []
+
+
+def test_external_call_record_succeeded_status() -> None:
+    """collect_metrics=True 时成功调用应记录 status='succeeded' 的 ExternalCallRecord。"""
+    record = ExternalCallRecord(
+        node_id="n1",
+        executor_ref="llm.qwen-plus",
+        model="qwen-plus",
+        latency_ms=120.3,
+        status="succeeded",
+    )
+    assert record.status == "succeeded"
+    assert record.error_code is None
 ```
 
 - [ ] **Step 2: 运行测试确认失败**
@@ -1807,7 +1987,7 @@ def run_workflow(
 ) -> RunResult:
 ```
 
-在 `compile_workflow_to_graph()` 调用处传入新参数，并增加 `error_sink` 回调用于收集 `ExecutorError` 到 `RunResult.diagnostics`：
+在 `compile_workflow_to_graph()` 调用处传入新参数，并增加 `error_sink` 和 `metrics_sink` 回调用于收集 `ExecutorError` 和成功调用的 `ExternalCallRecord`：
 
 ```python
     external_calls: list[ExternalCallRecord] = []
@@ -1824,6 +2004,9 @@ def run_workflow(
             )
         )
 
+    def metrics_sink(record: ExternalCallRecord) -> None:
+        external_calls.append(record)
+
     graph = compile_workflow_to_graph(
         workflow,
         executor_registry,
@@ -1833,10 +2016,48 @@ def run_workflow(
         model_client=model_client,
         tool_registry=tool_registry,
         error_sink=error_sink,
+        metrics_sink=metrics_sink,
     )
 ```
 
 在 `RunResult` 构造时传入 `external_calls`。
+
+- [ ] **Step 4.1: 更新 CLI `run` 命令传递 `model_client` 和 `tool_registry`**
+
+在 `cli.py` 的 `run` 命令中，当 workflow 包含 `ExecutorType.LLM` 或 `ExecutorType.PYTHON_CALLABLE` 节点时，需要构造 `model_client` 和 `tool_registry` 并传入 `run_workflow()`：
+
+```python
+# cli.py run 命令中，在调用 run_workflow() 之前：
+from prompt2langgraph.llm.provider import build_llm_client
+from prompt2langgraph.registry.tool_executor import ToolCallableRegistry
+
+model_client = None
+tool_registry = None
+
+# 检查 workflow 是否需要外部执行能力
+has_llm_nodes = any(
+    node.executor.type is ExecutorType.LLM
+    for node in spec.nodes
+)
+has_tool_nodes = any(
+    node.executor.type is ExecutorType.PYTHON_CALLABLE
+    for node in spec.nodes
+)
+
+if has_llm_nodes and spec.policies.external_call:
+    model_client = build_llm_client()
+
+if has_tool_nodes:
+    tool_registry = ToolCallableRegistry()
+    # 内置 tool 可在此注册，或由用户通过配置文件加载
+
+result = run_workflow(
+    spec,
+    input_payload,
+    model_client=model_client,
+    tool_registry=tool_registry,
+)
+```
 
 - [ ] **Step 5: 运行测试确认通过**
 
@@ -1869,7 +2090,6 @@ git commit -m "feat: extend RunMetrics and RunResult for external call tracking"
 
 from langchain_core.language_models.fake import FakeListChatModel
 from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_core.messages import AIMessage
 
 
 def fake_chat_model(
@@ -1881,12 +2101,12 @@ def fake_chat_model(
 
     Uses LangChain's built-in FakeListChatModel for compatibility with
     the BaseChatModel interface.
+
+    Note: FakeListChatModel.responses expects a list of str (not AIMessage).
+    The response is automatically wrapped in AIMessage by FakeListChatModel.
+    If usage_metadata is needed, use a custom fake model instead.
     """
-    msg = AIMessage(
-        content=response_text,
-        usage_metadata=usage_metadata,
-    )
-    return FakeListChatModel(responses=[msg])
+    return FakeListChatModel(responses=[response_text])
 ```
 
 - [ ] **Step 2: 创建 `tests/fake_tools.py`**
@@ -2375,7 +2595,7 @@ git commit -m "test: add backwards compatibility and lockfile hash regression te
 
 1. **Task 1**：扩展诊断码与 IR 模型（无依赖，先行）；
 2. **Task 2**：创建 LLM Provider 轻量抽象模块（无依赖，可并行与 Task 1）；
-3. **Task 3**：重构 `prompting/planner.py` 委托给 `llm/` 模块（依赖 Task 2）；
+3. **Task 3**：重构 `prompting/planner.py` 委托给 `llm/` 模块（依赖 Task 2，完成后立即执行，作为 `llm/` 模块的第一个集成验证点）；
 4. **Task 4**：实现真实 LLM Executor（依赖 Task 2）；
 5. **Task 5**：实现 Tool Executor 最小受控模型（与 Task 4 可并行）；
 6. **Task 6**：实现策略校验层（依赖 Task 1 的 IR 模型扩展，与 Task 4/5 可并行）；
@@ -2389,7 +2609,7 @@ git commit -m "test: add backwards compatibility and lockfile hash regression te
 ```
 Task 1 (IR + 诊断码) ──┬──→ Task 6 (策略校验) ──→ Task 7 (编译器) ──→ Task 8 (Runner)
                        │                                        │
-Task 2 (llm/ 模块) ────┼──→ Task 3 (重构 planner)               │
+Task 2 (llm/ 模块) ────┼──→ Task 3 (重构 planner) ← 紧随 Task 2 │
                        │                                        │
                        ├──→ Task 4 (LLM Executor) ──────────────┤
                        │                                        │
@@ -2415,13 +2635,17 @@ Task 2 (llm/ 模块) ────┼──→ Task 3 (重构 planner)           
 3. `ExecutorType.LLM` 的 ref 格式约定为 `llm.<model_id>`，`model_id` 必须在 `allowed_models` 白名单中；
 4. `security.py` 新增的函数必须独立可测试，不在函数内部导入 `ToolCallableRegistry` 的默认实例（由调用方注入）；
 5. 动态 executor 必须在 `ExecutorRegistry` 中注册 schema-only definition（`dynamic=True, handler=None`），验证阶段保留 ref/type/schema 校验；
-6. `_check_registries()` 中允许 `definition.dynamic=True` 且 `handler is None` 的 executor 通过校验；
+6. `_check_registries()` 中允许 `definition.dynamic=True` 且 `handler is None` 的 executor 通过校验；`definition.dynamic=False` 且 `handler=None` 应报 `E_VAL_003` 诊断；
 7. `ToolExecutor` 不做 subprocess 沙箱、Docker 隔离或网络访问控制；
 8. 不在 CLI 中新增 `prompt run` 之类的二次入口；
 9. 不在 `prompt2langgraph.cli` 模块导入阶段急切初始化 `langchain_openai` 客户端；
 10. 保持现有 JSON plan / Workflow IR 入口测试全部稳定通过；
 11. 文档更新不止 `README.md`，还必须同步 `CLAUDE.md` 和 `AGENTS.md`；
-12. 所有新增 executor 通过 fake provider 独立测试，不依赖真实网络调用。
+12. 所有新增 executor 通过 fake provider 独立测试，不依赖真实网络调用；
+13. CLI `run` 命令需要在运行时根据 workflow 中的节点类型自动构造 `model_client` 和 `tool_registry`，并传入 `run_workflow()`；
+14. `collect_metrics=True` 时，成功调用和失败调用均需记录 `ExternalCallRecord`（成功通过 `metrics_sink`，失败通过 `error_sink`）；
+15. `check_tool_refs()` 中 `effective_allowed` 为 `None` 或空列表时，按默认安全原则报 `E_SEC_015` 诊断；
+16. `FakeListChatModel.responses` 参数期望 `str` 列表而非 `AIMessage` 实例列表。
 
 ---
 
@@ -2434,7 +2658,8 @@ Task 2 (llm/ 模块) ────┼──→ Task 3 (重构 planner)           
 - `tool` 节点可通过 `ExecutorType.PYTHON_CALLABLE` 执行受信任、预注册且经 `allowed_tool_refs` 授权的纯 Python callable；
 - 真实 executor 和 mock executor 可通过 executor ref 区分（`ref="builtin.echo_llm"` = mock，`ref="llm.qwen-plus"` = real），mock 行为完全兼容；
 - 策略约束在 `validate_workflow()` 阶段即被检查：`external_call` 开关、`allowed_models` 白名单、`allowed_tool_refs` 白名单；
-- `collect_metrics=True` 时，`RunResult.external_calls` 中可获取调用记录；
+- `collect_metrics=True` 时，`RunResult.external_calls` 中可获取成功和失败调用的 `ExternalCallRecord`（成功通过 `metrics_sink`，失败通过 `error_sink`）；
+- CLI `run` 命令能根据 workflow 节点类型自动构造 `model_client` 和 `tool_registry`，传入 `run_workflow()`；
 - `tests/test_llm_provider.py`、`tests/test_llm_executor.py`、`tests/test_tool_executor.py`、`tests/test_security_policy.py`、`tests/test_integration_execution.py` 全部通过；
 - 现有第一期测试基线全部通过（`tests/test_prompt_planner.py`、`tests/test_prompt_parser.py`、`tests/test_public_api.py`、`tests/test_cli.py`）；
 - `README.md`、`CLAUDE.md`、`AGENTS.md` 已同步更新，明确区分 `plan` 命令使用的 LLM（第一期）和运行时 `llm` 节点使用的 LLM（第二期）；
