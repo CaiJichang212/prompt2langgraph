@@ -179,7 +179,7 @@ def _invoke_executor(
 
     if executor.dynamic and executor.type is ExecutorType.LLM:
         if model_client is None:
-            raise ExecutorError(E_SEC_013, f'node "{node.id}" requires model_client for LLM executor')
+            raise ExecutorError(E_SEC_013, f'node "{node.id}" requires model_client for LLM executor', executor_ref=executor.ref)
         from prompt2langgraph.registry.llm_executor import LLMExecutor
 
         llm_executor = LLMExecutor(model_client=model_client)
@@ -198,7 +198,7 @@ def _invoke_executor(
 
     if executor.dynamic and executor.type is ExecutorType.PYTHON_CALLABLE:
         if tool_registry is None:
-            raise ExecutorError(E_SEC_015, f'node "{node.id}" requires tool_registry for Tool executor')
+            raise ExecutorError(E_SEC_015, f'node "{node.id}" requires tool_registry for Tool executor', executor_ref=executor.ref)
         timeout_s = node.timeout_s or policies.default_timeout_s
         from prompt2langgraph.registry.tool_executor import ToolExecutor
 
@@ -258,6 +258,8 @@ def _node_wrapper(
         except ExecutorError as exc:
             if exc.node_id is None:
                 exc.node_id = node.id
+            if exc.executor_ref is None:
+                exc.executor_ref = executor.ref
             if error_sink is not None:
                 error_sink(exc)
             if effective_policies.collect_metrics and metrics_sink is not None:
