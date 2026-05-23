@@ -48,6 +48,7 @@ class ToolExecutor:
             raise ExecutorError(
                 E_SEC_015,
                 f"tool ref '{self._tool_ref}' is not registered",
+                executor_ref=self._tool_ref,
             )
         callable = self._registry.get(self._tool_ref)
         try:
@@ -59,6 +60,7 @@ class ToolExecutor:
                 E_SEC_015,
                 f"tool '{self._tool_ref}' timed out after {self._timeout_s}s",
                 hint=str(exc),
+                executor_ref=self._tool_ref,
             ) from exc
         except ExecutorError:
             raise
@@ -67,4 +69,5 @@ class ToolExecutor:
                 E_SEC_015,
                 f"tool '{self._tool_ref}' execution failed: {exc}",
                 hint=str(exc),
+                executor_ref=self._tool_ref,
             ) from exc
