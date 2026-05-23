@@ -20,11 +20,13 @@ class ExecutorError(RuntimeError):
         *,
         hint: str | None = None,
         node_id: str | None = None,
+        executor_ref: str | None = None,
     ) -> None:
         self.code = code
         self.message = message
         self.hint = hint
         self.node_id = node_id
+        self.executor_ref = executor_ref
         super().__init__(message)
 
     def to_diagnostic(self) -> Diagnostic:
