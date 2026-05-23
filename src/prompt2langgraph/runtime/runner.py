@@ -94,7 +94,7 @@ def run_workflow(
             external_calls.append(
                 ExternalCallRecord(
                     node_id=exc.node_id or "unknown",
-                    executor_ref="unknown",
+                    executor_ref=exc.executor_ref or "unknown",
                     status="failed",
                     error_code=exc.code,
                 )
