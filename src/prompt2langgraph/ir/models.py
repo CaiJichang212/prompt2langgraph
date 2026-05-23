@@ -105,11 +105,16 @@ class RetryPolicy(BaseModel):
 class SecurityPolicy(BaseModel):
     requires_approval: bool = False
     idempotency_key: str | None = None
+    allowed_tool_refs: list[str] | None = None
 
 
 class PolicySpec(BaseModel):
     allow_side_effects: bool = False
     default_timeout_s: int = 60
+    external_call: bool = False
+    allowed_models: list[str] = Field(default_factory=list)
+    collect_metrics: bool = False
+    allowed_tool_refs: list[str] = Field(default_factory=list)
 
 
 class StateSchema(BaseModel):
