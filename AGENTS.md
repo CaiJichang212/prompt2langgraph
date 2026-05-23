@@ -29,23 +29,29 @@
 - CLI：`src/prompt2langgraph/cli.py`
 - public API：`src/prompt2langgraph/__init__.py`
 
-当前不是 prompt-to-code 生成器。内置 executor 仅覆盖本地确定性 mock/纯函数/人工中断占位，不应隐式调用外部 LLM、网络服务或 shell 命令；`tool` 和 `side_effect` 是节点类型契约，不代表存在可直接执行外部工具或副作用的内置 executor。
+当前不是 prompt-to-code 生成器。内置 mock executor 用于本地确定性测试；通过 `ExecutorType.LLM` 和 `ExecutorType.PYTHON_CALLABLE` 可接入真实 LLM 模型调用和受控 Tool 执行，但需显式启用策略开关。`ToolCallableRegistry` 提供受控 Tool 执行能力；`side_effect` 是节点类型契约，不做 subprocess 隔离或网络控制。
 
-Prompt 计划生成能力已落地：通过 `plan_prompt_to_workflow_spec()` 或 CLI `pt2lg plan` 命令，可由自然语言 Prompt 经 LLM 生成简化 JSON plan，再经 `JSONPlanAdapter` 转为 `WorkflowSpec`。Prompt 计划生成基于 `langchain_openai`，默认从 `.env` 读取 `MODEL`、`BASE_URL`、`API_KEY`，优先兼容 Qwen、vLLM 暴露的 OpenAI-style API 及其他第三方兼容接口。当前 Prompt 只生成简化 JSON plan，不代表 runtime `llm` 节点具备真实执行能力。
+Prompt 计划生成能力已落地：通过 `plan_prompt_to_workflow_spec()` 或 CLI `pt2lg plan` 命令，可由自然语言 Prompt 经 LLM 生成简化 JSON plan，再经 `JSONPlanAdapter` 转为 `WorkflowSpec`。Prompt 计划生成基于 `langchain_openai`，默认从 `.env` 读取 `MODEL`、`BASE_URL`、`API_KEY`，优先兼容 Qwen、vLLM 暴露的 OpenAI-style API 及其他第三方兼容接口。Prompt 只生成简化 JSON plan；运行时 `llm` 节点的真实执行需 `external_call=True` + `allowed_models`。
 
 ## 当前能力边界
 
 - 输入：规范 Workflow IR，或通过 `json_plan_to_workflow_spec()` 适配的简化 JSON plan，或通过 `plan_prompt_to_workflow_spec()` 由 Prompt 经 LLM 生成简化 JSON plan。
-- Prompt 计划生成：`prompting/planner.py` 封装 LLM 调用，`prompting/parser.py` 解析 JSON 输出并产出 `AdapterParseError` 诊断，`prompting/config.py` 从 `.env` 加载 `MODEL`、`BASE_URL`、`API_KEY`。
-- Prompt 只生成简化 JSON plan，不代表 runtime `llm` 节点具备真实执行能力；当前仍不支持真实 workflow `llm` 执行。
+- Prompt 计划生成：`prompting/planner.py` 封装 LLM 调用（`build_model_client()` 委托给 `llm.provider.build_llm_client()`），`prompting/parser.py` 解析 JSON 输出并产出 `AdapterParseError` 诊断，`prompting/config.py` 从 `.env` 加载 `MODEL`、`BASE_URL`、`API_KEY`（已标记 deprecated，委托给 `llm.config`）。
+- LLM 执行：`llm` 节点可通过 `ExecutorType.LLM`（ref 格式 `llm.<model_id>`）调用真实模型，需 `external_call=True` + `allowed_models` 白名单。`LLMExecutor` 在 `registry/llm_executor.py`。
+- Tool 执行：`tool` 节点可通过 `ExecutorType.PYTHON_CALLABLE` 执行受控 callable，需 `allowed_tool_refs` 白名单 + `ToolCallableRegistry` 注册。`ToolExecutor` 在 `registry/tool_executor.py`。
+- Prompt 只生成简化 JSON plan；运行时 `llm` 节点的真实执行需 `external_call=True` + `allowed_models`。
 - skill：`analyze_skill_dir()` 只做 `SKILL.md` frontmatter、编号步骤、资源文件和风险词静态分析，输出 `SkillDirectoryAnalysis`/`draft_nodes` 和诊断；不生成可执行 `WorkflowSpec`，也不执行 skill 脚本。
 - 节点类型 registry：`llm`、`tool`、`retriever`、`transform`、`router`、`human_gate`、`join`、`side_effect`。
-- 内置 executor：`builtin.echo_llm`、`builtin.mock_retriever`、`builtin.identity_transform`、`builtin.route`、`builtin.human_gate`、`builtin.join`。
+- 内置 executor：`builtin.echo_llm`、`builtin.mock_retriever`、`builtin.identity_transform`、`builtin.route`、`builtin.human_gate`、`builtin.join`。动态 executor：`llm.qwen-plus`（`ExecutorType.LLM`，`dynamic=True`）。
 - `compile_workflow_to_graph()` 和 `run_workflow()` 当前目标能力支持 `linear`、`conditional`、`loop`、`fanout`。
 - `human_gate` 使用 LangGraph `interrupt()`；CLI 对 lockfile bundle 的等待态会写入 bundle 目录下 `.pt2lg-runtime/`，恢复成功后清理对应状态文件；该本地持久化依赖当前 LangGraph `InMemorySaver` 内部结构，不是稳定交换格式。
 - 编译产物路径已统一：CLI `pt2lg compile` 和 public `compile_workflow()` 都通过 `runtime.artifacts.compile_workflow_to_artifacts()` 写入 bundle，包含 compile id、timing、policy summary 和 binding summary。
 - 编译失败时不能留下可误用的旧 bundle；`compile_workflow_to_artifacts()` 会清理同一输出目录下已知的旧产物文件和 `generated/`，但保留无关文件。
-- binding summary 只记录 executor ref、type 和 required capabilities 名称。
+- binding summary 记录 executor ref、type、required capabilities 名称、dynamic 标记、allowed_models 和 external_call。
+- `llm/` 顶层模块为 LLM 客户端构造共享入口（`LLMConfig`、`build_llm_client()`、`dict_messages_to_langchain()`），`.env` 配置同时服务于 Prompt 计划生成和运行时 LLM 执行。
+- `collect_metrics=True` 时，`RunResult.external_calls` 中可获取成功和失败调用的 `ExternalCallRecord`。
+- CLI `run` 命令能根据 workflow 节点类型自动构造 `model_client` 和 `tool_registry`。
+- 策略约束在 `validate_workflow()` 阶段即被检查：`external_call` 开关、`allowed_models` 白名单、`allowed_tool_refs` 白名单。
 
 ## Do & Don't
 
@@ -54,7 +60,8 @@ Prompt 计划生成能力已落地：通过 `plan_prompt_to_workflow_spec()` 或
 - 新增节点或 executor 时，通过 registry 定义契约，并补充校验和运行测试；内置 executor 必须保持确定性，不能隐式调用外部 LLM 或网络。
 - side effect 节点默认必须要求审批或幂等键，除非 workflow policy 显式允许副作用。
 - 编译产物结构变更时，同步更新 `tests/test_compile_flow.py` 等回归测试。
-- 修改 Prompt 入口后，跑 `tests/test_prompt_planner.py`、`tests/test_prompt_parser.py`、`tests/test_public_api.py`、`tests/test_cli.py` 回归。
+- 若改动涉及 Prompt 入口（`prompting/`、`cli.py plan`、`__init__.py`），额外跑 `tests/test_prompt_planner.py`、`tests/test_prompt_parser.py`、`tests/test_public_api.py`、`tests/test_cli.py` 回归。
+- 若改动涉及 executor dispatch 或策略校验，额外跑 `tests/test_security_policy.py`、`tests/test_integration_execution.py`。
 - 文档修改需同步 `README.md`、`CLAUDE.md`、`AGENTS.md`。
 
 ### Don't
@@ -154,4 +161,5 @@ uv run pt2lg resume build/conditional_human_gate/workflow.lock.json --thread-id 
 - 至少运行 `uv run pytest`。
 - 若全量测试失败，最终说明精确失败位置和错误；修复后再以 `uv run pytest` 作为完成标准。
 - 若改动涉及 Prompt 入口（`prompting/`、`cli.py plan`、`__init__.py`），额外跑 `tests/test_prompt_planner.py`、`tests/test_prompt_parser.py`、`tests/test_public_api.py`、`tests/test_cli.py`。
+- 若改动涉及 executor dispatch 或策略校验，额外跑 `tests/test_security_policy.py`、`tests/test_integration_execution.py`。
 - 若只修改文档，也应运行 `uv run pytest` 做回归确认；如因环境问题无法通过，最终说明原因。

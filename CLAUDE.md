@@ -13,14 +13,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 `prompt2langgraph` 用于把经过校验的 Workflow IR 或简化 JSON plan 编译为确定性的 LangGraph Python 工作流，并提供校验、编译产物生成、运行、恢复和 Mermaid 渲染。
 
-以 `src/prompt2langgraph/` 和 `tests/` 的实际行为为准。内置 executor 仅用于本地确定性 mock/纯函数/人工中断占位，不应隐式调用外部 LLM、网络服务或 shell。`tool` / `side_effect` 是节点类型契约，不代表存在可直接执行外部工具或副作用的内置 executor。
+以 `src/prompt2langgraph/` 和 `tests/` 的实际行为为准。内置 mock executor 用于本地确定性测试；通过 `ExecutorType.LLM` 和 `ExecutorType.PYTHON_CALLABLE` 可接入真实 LLM 模型调用和受控 Tool 执行，但需显式启用策略开关。`tool` / `side_effect` 是节点类型契约，`ToolCallableRegistry` 提供受控 Tool 执行能力。
 
 当前可执行输入有三类：
 - 规范 `WorkflowSpec` IR
 - 通过 `json_plan_to_workflow_spec()` 适配的简化 JSON plan
 - 通过 `plan_prompt_to_workflow_spec()` 由 Prompt 文本经 LLM 生成简化 JSON plan，再经 `JSONPlanAdapter` 转为 `WorkflowSpec`
 
-Prompt 计划生成基于 `langchain_openai`，默认从 `.env` 读取 `MODEL`、`BASE_URL`、`API_KEY`，优先兼容 Qwen、vLLM 暴露的 OpenAI-style API 及其他第三方兼容接口。当前 Prompt 只生成简化 JSON plan，不代表 runtime `llm` 节点具备真实执行能力。
+Prompt 计划生成基于 `langchain_openai`，默认从 `.env` 读取 `MODEL`、`BASE_URL`、`API_KEY`，优先兼容 Qwen、vLLM 暴露的 OpenAI-style API 及其他第三方兼容接口。Prompt 只生成简化 JSON plan；运行时 `llm` 节点的真实执行需 `external_call=True` + `allowed_models`。
 
 `analyze_skill_dir()` 只做 `SKILL.md` 与资源文件静态分析，不生成可执行工作流，也不执行 skill 脚本。
 
@@ -74,29 +74,37 @@ uv run pt2lg run tests/fixtures/fanout_map_reduce.json --input '{"items":["alpha
 9. `runtime/runner.py` 执行图、记录事件，并处理 interrupt/resume。
 
 关键模块职责：
-- `ir/models.py`：规范 IR、节点/边、state schema 的 Pydantic 模型。
+- `ir/models.py`：规范 IR、节点/边、state schema 的 Pydantic 模型。`PolicySpec` 含 `external_call`、`allowed_models`、`collect_metrics`、`allowed_tool_refs`。
 - `adapters/ir.py`、`adapters/json_plan.py`：源 JSON → `WorkflowSpec`。
-- `prompting/planner.py`：Prompt → LLM → JSON plan 文本生成，`plan_prompt_to_workflow_spec()` 串联生成与适配。
+- `llm/`：LLM 客户端构造共享入口（`LLMConfig`、`build_llm_client()`、`dict_messages_to_langchain()`）。
+- `prompting/planner.py`：Prompt → LLM → JSON plan 文本生成，`plan_prompt_to_workflow_spec()` 串联生成与适配。`build_model_client()` 委托给 `llm.provider.build_llm_client()`。
 - `prompting/parser.py`：LLM 输出 JSON 解析与 `AdapterParseError` 诊断。
-- `prompting/config.py`：从 `.env` 加载 `MODEL`、`BASE_URL`、`API_KEY`。
+- `prompting/config.py`：从 `.env` 加载 `MODEL`、`BASE_URL`、`API_KEY`（已标记 deprecated，委托给 `llm.config`）。
 - `adapters/skill_dir.py`：skill 目录静态预分析。
-- `registry/`：节点类型与 executor 注册表，builtins 在 `registry/builtins.py`。
-- `compiler/langgraph_py.py`：实现 conditional / loop / fanout 路由与 state schema lowering。
+- `registry/`：节点类型与 executor 注册表，builtins 在 `registry/builtins.py`。`LLMExecutor` 在 `registry/llm_executor.py`，`ToolExecutor` + `ToolCallableRegistry` 在 `registry/tool_executor.py`。`ExecutorError` 在 `registry/executors.py`。
+- `compiler/langgraph_py.py`：实现 conditional / loop / fanout 路由与 state schema lowering，支持动态 executor dispatch（`ExecutorType.LLM` / `PYTHON_CALLABLE`）。
 - `runtime/artifacts.py`：bundle 生成、lockfile/manifest/report、bundle 校验、旧产物清理。
-- `runtime/runner.py`：运行时事件、`human_gate` interrupt、`.pt2lg-runtime/` 本地恢复状态。
+- `runtime/runner.py`：运行时事件、`human_gate` interrupt、`.pt2lg-runtime/` 本地恢复状态。支持 `model_client` / `tool_registry` 注入和 `ExternalCallRecord` 收集。
+- `runtime/events.py`：`RunMetrics`（含 `call_count`、`total_latency_ms`）、`ExternalCallRecord`、`RunResult.external_calls`。
+- `validate/security.py`：`check_external_policy()`、`check_model_whitelist()`、`check_tool_refs()` 策略校验。
 - `visualization/mermaid.py`：Mermaid 渲染。
 - `__init__.py`：稳定 public API：`WorkflowSpec`、`validate_workflow`、`run_workflow`、`compile_workflow`、`PromptPlanRequest`、`PromptPlanResult`、`plan_prompt_to_workflow_spec`。
 
 ## 当前执行能力
 
 - runtime/compiler 当前支持 `linear`、`conditional`、`loop`、`fanout`；`join` 只存在于 IR / Mermaid，可表达但不可执行。
+- `llm` 节点可通过 `ExecutorType.LLM`（ref 格式 `llm.<model_id>`）调用真实模型，需 `external_call=True` + `allowed_models` 白名单。
+- `tool` 节点可通过 `ExecutorType.PYTHON_CALLABLE` 执行受控 callable，需 `allowed_tool_refs` 白名单 + `ToolCallableRegistry` 注册。
+- 真实 executor 和 mock executor 可通过 executor ref 区分（`builtin.echo_llm` = mock，`llm.qwen-plus` = real）。
 - 条件表达式只支持简单 `<state_key> <comparison> <literal>`。
 - `loop` 依赖 `loop_guard.max_iterations`；`fanout` 的 reduce 依赖 `state_schema.reducers`。
 - `pt2lg compile` 与 public `compile_workflow()` 统一走 `runtime.artifacts.compile_workflow_to_artifacts()`。
 - 成功 bundle 包含：`workflow.ir.json`、`workflow.lock.json`、`manifest.json`、`compile_report.json`、`graph.mmd`、`generated/*.py`。
 - `workflow.lock.json` 是 bundle `run` / `graph` / `resume` 的入口；加载时会校验其与 `workflow.ir.json` 的 hash 一致性。
 - 编译失败会清理已知旧产物和 `generated/`，避免误用旧 bundle。
-- `human_gate` 基于 LangGraph `interrupt()`；CLI bundle 运行的等待态保存在 bundle 下 `.pt2lg-runtime/`，resume 成功后清理。该持久化格式依赖 `InMemorySaver` 内部结构，只适合短期本地开发，不是稳定交换格式。
+- `human_gate` 基于 LangGraph `interrupt()`；CLI bundle 运行的等待态保存在 bundle下 `.pt2lg-runtime/`，resume 成功后清理。该持久化格式依赖 `InMemorySaver` 内部结构，只适合短期本地开发，不是稳定交换格式。
+- `collect_metrics=True` 时，`RunResult.external_calls` 中可获取成功和失败调用的 `ExternalCallRecord`。
+- CLI `run` 命令能根据 workflow 节点类型自动构造 `model_client` 和 `tool_registry`。
 
 ## 修改时的硬规则
 
@@ -117,5 +125,6 @@ uv run pt2lg run tests/fixtures/fanout_map_reduce.json --input '{"items":["alpha
 - 完成后至少运行 `uv run pytest`。
 - 若改动涉及编译产物、bundle 读取、resume 或 lockfile 路径，额外跑相关 CLI fixture 回归命令。
 - 若改动涉及 Prompt 入口（`prompting/`、`cli.py plan`、`__init__.py`），额外跑 `tests/test_prompt_planner.py`、`tests/test_prompt_parser.py`、`tests/test_public_api.py`、`tests/test_cli.py`。
+- 若改动涉及 executor dispatch 或策略校验，额外跑 `tests/test_security_policy.py`、`tests/test_integration_execution.py`。
 - 文档修改需同步 `README.md`、`CLAUDE.md`、`AGENTS.md`。
 - 即使只改文档，也优先运行 `uv run pytest` 做回归确认。
