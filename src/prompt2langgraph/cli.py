@@ -306,7 +306,12 @@ def resume(
 
 
 def _build_runtime_clients(workflow: WorkflowSpec) -> tuple[Any, Any]:
-    """根据 workflow 节点类型构造 model_client 和 tool_registry。"""
+    """根据 workflow 节点类型构造 model_client 和 tool_registry。
+
+    注意：CLI 自动构造的 tool_registry 是一个空 ToolCallableRegistry()。
+    若 workflow 包含 PYTHON_CALLABLE 节点，需通过 Python API 注入已注册
+    callable 的 tool_registry，否则运行时校验会报 E_SEC_015。
+    """
     from prompt2langgraph.ir.models import ExecutorType
 
     model_client = None
