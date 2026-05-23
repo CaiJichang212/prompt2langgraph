@@ -146,5 +146,13 @@ def builtin_executor_registry() -> ExecutorRegistry:
                 output_schema={},
                 handler=join,
             ),
+            ExecutorDefinition(
+                ref="llm.qwen-plus",
+                type=ExecutorType.LLM,
+                dynamic=True,
+                input_schema={"question": STRING},
+                output_schema={"answer": STRING},
+                handler=None,
+            ),
         ]
     )
