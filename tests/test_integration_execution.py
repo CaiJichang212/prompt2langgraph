@@ -440,3 +440,21 @@ class TestToolFailure:
             "fake tool failure" in diag.hint or "fake tool failure" in diag.message
             for diag in result.diagnostics
         )
+
+    def test_tool_fail_metrics_call_count_is_one(self) -> None:
+        """验证失败场景下 metrics.call_count 为 1，且 external_calls 只有一条记录。"""
+        workflow = _tool_fail_workflow()
+        executors = _executor_registry_with_tools()
+        tools = _tool_registry_with_fakes()
+
+        result = run_workflow(
+            workflow,
+            {"input": "trigger failure"},
+            executors=executors,
+            tool_registry=tools,
+        )
+
+        assert result.status == "failed"
+        # Bug fix: should be exactly 1, not 2 (was double-recorded)
+        assert len(result.external_calls) == 1
+        assert result.metrics.call_count == 1

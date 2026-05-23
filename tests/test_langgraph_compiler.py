@@ -471,3 +471,95 @@ def test_dynamic_tool_node_raises_executor_error_when_no_tool_registry() -> None
 
     assert exc_info.value.code == "E_SEC_015"
     assert exc_info.value.node_id == "call_tool"
+
+
+def test_collect_metrics_error_sink_prevents_duplicate_failed_record() -> None:
+    """When error_sink exists, metrics_sink should NOT record failed ExternalCallRecord."""
+    from prompt2langgraph.registry.executors import ExecutorError
+
+    failed_calls: list = []
+    error_calls: list = []
+
+    def _metrics_sink(record: dict) -> None:
+        failed_calls.append(record)
+
+    def _error_sink(exc: ExecutorError) -> None:
+        error_calls.append(exc)
+
+    workflow = _make_tool_workflow()
+    builtins = builtin_executor_registry()
+    registry = ExecutorRegistry(
+        [
+            *[builtins.get(ref) for ref in builtins.refs()],
+            ExecutorDefinition(
+                ref="tool.my_tool",
+                type=ExecutorType.PYTHON_CALLABLE,
+                dynamic=True,
+                input_schema={"question": TypeSpec(type=TypeName.STRING)},
+                output_schema={"result": TypeSpec(type=TypeName.STRING)},
+                handler=None,
+            ),
+        ]
+    )
+
+    tool_reg = ToolCallableRegistry()
+    # Register a tool that fails
+    tool_reg.register("tool.my_tool", lambda inputs, params: (_ for _ in ()).throw(RuntimeError("boom")))
+
+    graph = compile_workflow_to_graph(
+        workflow,
+        registry,
+        tool_registry=tool_reg,
+        policies=PolicySpec(collect_metrics=True),
+        error_sink=_error_sink,
+        metrics_sink=_metrics_sink,
+    )
+
+    with pytest.raises(ExecutorError):
+        graph.invoke({"question": "hello"})
+
+    # error_sink received the error
+    assert len(error_calls) == 1
+    # metrics_sink should NOT have received a failed record (error_sink handles it)
+    assert len(failed_calls) == 0
+
+
+def test_collect_metrics_success_record_emitted() -> None:
+    """Successful external call should emit ExternalCallRecord via metrics_sink."""
+    from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
+
+    records: list = []
+
+    def _metrics_sink(record: dict) -> None:
+        records.append(record)
+
+    workflow = _make_llm_workflow()
+    fake_model = GenericFakeChatModel(messages=iter(["ok"]))
+    builtins = builtin_executor_registry()
+    registry = ExecutorRegistry(
+        [
+            *[builtins.get(ref) for ref in builtins.refs()],
+            ExecutorDefinition(
+                ref="llm.test-model",
+                type=ExecutorType.LLM,
+                dynamic=True,
+                input_schema={"question": TypeSpec(type=TypeName.STRING)},
+                output_schema={"answer": TypeSpec(type=TypeName.STRING)},
+                handler=None,
+            ),
+        ]
+    )
+
+    graph = compile_workflow_to_graph(
+        workflow,
+        registry,
+        model_client=fake_model,
+        policies=PolicySpec(collect_metrics=True),
+        metrics_sink=_metrics_sink,
+    )
+    result = graph.invoke({"question": "hello"})
+
+    assert result["answer"] == "ok"
+    # Only successful record, no error_sink so metrics_sink gets the failed path too (if any)
+    assert len(records) == 1
+    assert records[0].status == "succeeded"

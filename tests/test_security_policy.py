@@ -227,3 +227,40 @@ def test_node_level_allowed_tool_refs_overrides_global() -> None:
     )
     diags = check_tool_refs(wf, registry)
     assert diags == []
+
+
+# ── Edge cases ──────────────────────────────────────────────────────────
+
+
+def test_no_llm_nodes_check_external_policy_returns_empty() -> None:
+    """空工作流（无 LLM 节点）→ check_external_policy 返回 []"""
+    wf = _make_workflow(
+        nodes=[
+            NodeSpec(
+                id="transform_node",
+                kind="transform",
+                executor=ExecutorRef(ref="builtin.identity_transform", type=ExecutorType.BUILTIN),
+            ),
+        ],
+        policies=PolicySpec(external_call=False),
+    )
+    diags = check_external_policy(wf)
+    assert diags == []
+
+
+def test_non_llm_prefixed_ref_skipped_by_model_whitelist() -> None:
+    """非 llm. 前缀 ref → check_model_whitelist 跳过"""
+    wf = _make_workflow(
+        nodes=[
+            NodeSpec(
+                id="llm_node",
+                kind="llm",
+                # 使用 builtin ref，但 type 设为 LLM（异常情况）
+                executor=ExecutorRef(ref="some.other.ref", type=ExecutorType.LLM),
+            ),
+        ],
+        policies=PolicySpec(allowed_models=[]),
+    )
+    diags = check_model_whitelist(wf)
+    # 不以 llm. 开头，跳过
+    assert diags == []
