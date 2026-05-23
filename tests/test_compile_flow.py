@@ -34,6 +34,19 @@ def test_compile_flow_emits_policy_binding_and_timings(tmp_path: Path) -> None:
     }.issubset(set(report["timings_ms"]))
 
 
+def test_lockfile_hash_deterministic() -> None:
+    """同一 WorkflowSpec 两次计算 lockfile hash 结果一致。"""
+    from prompt2langgraph.ir.lockfile import sha256_canonical_json
+    from prompt2langgraph.ir.normalize import normalize_workflow
+
+    wf = load_workflow("linear_llm.json")
+    hash1 = sha256_canonical_json(normalize_workflow(wf).model_dump(mode="json"))
+    hash2 = sha256_canonical_json(normalize_workflow(wf).model_dump(mode="json"))
+    assert hash1 == hash2
+    assert hash1.startswith("sha256:")
+    assert len(hash1) == 71  # 7 + 64 hex chars
+
+
 def test_compile_flow_accepts_multi_node_retriever_llm_fixture(tmp_path: Path) -> None:
     result = pt2lg.compile_workflow(load_workflow("linear_retriever_llm.json"), out_dir=tmp_path)
 
