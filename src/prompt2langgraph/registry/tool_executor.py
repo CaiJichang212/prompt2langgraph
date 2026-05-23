@@ -50,10 +50,10 @@ class ToolExecutor:
                 f"tool ref '{self._tool_ref}' is not registered",
                 executor_ref=self._tool_ref,
             )
-        callable = self._registry.get(self._tool_ref)
+        fn = self._registry.get(self._tool_ref)
         try:
             with ThreadPoolExecutor(max_workers=1) as pool:
-                future = pool.submit(callable, inputs, params)
+                future = pool.submit(fn, inputs, params)
                 return future.result(timeout=self._timeout_s)
         except FuturesTimeoutError as exc:
             raise ExecutorError(
