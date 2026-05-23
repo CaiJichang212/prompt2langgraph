@@ -27,6 +27,18 @@ class RunMetrics(BaseModel):
     token_count: int | None = None
     retry_count: int = 0
     tool_call_count: int = 0
+    call_count: int = 0
+    total_latency_ms: float | None = None
+
+
+class ExternalCallRecord(BaseModel):
+    node_id: str
+    executor_ref: str
+    model: str | None = None
+    latency_ms: float | None = None
+    token_count: int | None = None
+    status: Literal["succeeded", "failed"]
+    error_code: str | None = None
 
 
 class RunResult(BaseModel):
@@ -39,3 +51,4 @@ class RunResult(BaseModel):
     interrupt: RunInterrupt | None = None
     metrics: RunMetrics = Field(default_factory=RunMetrics)
     tool_calls: list[dict[str, Any]] = Field(default_factory=list)
+    external_calls: list[ExternalCallRecord] = Field(default_factory=list)
