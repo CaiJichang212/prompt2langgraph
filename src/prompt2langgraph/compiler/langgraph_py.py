@@ -262,7 +262,7 @@ def _node_wrapper(
                 exc.executor_ref = executor.ref
             if error_sink is not None:
                 error_sink(exc)
-            if effective_policies.collect_metrics and metrics_sink is not None:
+            if error_sink is None and effective_policies.collect_metrics and metrics_sink is not None:
                 metrics_sink(
                     ExternalCallRecord(
                         node_id=node.id,
