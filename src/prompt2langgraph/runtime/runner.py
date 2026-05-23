@@ -51,7 +51,7 @@ def run_workflow(
         events.append(RunEvent(type="run.resumed", run_id=run_id, thread_id=thread_id))
     executor_registry = executors or builtin_executor_registry()
 
-    report = validate_workflow(workflow, executors=executor_registry)
+    report = validate_workflow(workflow, executors=executor_registry, tool_registry=tool_registry)
     if not report.ok:
         return _failed_result(run_id, thread_id, events, report.diagnostics, started_at)
 
