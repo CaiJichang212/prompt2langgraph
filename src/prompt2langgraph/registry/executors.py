@@ -1,4 +1,5 @@
 """Executor registry definitions."""
+from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -7,6 +8,35 @@ from typing import Any
 from prompt2langgraph.ir.models import ExecutorType, TypeSpec
 
 ExecutorHandler = Callable[[dict[str, Any], dict[str, Any]], dict[str, Any]]
+
+
+class ExecutorError(RuntimeError):
+    """Unified error wrapper for dynamic executors (LLM, Tool)."""
+
+    def __init__(
+        self,
+        code: str,
+        message: str,
+        *,
+        hint: str | None = None,
+        node_id: str | None = None,
+    ) -> None:
+        self.code = code
+        self.message = message
+        self.hint = hint
+        self.node_id = node_id
+        super().__init__(message)
+
+    def to_diagnostic(self) -> Diagnostic:
+        from prompt2langgraph.diagnostics.report import Diagnostic, DiagnosticLocation
+
+        return Diagnostic(
+            code=self.code,
+            severity="error",
+            message=self.message,
+            location=DiagnosticLocation(node_id=self.node_id) if self.node_id else None,
+            hint=self.hint,
+        )
 
 
 @dataclass(frozen=True)
@@ -18,6 +48,7 @@ class ExecutorDefinition:
     secrets: tuple[str, ...] = ()
     required_capabilities: tuple[str, ...] = ()
     handler: ExecutorHandler | None = None
+    dynamic: bool = False
 
     def invoke(self, inputs: dict[str, Any], params: dict[str, Any]) -> dict[str, Any]:
         if self.handler is None:
