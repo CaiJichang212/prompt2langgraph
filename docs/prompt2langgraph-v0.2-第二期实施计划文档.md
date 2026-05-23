@@ -531,18 +531,26 @@ def build_llm_client(
     The client contains credentials that must not leak into bundles or lockfiles.
     """
     config: LLMConfig = load_llm_config()
+    resolved_api_key = _resolve_api_key(api_key, config.api_key)
     return ChatOpenAI(
         model=model if model is not None else config.model,
         base_url=base_url if base_url is not None else config.base_url,
-        api_key=(
-            SecretStr(api_key).get_secret_value()
-            if api_key
-            else (config.api_key.get_secret_value() if config.api_key else None)
-        ),
+        api_key=resolved_api_key,
         temperature=temperature if temperature is not None else config.temperature,
         max_tokens=max_tokens if max_tokens is not None else config.max_tokens,
         timeout=timeout_s if timeout_s is not None else config.request_timeout_s,
     )
+
+
+def _resolve_api_key(explicit: str | None, from_config: SecretStr | None) -> str | None:
+    """Resolve API key from explicit parameter or config, treating empty strings as missing."""
+    if explicit is not None and explicit.strip():
+        return SecretStr(explicit).get_secret_value()
+    if from_config is not None:
+        value = from_config.get_secret_value()
+        if value and value.strip():
+            return value
+    return None
 ```
 
 - [ ] **Step 6: 实现 `llm/__init__.py`**
@@ -678,7 +686,7 @@ def load_prompt_planner_config() -> PromptPlannerConfig:
 修改 `build_model_client()` 函数：
 
 ```python
-def build_model_client(request: PromptPlanRequest) -> ChatOpenAI:
+def build_model_client(request: PromptPlanRequest) -> BaseChatModel:
     from prompt2langgraph.llm.provider import build_llm_client
 
     return build_llm_client(
@@ -907,7 +915,10 @@ class LLMExecutor:
                 "LLM API error",
                 hint=str(exc),
             ) from exc
-        return {"answer": str(response.content)}
+        content = response.content
+        if isinstance(content, list):
+            content = "".join(str(item) for item in content)
+        return {"answer": str(content)}
 
     def _extract_messages(self, inputs: dict[str, Any]) -> list:
         if "messages" in inputs:
@@ -1421,9 +1432,8 @@ def check_tool_refs(
             else None
         )
         effective_allowed = node_allowed if node_allowed is not None else global_allowed
-        # 当 effective_allowed 为 None 时，表示全局和节点级均未配置白名单，
-        # 按默认安全原则，不允许任何 tool 执行
-        if effective_allowed is None or ref not in effective_allowed:
+        # effective_allowed 至少为 []（PolicySpec 默认值），不存在 None 情况
+        if ref not in effective_allowed:
             diagnostics.append(
                 Diagnostic(
                     code=E_SEC_015,
@@ -1845,6 +1855,10 @@ def _invoke_executor(
     return executor.invoke(inputs, node.params)
 ```
 
+> **Note:** `runtime/artifacts.py` 的 `_validate_and_compile_target()` 也调用 `compile_workflow_to_graph()`。
+> 扩展签名后，应确保传入 `policies=normalized.policies`，使编译器拥有策略上下文用于验证；
+> `model_client` 和 `tool_registry` 保持为 `None`（编译阶段不执行真实外部调用）。
+
 > **预留路径：LangGraph 原生 RetryPolicy 映射**
 >
 > 当前第二期不实现自动重试，但为后续版本预留以下映射路径：
@@ -2117,22 +2131,22 @@ def fake_chat_model(
 from typing import Any
 
 
-def tool_echo(inputs: dict[str, Any], params: dict[str, Any]) -> dict[str, Any]:
+def fake_tool_echo(inputs: dict[str, Any], params: dict[str, Any]) -> dict[str, Any]:
     return {"output": inputs.get("input", "")}
 
 
-def tool_upper(inputs: dict[str, Any], params: dict[str, Any]) -> dict[str, Any]:
+def fake_tool_upper(inputs: dict[str, Any], params: dict[str, Any]) -> dict[str, Any]:
     return {"output": str(inputs.get("input", "")).upper()}
 
 
-def tool_fail(inputs: dict[str, Any], params: dict[str, Any]) -> dict[str, Any]:
+def fake_tool_fail(inputs: dict[str, Any], params: dict[str, Any]) -> dict[str, Any]:
     raise RuntimeError("fake tool failure")
 
 
 FAKE_TOOLS: dict[str, Any] = {
-    "tool.echo": tool_echo,
-    "tool.upper": tool_upper,
-    "tool.fail": tool_fail,
+    "tool.echo": fake_tool_echo,
+    "tool.upper": fake_tool_upper,
+    "tool.fail": fake_tool_fail,
 }
 ```
 
@@ -2303,20 +2317,7 @@ def test_full_execution_tool_node_with_fake_registry() -> None:
     assert result["output"] == "hello tool"
 ```
 
-- [ ] **Step 4: 更新 `tests/fake_tools.py` 中的函数**
-
-```python
-def fake_tool_echo(inputs: dict[str, Any], params: dict[str, Any]) -> dict[str, Any]:
-    return {"output": inputs.get("input", "")}
-
-
-def fake_tool_upper(inputs: dict[str, Any], params: dict[str, Any]) -> dict[str, Any]:
-    return {"output": str(inputs.get("input", "")).upper()}
-
-
-def fake_tool_fail(inputs: dict[str, Any], params: dict[str, Any]) -> dict[str, Any]:
-    raise RuntimeError("fake tool failure")
-```
+- [ ] **Step 4: （已合并到 Step 2，无需重复）**
 
 - [ ] **Step 5: 运行集成测试确认通过**
 
