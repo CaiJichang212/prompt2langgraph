@@ -10,8 +10,14 @@ from prompt2langgraph.ir.models import WorkflowSpec
 from prompt2langgraph.registry.builtins import builtin_executor_registry, builtin_node_registry
 from prompt2langgraph.registry.executors import ExecutorRegistry
 from prompt2langgraph.registry.nodes import NodeRegistry
+from prompt2langgraph.registry.tool_executor import ToolCallableRegistry
 from prompt2langgraph.validate.graphcheck import check_graph
-from prompt2langgraph.validate.security import check_security
+from prompt2langgraph.validate.security import (
+    check_external_policy,
+    check_model_whitelist,
+    check_security,
+    check_tool_refs,
+)
 from prompt2langgraph.validate.typecheck import check_types
 
 
@@ -20,6 +26,7 @@ def validate_workflow(
     *,
     nodes: NodeRegistry | None = None,
     executors: ExecutorRegistry | None = None,
+    tool_registry: ToolCallableRegistry | None = None,
 ) -> ValidationReport:
     node_registry = nodes or builtin_node_registry()
     executor_registry = executors or builtin_executor_registry()
@@ -49,6 +56,10 @@ def validate_workflow(
     diagnostics.extend(check_graph(spec))
     diagnostics.extend(check_types(spec, executor_registry, node_registry))
     diagnostics.extend(check_security(spec, node_registry))
+    diagnostics.extend(check_external_policy(spec))
+    diagnostics.extend(check_model_whitelist(spec))
+    if tool_registry is not None:
+        diagnostics.extend(check_tool_refs(spec, tool_registry))
     return ValidationReport(diagnostics=diagnostics)
 
 
@@ -92,6 +103,19 @@ def _check_registries(
                     message=(
                         f'node "{node.id}" executor "{node.executor.ref}" declares type '
                         f'"{node.executor.type.value}", expected "{executor.type.value}"'
+                    ),
+                    location=DiagnosticLocation(node_id=node.id),
+                )
+            )
+
+        if not executor.dynamic and executor.handler is None:
+            diagnostics.append(
+                Diagnostic(
+                    code=E_BIND_006,
+                    severity="error",
+                    message=(
+                        f'node "{node.id}" executor "{node.executor.ref}" '
+                        "has no handler and is not dynamic"
                     ),
                     location=DiagnosticLocation(node_id=node.id),
                 )
