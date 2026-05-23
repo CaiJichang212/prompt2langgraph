@@ -12,6 +12,10 @@ from prompt2langgraph.registry.nodes import NodeRegistry
 class ResolvedWorkflow(BaseModel):
     workflow: WorkflowSpec
     node_policies: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    external_call: bool = False
+    allowed_models: list[str] = Field(default_factory=list)
+    collect_metrics: bool = False
+    allowed_tool_refs: list[str] = Field(default_factory=list)
 
 
 def resolve_policies(
@@ -46,4 +50,11 @@ def resolve_policies(
             "timeout_s": timeout_s,
             "requires_approval": requires_approval,
         }
-    return ResolvedWorkflow(workflow=workflow, node_policies=node_policies)
+    return ResolvedWorkflow(
+        workflow=workflow,
+        node_policies=node_policies,
+        external_call=workflow.policies.external_call,
+        allowed_models=workflow.policies.allowed_models,
+        collect_metrics=workflow.policies.collect_metrics,
+        allowed_tool_refs=workflow.policies.allowed_tool_refs,
+    )
