@@ -23,6 +23,6 @@ def build_llm_client(
         base_url=base_url or config.base_url,
         api_key=effective_api_key,
         temperature=temperature if temperature is not None else config.temperature,
-        max_tokens=max_tokens or config.max_tokens,
+        max_tokens=max_tokens if max_tokens is not None else config.max_tokens,
         request_timeout=timeout_s or config.request_timeout_s,
     )
