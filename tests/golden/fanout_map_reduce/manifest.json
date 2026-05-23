@@ -12,13 +12,19 @@
   "entrypoint": "start",
   "executor_bindings": {
     "process_item": {
+      "allowed_models": [],
       "capabilities": [],
+      "dynamic": false,
       "executor": "builtin.identity_transform",
+      "external_call": false,
       "type": "builtin"
     },
     "start": {
+      "allowed_models": [],
       "capabilities": [],
+      "dynamic": false,
       "executor": "builtin.identity_transform",
+      "external_call": false,
       "type": "builtin"
     }
   },

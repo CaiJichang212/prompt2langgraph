@@ -8,13 +8,19 @@
   "binding_summary": {
     "executor_bindings": {
       "process_item": {
+        "allowed_models": [],
         "capabilities": [],
+        "dynamic": false,
         "executor": "builtin.identity_transform",
+        "external_call": false,
         "type": "builtin"
       },
       "start": {
+        "allowed_models": [],
         "capabilities": [],
+        "dynamic": false,
         "executor": "builtin.identity_transform",
+        "external_call": false,
         "type": "builtin"
       }
     }
@@ -42,7 +48,7 @@
     }
   ],
   "ok": true,
-  "registry_hash": "sha256:97a6f3094e9d85e04f9e7ef43bf11e8cb44b50f32c3c00a9c657811b365fd3fa",
+  "registry_hash": "sha256:0574afffef2a54009163c4dd875acbbc57b8381639cedf994868fb9321ba02a8",
   "state_channels": {
     "item": {
       "item_type": null,
@@ -69,6 +75,6 @@
     }
   },
   "timings_ms": "<timings_ms>",
-  "workflow_hash": "sha256:8a99b2dd329c99a7954293c09ad9612c5856dbf69dc0efb3148833156aa6669a",
+  "workflow_hash": "sha256:b780c2aeb1c6d599068d5b0a8507bef5b534e8891229e8266d62b777cd3848af",
   "workflow_id": "fanout_map_reduce"
 }

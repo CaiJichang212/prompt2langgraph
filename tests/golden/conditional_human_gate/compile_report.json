@@ -8,18 +8,27 @@
   "binding_summary": {
     "executor_bindings": {
       "approval": {
+        "allowed_models": [],
         "capabilities": [],
+        "dynamic": false,
         "executor": "builtin.human_gate",
+        "external_call": false,
         "type": "builtin"
       },
       "compose": {
+        "allowed_models": [],
         "capabilities": [],
+        "dynamic": false,
         "executor": "builtin.echo_llm",
+        "external_call": false,
         "type": "builtin"
       },
       "route": {
+        "allowed_models": [],
         "capabilities": [],
+        "dynamic": false,
         "executor": "builtin.route",
+        "external_call": false,
         "type": "builtin"
       }
     }
@@ -58,7 +67,7 @@
     }
   ],
   "ok": true,
-  "registry_hash": "sha256:97a6f3094e9d85e04f9e7ef43bf11e8cb44b50f32c3c00a9c657811b365fd3fa",
+  "registry_hash": "sha256:0574afffef2a54009163c4dd875acbbc57b8381639cedf994868fb9321ba02a8",
   "state_channels": {
     "answer": {
       "item_type": null,
@@ -82,6 +91,6 @@
     }
   },
   "timings_ms": "<timings_ms>",
-  "workflow_hash": "sha256:c70817752f4626a2325f4ad89ad797bb21ad517b35b290203415cbfbee9acd1b",
+  "workflow_hash": "sha256:94cf80a2fb7ee0c8d5137015c828bc415075a3d2ee6dca9cf569f08a3a4c4c5d",
   "workflow_id": "conditional_human_gate"
 }

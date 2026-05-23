@@ -8,8 +8,11 @@
   "binding_summary": {
     "executor_bindings": {
       "compose": {
+        "allowed_models": [],
         "capabilities": [],
+        "dynamic": false,
         "executor": "builtin.echo_llm",
+        "external_call": false,
         "type": "builtin"
       }
     }
@@ -25,7 +28,7 @@
     }
   ],
   "ok": true,
-  "registry_hash": "sha256:97a6f3094e9d85e04f9e7ef43bf11e8cb44b50f32c3c00a9c657811b365fd3fa",
+  "registry_hash": "sha256:0574afffef2a54009163c4dd875acbbc57b8381639cedf994868fb9321ba02a8",
   "state_channels": {
     "answer": {
       "item_type": null,
@@ -39,6 +42,6 @@
     }
   },
   "timings_ms": "<timings_ms>",
-  "workflow_hash": "sha256:0b55695c43de68a282c3fe4deb041518a4b907adbe2a4999a3149bbd0102a0d2",
+  "workflow_hash": "sha256:6ca7465e9349f47334ee267d45fa8be7958cdd0bca2a9d27f22843d6f1d3d007",
   "workflow_id": "linear_llm"
 }

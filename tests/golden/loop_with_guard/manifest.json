@@ -17,13 +17,19 @@
   "entrypoint": "compose",
   "executor_bindings": {
     "compose": {
+      "allowed_models": [],
       "capabilities": [],
+      "dynamic": false,
       "executor": "builtin.echo_llm",
+      "external_call": false,
       "type": "builtin"
     },
     "finalize": {
+      "allowed_models": [],
       "capabilities": [],
+      "dynamic": false,
       "executor": "builtin.identity_transform",
+      "external_call": false,
       "type": "builtin"
     }
   },

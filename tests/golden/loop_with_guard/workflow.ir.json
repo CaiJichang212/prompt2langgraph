@@ -75,7 +75,11 @@
   ],
   "policies": {
     "allow_side_effects": false,
-    "default_timeout_s": 60
+    "allowed_models": [],
+    "allowed_tool_refs": [],
+    "collect_metrics": false,
+    "default_timeout_s": 60,
+    "external_call": false
   },
   "schema_version": "0.1",
   "state_schema": {

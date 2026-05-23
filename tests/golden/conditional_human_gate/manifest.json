@@ -17,18 +17,27 @@
   "entrypoint": "route",
   "executor_bindings": {
     "approval": {
+      "allowed_models": [],
       "capabilities": [],
+      "dynamic": false,
       "executor": "builtin.human_gate",
+      "external_call": false,
       "type": "builtin"
     },
     "compose": {
+      "allowed_models": [],
       "capabilities": [],
+      "dynamic": false,
       "executor": "builtin.echo_llm",
+      "external_call": false,
       "type": "builtin"
     },
     "route": {
+      "allowed_models": [],
       "capabilities": [],
+      "dynamic": false,
       "executor": "builtin.route",
+      "external_call": false,
       "type": "builtin"
     }
   },
