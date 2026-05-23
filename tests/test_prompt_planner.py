@@ -19,13 +19,17 @@ def test_prompting_module_exports_request_and_result_types() -> None:
 
 
 def test_load_prompt_planner_config_reads_env(monkeypatch) -> None:
+    import warnings
+
     from prompt2langgraph.prompting.config import load_prompt_planner_config
 
     monkeypatch.setenv("MODEL", "qwen-plus")
     monkeypatch.setenv("BASE_URL", "https://example.com/v1")
     monkeypatch.setenv("API_KEY", "secret")
 
-    config = load_prompt_planner_config()
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+        config = load_prompt_planner_config()
 
     assert config.model == "qwen-plus"
     assert config.base_url == "https://example.com/v1"
@@ -91,12 +95,12 @@ def test_build_model_client_uses_env_defaults_when_request_fields_missing(monkey
 
 
 def test_build_model_client_defaults_to_qwen_plus_when_no_config(monkeypatch) -> None:
-    from prompt2langgraph.prompting.config import PromptPlannerConfig
+    from prompt2langgraph.llm.config import LLMConfig
     from prompt2langgraph.prompting.planner import build_model_client
 
     monkeypatch.setattr(
-        "prompt2langgraph.prompting.planner.load_prompt_planner_config",
-        lambda: PromptPlannerConfig(),
+        "prompt2langgraph.llm.provider.load_llm_config",
+        lambda: LLMConfig(),
     )
 
     request = PromptPlanRequest(prompt="build a workflow", api_key="dummy-key")

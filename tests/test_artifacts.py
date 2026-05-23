@@ -96,6 +96,9 @@ def test_artifact_builders_emit_expected_minimal_shapes() -> None:
                 "executor": "builtin.echo_llm",
                 "type": "builtin",
                 "capabilities": [],
+                "dynamic": False,
+                "allowed_models": [],
+                "external_call": False,
             }
         },
         "artifact_policy": {"large_objects": "artifact_ref"},
@@ -525,6 +528,9 @@ def test_manifest_contains_executor_bindings_from_compile_path(tmp_path: Path) -
     assert manifest["executor_bindings"]["compose"]["executor"] == "builtin.echo_llm"
     assert manifest["executor_bindings"]["compose"]["type"] == "builtin"
     assert manifest["executor_bindings"]["compose"]["capabilities"] == []
+    assert manifest["executor_bindings"]["compose"]["dynamic"] is False
+    assert manifest["executor_bindings"]["compose"]["allowed_models"] == []
+    assert manifest["executor_bindings"]["compose"]["external_call"] is False
 
 
 def test_manifest_contains_policy_summary_from_compile_path(tmp_path: Path) -> None:
@@ -650,3 +656,50 @@ def test_binding_summary_is_deterministic_and_secret_free(tmp_path: Path) -> Non
     serialized = json.dumps(report["binding_summary"])
     assert "API_KEY" not in serialized
     assert "TOKEN" not in serialized
+
+
+# ---- Lockfile hash 一致性测试 ----
+
+
+def test_lockfile_hash_stability_same_workflow() -> None:
+    """同一 WorkflowSpec 两次 normalize + sha256_canonical_json 结果一致。"""
+    from prompt2langgraph.ir.normalize import normalize_workflow
+
+    workflow = load_workflow("linear_llm.json")
+    hash1 = sha256_canonical_json(normalize_workflow(workflow).model_dump(mode="json"))
+    hash2 = sha256_canonical_json(normalize_workflow(workflow).model_dump(mode="json"))
+    assert hash1 == hash2
+
+
+@pytest.mark.parametrize(
+    "fixture_name",
+    [
+        "linear_llm.json",
+        "linear_retriever_llm.json",
+        "conditional_human_gate.json",
+        "loop_with_guard.json",
+        "fanout_map_reduce.json",
+        "side_effect_allowed.json",
+        "tool_identity.json",
+    ],
+)
+def test_lockfile_hash_stability_across_fixtures(fixture_name: str) -> None:
+    """旧 fixture JSON 加载后，normalize 再 hash，结果稳定。"""
+    from prompt2langgraph.ir.normalize import normalize_workflow
+
+    raw = json.loads((FIXTURES / fixture_name).read_text(encoding="utf-8"))
+    wf = WorkflowSpec.model_validate(raw)
+    hash1 = sha256_canonical_json(normalize_workflow(wf).model_dump(mode="json"))
+    hash2 = sha256_canonical_json(normalize_workflow(wf).model_dump(mode="json"))
+    assert hash1 == hash2
+
+
+def test_lockfile_hash_differs_for_different_workflows() -> None:
+    """不同 WorkflowSpec 的 hash 应不同。"""
+    from prompt2langgraph.ir.normalize import normalize_workflow
+
+    wf_a = load_workflow("linear_llm.json")
+    wf_b = load_workflow("loop_with_guard.json")
+    hash_a = sha256_canonical_json(normalize_workflow(wf_a).model_dump(mode="json"))
+    hash_b = sha256_canonical_json(normalize_workflow(wf_b).model_dump(mode="json"))
+    assert hash_a != hash_b

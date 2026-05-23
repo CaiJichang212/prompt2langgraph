@@ -43,6 +43,7 @@ def test_builtin_executor_registry_contains_required_executors() -> None:
         "builtin.route",
         "builtin.human_gate",
         "builtin.join",
+        "llm.qwen-plus",
     }
     assert registry.get("builtin.echo_llm").type is ExecutorType.BUILTIN
     assert registry.get("builtin.echo_llm").output_schema["answer"].type is TypeName.STRING

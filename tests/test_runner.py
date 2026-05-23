@@ -6,6 +6,7 @@ import pytest
 from prompt2langgraph.ir.models import ExecutorType, TypeName, TypeSpec, WorkflowSpec
 from prompt2langgraph.registry.executors import ExecutorDefinition, ExecutorRegistry
 from prompt2langgraph.runtime import runner
+from prompt2langgraph.runtime.events import ExternalCallRecord, RunMetrics, RunResult
 from prompt2langgraph.runtime.runner import run_workflow
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -386,3 +387,68 @@ def test_run_workflow_ignores_incompatible_state_store_file_for_new_run(tmp_path
     assert result.status == "succeeded"
     assert result.output == {"answer": "Answer: hello"}
     assert result.diagnostics == []
+
+
+def test_run_metrics_new_fields_default_values() -> None:
+    """RunMetrics 新增字段 call_count 和 total_latency_ms 默认值正确。"""
+    metrics = RunMetrics()
+    assert metrics.call_count == 0
+    assert metrics.total_latency_ms is None
+
+
+def test_external_call_record_fields() -> None:
+    """ExternalCallRecord 字段正确。"""
+    record = ExternalCallRecord(
+        node_id="compose",
+        executor_ref="builtin.echo_llm",
+        model="qwen-plus",
+        latency_ms=123.4,
+        token_count=50,
+        status="succeeded",
+    )
+    assert record.node_id == "compose"
+    assert record.executor_ref == "builtin.echo_llm"
+    assert record.model == "qwen-plus"
+    assert record.latency_ms == 123.4
+    assert record.token_count == 50
+    assert record.status == "succeeded"
+    assert record.error_code is None
+
+
+def test_external_call_record_failed_status() -> None:
+    """失败调用记录 status="failed"。"""
+    record = ExternalCallRecord(
+        node_id="compose",
+        executor_ref="unknown",
+        status="failed",
+        error_code="E_SEC_013",
+    )
+    assert record.status == "failed"
+    assert record.error_code == "E_SEC_013"
+
+
+def test_run_result_external_calls_default_empty() -> None:
+    """RunResult.external_calls 默认为空列表。"""
+    result = RunResult(
+        status="succeeded",
+        run_id="run_test",
+        thread_id="thread_test",
+    )
+    assert result.external_calls == []
+
+
+def test_run_workflow_result_contains_external_calls_field() -> None:
+    """run_workflow 返回的 RunResult 包含 external_calls 字段。"""
+    result = run_workflow(load_workflow("linear_llm.json"), {"question": "hello"})
+    assert result.status == "succeeded"
+    assert hasattr(result, "external_calls")
+    assert isinstance(result.external_calls, list)
+
+
+def test_run_metrics_populated_from_external_calls() -> None:
+    """RunMetrics.call_count 和 total_latency_ms 从 external_calls 汇总。"""
+    result = run_workflow(load_workflow("linear_llm.json"), {"question": "hello"})
+    assert result.status == "succeeded"
+    # builtin executor 不产生 external_calls，所以 call_count 应为 0
+    assert result.metrics.call_count == 0
+    assert result.metrics.total_latency_ms is None

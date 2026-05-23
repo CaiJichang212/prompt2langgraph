@@ -5,8 +5,16 @@ import pytest
 from pydantic import ValidationError
 
 from prompt2langgraph.diagnostics.report import Diagnostic, ValidationReport
-from prompt2langgraph.ir.models import LoopGuard, TypeName, TypeSpec, WorkflowSpec
+from prompt2langgraph.ir.models import (
+    LoopGuard,
+    PolicySpec,
+    SecurityPolicy,
+    TypeName,
+    TypeSpec,
+    WorkflowSpec,
+)
 from prompt2langgraph.ir.normalize import normalize_workflow
+from prompt2langgraph.registry.executors import ExecutorDefinition, ExecutorType
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -133,3 +141,87 @@ def test_recursive_type_spec_supports_array_items_and_object_properties() -> Non
 
     assert spec.properties["items"].item_type is not None
     assert spec.properties["items"].item_type.type is TypeName.STRING
+
+
+def test_policy_spec_defaults() -> None:
+    policy = PolicySpec()
+    assert policy.allow_side_effects is False
+    assert policy.default_timeout_s == 60
+    assert policy.external_call is False
+    assert policy.allowed_models == []
+    assert policy.collect_metrics is False
+    assert policy.allowed_tool_refs == []
+
+
+def test_security_policy_defaults() -> None:
+    security = SecurityPolicy()
+    assert security.requires_approval is False
+    assert security.idempotency_key is None
+    assert security.allowed_tool_refs is None
+
+
+def test_executor_definition_dynamic_default() -> None:
+    executor = ExecutorDefinition(ref="test", type=ExecutorType.BUILTIN)
+    assert executor.dynamic is False
+
+
+def test_old_workflow_json_gets_policy_defaults() -> None:
+    data = json.loads((FIXTURES / "linear_llm.json").read_text(encoding="utf-8"))
+    # 确保旧 JSON 中没有新增的 policy 字段
+    policies = data.get("policies", {})
+    assert "external_call" not in policies
+    assert "allowed_models" not in policies
+    assert "collect_metrics" not in policies
+    assert "allowed_tool_refs" not in policies
+
+    workflow = WorkflowSpec.model_validate(data)
+    assert workflow.policies.external_call is False
+    assert workflow.policies.allowed_models == []
+    assert workflow.policies.collect_metrics is False
+    assert workflow.policies.allowed_tool_refs == []
+
+
+# ---- 旧 fixture 兼容性测试 ----
+
+# 所有有效 fixture 文件名（不含 invalid_ 前缀的）
+_VALID_FIXTURES = [
+    "linear_llm.json",
+    "linear_retriever_llm.json",
+    "conditional_human_gate.json",
+    "loop_with_guard.json",
+    "fanout_map_reduce.json",
+    "side_effect_allowed.json",
+    "tool_identity.json",
+]
+
+
+@pytest.mark.parametrize("fixture_name", _VALID_FIXTURES)
+def test_old_fixture_policies_get_default_values(fixture_name: str) -> None:
+    """旧 fixture JSON（policies 为空对象或缺少新增字段）经 model_validate 后默认值补齐。"""
+    data = json.loads((FIXTURES / fixture_name).read_text(encoding="utf-8"))
+    policies = data.get("policies", {})
+    # 确认旧 JSON 中不含新增字段
+    assert "external_call" not in policies
+    assert "allowed_models" not in policies
+    assert "collect_metrics" not in policies
+    assert "allowed_tool_refs" not in policies
+
+    workflow = WorkflowSpec.model_validate(data)
+    assert workflow.policies.external_call is False
+    assert workflow.policies.allowed_models == []
+    assert workflow.policies.collect_metrics is False
+    assert workflow.policies.allowed_tool_refs == []
+
+
+def test_workflow_without_policies_field_gets_defaults() -> None:
+    """完全缺少 policies 字段的旧 JSON 也能正确加载并获得默认值。"""
+    data = json.loads((FIXTURES / "linear_llm.json").read_text(encoding="utf-8"))
+    del data["policies"]
+
+    workflow = WorkflowSpec.model_validate(data)
+    assert workflow.policies.external_call is False
+    assert workflow.policies.allowed_models == []
+    assert workflow.policies.collect_metrics is False
+    assert workflow.policies.allowed_tool_refs == []
+    assert workflow.policies.allow_side_effects is False
+    assert workflow.policies.default_timeout_s == 60

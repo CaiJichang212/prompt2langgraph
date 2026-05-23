@@ -6,6 +6,7 @@ import pytest
 from prompt2langgraph.compiler.langgraph_py import compile_workflow_to_graph
 from prompt2langgraph.ir.models import (
     ExecutorType,
+    PolicySpec,
     ReducerName,
     StateSelector,
     TypeName,
@@ -13,7 +14,8 @@ from prompt2langgraph.ir.models import (
     WorkflowSpec,
 )
 from prompt2langgraph.registry.builtins import builtin_executor_registry
-from prompt2langgraph.registry.executors import ExecutorDefinition, ExecutorRegistry
+from prompt2langgraph.registry.executors import ExecutorDefinition, ExecutorError, ExecutorRegistry
+from prompt2langgraph.registry.tool_executor import ToolCallableRegistry
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -217,3 +219,255 @@ def test_non_fanout_append_reducer_preserves_scalar_output() -> None:
     result = graph.invoke({"question": "hello", "answer": "seed:"})
 
     assert result["answer"] == "seed:Answer: hello"
+
+
+# --- Dynamic Executor Dispatch tests ---
+
+
+def _make_llm_workflow() -> WorkflowSpec:
+    """Create a minimal workflow with a single dynamic LLM node."""
+    return WorkflowSpec.model_validate(
+        {
+            "schema_version": "0.1",
+            "workflow_id": "dynamic_llm_test",
+            "name": "Dynamic LLM Test",
+            "entrypoint": "ask",
+            "state_schema": {
+                "input": {"question": {"type": "string"}},
+                "output": {"answer": {"type": "string"}},
+                "channels": {"question": {"type": "string"}, "answer": {"type": "string"}},
+                "private": {},
+                "reducers": {},
+            },
+            "nodes": [
+                {
+                    "id": "ask",
+                    "kind": "llm",
+                    "executor": {"ref": "llm.test-model", "type": "llm"},
+                    "inputs": {"question": {"state_key": "question"}},
+                    "outputs": {"answer": {"state_key": "answer"}},
+                    "params": {},
+                },
+            ],
+            "edges": [],
+            "policies": {},
+            "metadata": {},
+        }
+    )
+
+
+def _make_mixed_workflow() -> WorkflowSpec:
+    """Create a workflow with a BUILTIN node followed by a dynamic LLM node."""
+    return WorkflowSpec.model_validate(
+        {
+            "schema_version": "0.1",
+            "workflow_id": "mixed_builtin_llm",
+            "name": "Mixed Builtin LLM",
+            "entrypoint": "transform",
+            "state_schema": {
+                "input": {"question": {"type": "string"}},
+                "output": {"answer": {"type": "string"}},
+                "channels": {
+                    "question": {"type": "string"},
+                    "context": {"type": "string"},
+                    "answer": {"type": "string"},
+                },
+                "private": {},
+                "reducers": {},
+            },
+            "nodes": [
+                {
+                    "id": "transform",
+                    "kind": "transform",
+                    "executor": {"ref": "builtin.identity_transform", "type": "builtin"},
+                    "inputs": {"value": {"state_key": "question"}},
+                    "outputs": {"value": {"state_key": "context"}},
+                    "params": {},
+                },
+                {
+                    "id": "ask",
+                    "kind": "llm",
+                    "executor": {"ref": "llm.test-model", "type": "llm"},
+                    "inputs": {"question": {"state_key": "context"}},
+                    "outputs": {"answer": {"state_key": "answer"}},
+                    "params": {},
+                },
+            ],
+            "edges": [
+                {"id": "transform_to_ask", "source": "transform", "target": "ask", "kind": "linear"},
+            ],
+            "policies": {},
+            "metadata": {},
+        }
+    )
+
+
+def _make_tool_workflow() -> WorkflowSpec:
+    """Create a minimal workflow with a single dynamic Tool node."""
+    return WorkflowSpec.model_validate(
+        {
+            "schema_version": "0.1",
+            "workflow_id": "dynamic_tool_test",
+            "name": "Dynamic Tool Test",
+            "entrypoint": "call_tool",
+            "state_schema": {
+                "input": {"question": {"type": "string"}},
+                "output": {"result": {"type": "string"}},
+                "channels": {"question": {"type": "string"}, "result": {"type": "string"}},
+                "private": {},
+                "reducers": {},
+            },
+            "nodes": [
+                {
+                    "id": "call_tool",
+                    "kind": "tool",
+                    "executor": {"ref": "tool.my_tool", "type": "python_callable"},
+                    "inputs": {"question": {"state_key": "question"}},
+                    "outputs": {"result": {"state_key": "result"}},
+                    "params": {},
+                },
+            ],
+            "edges": [],
+            "policies": {},
+            "metadata": {},
+        }
+    )
+
+
+def test_dynamic_llm_executor_with_fake_model() -> None:
+    """Compile and run a workflow with a dynamic LLM node using a fake model."""
+    from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
+
+    fake_model = GenericFakeChatModel(messages=iter(["fake response"]))
+    workflow = _make_llm_workflow()
+    builtins = builtin_executor_registry()
+    registry = ExecutorRegistry(
+        [
+            *[builtins.get(ref) for ref in builtins.refs()],
+            ExecutorDefinition(
+                ref="llm.test-model",
+                type=ExecutorType.LLM,
+                dynamic=True,
+                input_schema={"question": TypeSpec(type=TypeName.STRING)},
+                output_schema={"answer": TypeSpec(type=TypeName.STRING)},
+                handler=None,
+            ),
+        ]
+    )
+
+    graph = compile_workflow_to_graph(workflow, registry, model_client=fake_model)
+    result = graph.invoke({"question": "hello"})
+
+    assert result["answer"] == "fake response"
+
+
+def test_dynamic_llm_node_raises_executor_error_when_no_model_client() -> None:
+    """LLM node without model_client should raise ExecutorError with E_SEC_013."""
+    workflow = _make_llm_workflow()
+    builtins = builtin_executor_registry()
+    registry = ExecutorRegistry(
+        [
+            *[builtins.get(ref) for ref in builtins.refs()],
+            ExecutorDefinition(
+                ref="llm.test-model",
+                type=ExecutorType.LLM,
+                dynamic=True,
+                input_schema={"question": TypeSpec(type=TypeName.STRING)},
+                output_schema={"answer": TypeSpec(type=TypeName.STRING)},
+                handler=None,
+            ),
+        ]
+    )
+
+    graph = compile_workflow_to_graph(workflow, registry)
+    with pytest.raises(ExecutorError) as exc_info:
+        graph.invoke({"question": "hello"})
+
+    assert exc_info.value.code == "E_SEC_013"
+    assert exc_info.value.node_id == "ask"
+
+
+def test_mixed_builtin_and_llm_nodes_execute_correctly() -> None:
+    """BUILTIN node and dynamic LLM node in the same workflow both execute."""
+    from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
+
+    fake_model = GenericFakeChatModel(messages=iter(["llm answer"]))
+    workflow = _make_mixed_workflow()
+    builtins = builtin_executor_registry()
+    registry = ExecutorRegistry(
+        [
+            *[builtins.get(ref) for ref in builtins.refs()],
+            ExecutorDefinition(
+                ref="llm.test-model",
+                type=ExecutorType.LLM,
+                dynamic=True,
+                input_schema={"question": TypeSpec(type=TypeName.STRING)},
+                output_schema={"answer": TypeSpec(type=TypeName.STRING)},
+                handler=None,
+            ),
+        ]
+    )
+
+    graph = compile_workflow_to_graph(workflow, registry, model_client=fake_model)
+    result = graph.invoke({"question": "hello"})
+
+    # BUILTIN identity_transform passes "hello" through to context
+    assert result["context"] == "hello"
+    # Dynamic LLM node receives context as question input
+    assert result["answer"] == "llm answer"
+
+
+def test_dynamic_tool_executor_with_tool_registry() -> None:
+    """Compile and run a workflow with a dynamic Tool node using ToolCallableRegistry."""
+    workflow = _make_tool_workflow()
+    builtins = builtin_executor_registry()
+    registry = ExecutorRegistry(
+        [
+            *[builtins.get(ref) for ref in builtins.refs()],
+            ExecutorDefinition(
+                ref="tool.my_tool",
+                type=ExecutorType.PYTHON_CALLABLE,
+                dynamic=True,
+                input_schema={"question": TypeSpec(type=TypeName.STRING)},
+                output_schema={"result": TypeSpec(type=TypeName.STRING)},
+                handler=None,
+            ),
+        ]
+    )
+
+    tool_reg = ToolCallableRegistry()
+    tool_reg.register(
+        "tool.my_tool",
+        lambda inputs, params: {"result": f"tool:{inputs['question']}"},
+    )
+
+    graph = compile_workflow_to_graph(workflow, registry, tool_registry=tool_reg)
+    result = graph.invoke({"question": "hello"})
+
+    assert result["result"] == "tool:hello"
+
+
+def test_dynamic_tool_node_raises_executor_error_when_no_tool_registry() -> None:
+    """Tool node without tool_registry should raise ExecutorError with E_SEC_015."""
+    workflow = _make_tool_workflow()
+    builtins = builtin_executor_registry()
+    registry = ExecutorRegistry(
+        [
+            *[builtins.get(ref) for ref in builtins.refs()],
+            ExecutorDefinition(
+                ref="tool.my_tool",
+                type=ExecutorType.PYTHON_CALLABLE,
+                dynamic=True,
+                input_schema={"question": TypeSpec(type=TypeName.STRING)},
+                output_schema={"result": TypeSpec(type=TypeName.STRING)},
+                handler=None,
+            ),
+        ]
+    )
+
+    graph = compile_workflow_to_graph(workflow, registry)
+    with pytest.raises(ExecutorError) as exc_info:
+        graph.invoke({"question": "hello"})
+
+    assert exc_info.value.code == "E_SEC_015"
+    assert exc_info.value.node_id == "call_tool"
