@@ -16,12 +16,13 @@ from prompt2langgraph.ir.models import (
     EdgeKind,
     EdgeSpec,
     NodeSpec,
+    PolicySpec,
     ReducerName,
     TypeName,
     TypeSpec,
     WorkflowSpec,
 )
-from prompt2langgraph.registry.executors import ExecutorRegistry
+from prompt2langgraph.registry.executors import ExecutorDefinition, ExecutorError, ExecutorRegistry
 
 NodeEventSink = Callable[[str, str], None]
 
@@ -32,8 +33,14 @@ def compile_workflow_to_graph(
     *,
     event_sink: NodeEventSink | None = None,
     checkpointer: Any | None = None,
+    policies: PolicySpec | None = None,
+    model_client: Any | None = None,
+    tool_registry: Any | None = None,
+    error_sink: Callable[[Any], None] | None = None,
+    metrics_sink: Callable[[Any], None] | None = None,
 ):
     """Compile a validated WorkflowSpec into an invokable LangGraph graph."""
+    effective_policies = policies if policies is not None else workflow.policies
 
     builder = StateGraph(_state_schema_for(workflow))
     loop_edges_by_source = _loop_edges_by_source(workflow)
@@ -50,6 +57,11 @@ def compile_workflow_to_graph(
                 loop_edges_by_source.get(node.id, []),
                 workflow.state_schema.reducers,
                 fanout_result_keys,
+                policies=effective_policies,
+                model_client=model_client,
+                tool_registry=tool_registry,
+                error_sink=error_sink,
+                metrics_sink=metrics_sink,
             ),
         )
 
@@ -149,6 +161,63 @@ def _merge_dict(left: dict[str, Any], right: dict[str, Any]) -> dict[str, Any]:
     return {**left, **right}
 
 
+def _invoke_executor(
+    node: NodeSpec,
+    executor: ExecutorDefinition,
+    inputs: dict,
+    params: dict,
+    *,
+    policies: PolicySpec,
+    model_client: Any | None,
+    tool_registry: Any | None,
+    metrics_sink: Callable[[Any], None] | None,
+) -> dict:
+    """Dispatch to the appropriate executor based on executor type and dynamic flag."""
+    from prompt2langgraph.diagnostics.codes import E_SEC_013, E_SEC_015
+    from prompt2langgraph.ir.models import ExecutorType
+    from prompt2langgraph.runtime.events import ExternalCallRecord
+
+    if executor.dynamic and executor.type is ExecutorType.LLM:
+        if model_client is None:
+            raise ExecutorError(E_SEC_013, f'node "{node.id}" requires model_client for LLM executor')
+        from prompt2langgraph.registry.llm_executor import LLMExecutor
+
+        llm_executor = LLMExecutor(model_client=model_client)
+        result = llm_executor(inputs, params)
+        if policies.collect_metrics and metrics_sink is not None:
+            metrics_sink(
+                ExternalCallRecord(
+                    node_id=node.id,
+                    executor_ref=executor.ref,
+                    model=getattr(model_client, "model_name", None)
+                    or getattr(model_client, "model", None),
+                    status="succeeded",
+                )
+            )
+        return result
+
+    if executor.dynamic and executor.type is ExecutorType.PYTHON_CALLABLE:
+        if tool_registry is None:
+            raise ExecutorError(E_SEC_015, f'node "{node.id}" requires tool_registry for Tool executor')
+        timeout_s = node.timeout_s or policies.default_timeout_s
+        from prompt2langgraph.registry.tool_executor import ToolExecutor
+
+        tool_executor = ToolExecutor(registry=tool_registry, tool_ref=executor.ref, timeout_s=timeout_s)
+        result = tool_executor(inputs, params)
+        if policies.collect_metrics and metrics_sink is not None:
+            metrics_sink(
+                ExternalCallRecord(
+                    node_id=node.id,
+                    executor_ref=executor.ref,
+                    status="succeeded",
+                )
+            )
+        return result
+
+    # BUILTIN and others: use existing invoke path
+    return executor.invoke(inputs, params)
+
+
 def _node_wrapper(
     node: NodeSpec,
     executors: ExecutorRegistry,
@@ -156,17 +225,51 @@ def _node_wrapper(
     loop_edges: list[EdgeSpec],
     reducers: dict[str, ReducerName],
     fanout_result_keys: set[str],
+    *,
+    policies: PolicySpec | None = None,
+    model_client: Any | None = None,
+    tool_registry: Any | None = None,
+    error_sink: Callable[[Any], None] | None = None,
+    metrics_sink: Callable[[Any], None] | None = None,
 ):
     executor = executors.get(node.executor.ref)
+    effective_policies = policies if policies is not None else PolicySpec()
 
     def invoke_node(state: dict[str, Any]) -> dict[str, Any]:
+        from prompt2langgraph.runtime.events import ExternalCallRecord
+
         if event_sink is not None:
             event_sink("node.started", node.id)
         inputs = {
             input_name: _state_value(state, selector.state_key, node.id)
             for input_name, selector in node.inputs.items()
         }
-        raw_outputs = executor.invoke(inputs, node.params)
+        try:
+            raw_outputs = _invoke_executor(
+                node,
+                executor,
+                inputs,
+                node.params,
+                policies=effective_policies,
+                model_client=model_client,
+                tool_registry=tool_registry,
+                metrics_sink=metrics_sink,
+            )
+        except ExecutorError as exc:
+            if exc.node_id is None:
+                exc.node_id = node.id
+            if error_sink is not None:
+                error_sink(exc)
+            if effective_policies.collect_metrics and metrics_sink is not None:
+                metrics_sink(
+                    ExternalCallRecord(
+                        node_id=node.id,
+                        executor_ref=executor.ref,
+                        status="failed",
+                        error_code=exc.code,
+                    )
+                )
+            raise
         update = {}
         for output_name, selector in node.outputs.items():
             if output_name not in raw_outputs:
