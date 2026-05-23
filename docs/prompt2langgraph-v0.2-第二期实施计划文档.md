@@ -691,7 +691,8 @@ Task 2 (llm/ 模块) ────┼──→ Task 3 (重构 planner) ← 紧随
 13. CLI `run` 命令需要在运行时根据 workflow 中的节点类型自动构造 `model_client` 和 `tool_registry`，并传入 `run_workflow()`；
 14. `collect_metrics=True` 时，成功调用和失败调用均需记录 `ExternalCallRecord`（成功通过 `metrics_sink`，失败通过 `error_sink`）；
 15. `check_tool_refs()` 中 `effective_allowed` 为 `None` 或空列表时，按默认安全原则报 `E_SEC_015` 诊断；
-16. `GenericFakeChatModel` 接受 `messages=iter([...])` 迭代器参数，其中可传入 `str` 或 `AIMessage` 实例。
+16. `GenericFakeChatModel` 接受 `messages=iter([...])` 迭代器参数，其中可传入 `str` 或 `AIMessage` 实例；
+17. 通用提交约定：仅添加提交，不 push 同步；git commit 使用中文，需逐项列出更改内容，符合git commit-message 规范。
 
 ---
 
