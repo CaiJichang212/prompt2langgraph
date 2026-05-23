@@ -6,7 +6,7 @@
 
 **Architecture:** 第二期新增顶层 `llm/` 轻量基础模块（提取第一期 `prompting/planner.py` 中的 LLM 客户端构造逻辑为共享依赖），新增 `LLMExecutor` 和 `ToolExecutor` 两种动态 executor，通过 `ExecutorType.LLM` / `ExecutorType.PYTHON_CALLABLE` 分发。`ExecutorType.LLM` 的 ref 格式约定为 `llm.<model_id>`，model_id 必须在 `allowed_models` 白名单中；`ExecutorType.PYTHON_CALLABLE` 的 ref 必须在 `ToolCallableRegistry` 和 `allowed_tool_refs` 白名单中。策略约束在 `validate_workflow()` 阶段即被检查，运行时只做防御性二次校验。所有新增 executor 通过 fake provider 独立测试，不依赖真实网络调用。
 
-**Tech Stack:** Python 3.11, Typer, Pydantic, pytest, `langchain_openai`, `langchain_core.language_models.fake.FakeListChatModel`, `BaseChatModel`, `SecretStr`, `concurrent.futures.ThreadPoolExecutor`。
+**Tech Stack:** Python 3.11, Typer, Pydantic, pytest, `langchain_openai`, `langchain_core.language_models.fake_chat_models.GenericFakeChatModel`, `BaseChatModel`, `SecretStr`, `concurrent.futures.ThreadPoolExecutor`。
 
 ---
 
@@ -61,7 +61,7 @@
 - `src/prompt2langgraph/registry/tool_executor.py`
   - `ToolExecutor` 类与 `ToolCallableRegistry`，受控工具执行器。
 - `tests/fake_provider.py`
-  - 基于 `FakeListChatModel` 的 fake LLM provider。
+  - 基于 `GenericFakeChatModel` 的 fake LLM provider。
 - `tests/fake_tools.py`
   - 预注册 fake tool callable 集合。
 - `tests/test_llm_provider.py`
@@ -144,7 +144,7 @@
 
 ### Task 1：扩展诊断码与 IR 模型
 
-**目标：** 为第二期所有新增能力预分配诊断码，扩展 `PolicySpec` 和 `SecurityPolicy` 模型字段，为 `ExecutorDefinition` 增加 `dynamic` 字段。
+**目标：** 为第二期所有新增能力预分配诊断码，扩展 `PolicySpec`、`SecurityPolicy` 和 `NodeSpec` 模型字段，为 `ExecutorDefinition` 增加 `dynamic` 字段。
 
 **Files:**
 - Modify: `src/prompt2langgraph/diagnostics/codes.py`
@@ -189,11 +189,22 @@ def test_security_policy_has_allowed_tool_refs_default_none() -> None:
 def test_executor_definition_has_dynamic_default_false() -> None:
     d = ExecutorDefinition(ref="test.ref", type=ExecutorType.BUILTIN)
     assert d.dynamic is False
+
+
+def test_node_spec_has_timeout_s_default_none() -> None:
+    from prompt2langgraph.ir.models import NodeSpec, ExecutorRef
+
+    node = NodeSpec(
+        id="n1",
+        kind="llm",
+        executor=ExecutorRef(ref="builtin.echo_llm", type=ExecutorType.BUILTIN),
+    )
+    assert node.timeout_s is None
 ```
 
 - [ ] **Step 2: 运行测试确认失败**
 
-Run: `uv run pytest tests/test_ir_schema.py::test_policy_spec_has_external_call_default_false tests/test_ir_schema.py::test_policy_spec_has_allowed_models_default_empty tests/test_ir_schema.py::test_policy_spec_has_collect_metrics_default_false tests/test_ir_schema.py::test_policy_spec_has_allowed_tool_refs_default_empty tests/test_ir_schema.py::test_security_policy_has_allowed_tool_refs_default_none tests/test_ir_schema.py::test_executor_definition_has_dynamic_default_false -v`
+Run: `uv run pytest tests/test_ir_schema.py::test_policy_spec_has_external_call_default_false tests/test_ir_schema.py::test_policy_spec_has_allowed_models_default_empty tests/test_ir_schema.py::test_policy_spec_has_collect_metrics_default_false tests/test_ir_schema.py::test_policy_spec_has_allowed_tool_refs_default_empty tests/test_ir_schema.py::test_security_policy_has_allowed_tool_refs_default_none tests/test_ir_schema.py::test_executor_definition_has_dynamic_default_false tests/test_ir_schema.py::test_node_spec_has_timeout_s_default_none -v`
 
 Expected: FAIL，提示字段不存在。
 
@@ -234,6 +245,14 @@ class SecurityPolicy(BaseModel):
     requires_approval: bool = False
     idempotency_key: str | None = None
     allowed_tool_refs: list[str] | None = None
+```
+
+在 `NodeSpec` 中新增 `timeout_s` 字段：
+
+```python
+class NodeSpec(BaseModel):
+    # ... 现有字段保持不变 ...
+    timeout_s: int | None = None  # 节点级执行超时（秒），None 表示使用 PolicySpec.default_timeout_s
 ```
 
 - [ ] **Step 5: 扩展 ExecutorDefinition 增加 dynamic 字段**
@@ -1337,6 +1356,25 @@ def test_check_tool_refs_no_whitelist_configured_reports_error() -> None:
 
     assert len(diags) == 1
     assert diags[0].code == E_SEC_015
+
+
+def test_check_tool_refs_langchain_tool_type_is_skipped() -> None:
+    """ExecutorType.LANGCHAIN_TOOL 节点当前不触发 check_tool_refs() 校验。"""
+    from prompt2langgraph.ir.models import ExecutorRef
+
+    nodes = [
+        NodeSpec(
+            id="n1",
+            kind="tool",
+            executor=ExecutorRef(ref="builtin.some_tool", type=ExecutorType.LANGCHAIN_TOOL),
+        )
+    ]
+    wf = _make_workflow(nodes=nodes, policies=PolicySpec(allowed_tool_refs=[]))
+    tool_registry = ToolCallableRegistry()
+
+    # LANGCHAIN_TOOL 类型不受 check_tool_refs() 检查，不产生诊断
+    diags = check_tool_refs(wf, tool_registry)
+    assert len(diags) == 0
 ```
 
 - [ ] **Step 2: 运行测试确认失败**
@@ -1415,7 +1453,11 @@ def check_tool_refs(
     workflow: WorkflowSpec,
     tool_registry: ToolCallableRegistry,
 ) -> list[Diagnostic]:
-    """Check that all PYTHON_CALLABLE executor refs are registered and allowed."""
+    """Check that all PYTHON_CALLABLE executor refs are registered and allowed.
+
+    LANGCHAIN_TOOL 类型的节点在当前第二期中不受此函数校验
+    （LANGCHAIN_TOOL 的执行能力留待后续版本实现）。
+    """
     diagnostics: list[Diagnostic] = []
     tool_nodes = [
         node for node in workflow.nodes
@@ -1863,7 +1905,9 @@ def _invoke_executor(
 >
 > 当前第二期不实现自动重试，但为后续版本预留以下映射路径：
 >
-> 当 `NodeSpec.retry.max_attempts > 1` 时，可将 `langgraph.types.RetryPolicy` 传给 `builder.add_node()` 的 `retry_policy=` 参数，让 LangGraph 框架层统一管理重试。当前 `_invoke_executor()` 中 LLM/Tool 的 `TimeoutError` / `RuntimeError` 已转为 `ExecutorError` 抛出，与 LangGraph 的 `RetryPolicy` 默认重试行为（默认重试非 `ValueError`/`TypeError` 等编程错误的异常）天然兼容。
+> 当 `NodeSpec.retry.max_attempts > 1` 时，可将 `langgraph.types.RetryPolicy` 传给 `builder.add_node()` 的 `retry_policy=` 参数，让 LangGraph 框架层统一管理重试。
+>
+> **兼容性注意**：当前 `_invoke_executor()` 中 LLM/Tool 的异常已转为 `ExecutorError(RuntimeError)` 抛出。LangGraph 的 `RetryPolicy` 默认 `retry_on` 使用 `default_retry_on`，该策略会排除 `RuntimeError`（及 `ValueError`、`TypeError` 等编程错误），因此后续启用自动重试时需要自定义 `retry_on` 回调以包含 `ExecutorError`，或将 `ExecutorError` 改为继承非 `RuntimeError` 的异常基类。
 >
 > 参考文档：[LangGraph Fault tolerance](https://docs.langchain.com/oss/python/langgraph/fault-tolerance)
 
@@ -2100,9 +2144,9 @@ git commit -m "feat: extend RunMetrics and RunResult for external call tracking"
 - [ ] **Step 1: 创建 `tests/fake_provider.py`**
 
 ```python
-"""Fake LLM provider for testing, based on LangChain FakeListChatModel."""
+"""Fake LLM provider for testing, based on LangChain GenericFakeChatModel."""
 
-from langchain_core.language_models.fake import FakeListChatModel
+from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
 from langchain_core.language_models.chat_models import BaseChatModel
 
 
@@ -2113,14 +2157,14 @@ def fake_chat_model(
 ) -> BaseChatModel:
     """Create a fake chat model that returns a fixed response.
 
-    Uses LangChain's built-in FakeListChatModel for compatibility with
+    Uses LangChain's built-in GenericFakeChatModel for compatibility with
     the BaseChatModel interface.
 
-    Note: FakeListChatModel.responses expects a list of str (not AIMessage).
-    The response is automatically wrapped in AIMessage by FakeListChatModel.
+    Note: GenericFakeChatModel accepts an iterator of messages (str or AIMessage).
+    Strings are automatically wrapped in AIMessage by GenericFakeChatModel.
     If usage_metadata is needed, use a custom fake model instead.
     """
-    return FakeListChatModel(responses=[response_text])
+    return GenericFakeChatModel(messages=iter([response_text]))
 ```
 
 - [ ] **Step 2: 创建 `tests/fake_tools.py`**
@@ -2336,11 +2380,12 @@ git commit -m "test: add integration tests for llm and tool executor with fake p
 
 ### Task 10：更新 Policy Resolver 与 Binding Binder
 
-**目标：** 将新增策略字段纳入 `resolve_policies()` 和 `bind_workflow()` 的输出。
+**目标：** 将新增策略字段纳入 `resolve_policies()`、`bind_workflow()` 和 `normalize_workflow()` 的输出，确保 `workflow.ir.json` / `workflow.lock.json` 正确序列化。
 
 **Files:**
 - Modify: `src/prompt2langgraph/policy/resolver.py`
 - Modify: `src/prompt2langgraph/binding/binder.py`
+- Modify: `src/prompt2langgraph/ir/normalize.py`
 - Test: `tests/test_compile_flow.py`
 
 - [ ] **Step 1: 修改 `policy/resolver.py`**
@@ -2399,17 +2444,32 @@ def bind_workflow(
     return BoundWorkflow(workflow=workflow, executor_bindings=bindings)
 ```
 
-- [ ] **Step 3: 运行编译产物回归测试**
+- [ ] **Step 3: 确认 `ir/normalize.py` 中的 `normalize_workflow()` 正确序列化新增策略字段**
+
+`normalize_workflow()` 需要对 `PolicySpec` 的新增字段（`external_call`、`allowed_models`、`collect_metrics`、`allowed_tool_refs`）和 `NodeSpec` 的新增字段（`timeout_s`）进行规范化处理。确认点：
+
+1. `workflow.ir.json` 中包含补齐后的 policy 默认值（如 `"external_call": false`、`"allowed_models": []`）；
+2. `workflow.lock.json` 中包含相同字段，确保 lockfile hash 计算稳定；
+3. 旧 workflow JSON（缺少新增字段）经过 `normalize_workflow()` 后，输出包含 Pydantic 默认值补齐的结果；
+4. 现有 golden fixtures（`linear_llm/`、`fanout_map_reduce/` 等）的 `workflow.ir.json` 需确认是否需要更新以反映新增的 policy 字段。
+
+> **验证命令**：
+> ```bash
+> uv run pt2lg compile tests/fixtures/linear_llm.json --out build --json
+> # 检查 build/linear_llm/workflow.ir.json 中是否包含 external_call、allowed_models 等字段
+> ```
+
+- [ ] **Step 4: 运行编译产物回归测试**
 
 Run: `uv run pytest tests/test_compile_flow.py -v`
 
 Expected: PASS（现有测试通过，compile report 可能因新增字段而产生 diff，需要更新 golden fixtures）。
 
-- [ ] **Step 4: 提交本任务**
+- [ ] **Step 5: 提交本任务**
 
 ```bash
-git add src/prompt2langgraph/policy/resolver.py src/prompt2langgraph/binding/binder.py tests/test_compile_flow.py
-git commit -m "feat: extend policy resolver and binder with phase-2 policy fields"
+git add src/prompt2langgraph/policy/resolver.py src/prompt2langgraph/binding/binder.py src/prompt2langgraph/ir/normalize.py tests/test_compile_flow.py
+git commit -m "feat: extend policy resolver, binder, and normalizer with phase-2 policy fields"
 ```
 
 ---
@@ -2646,7 +2706,7 @@ Task 2 (llm/ 模块) ────┼──→ Task 3 (重构 planner) ← 紧随
 13. CLI `run` 命令需要在运行时根据 workflow 中的节点类型自动构造 `model_client` 和 `tool_registry`，并传入 `run_workflow()`；
 14. `collect_metrics=True` 时，成功调用和失败调用均需记录 `ExternalCallRecord`（成功通过 `metrics_sink`，失败通过 `error_sink`）；
 15. `check_tool_refs()` 中 `effective_allowed` 为 `None` 或空列表时，按默认安全原则报 `E_SEC_015` 诊断；
-16. `FakeListChatModel.responses` 参数期望 `str` 列表而非 `AIMessage` 实例列表。
+16. `GenericFakeChatModel` 接受 `messages=iter([...])` 迭代器参数，其中可传入 `str` 或 `AIMessage` 实例。
 
 ---
 
@@ -2704,7 +2764,7 @@ Task 2 (llm/ 模块) ────┼──→ Task 3 (重构 planner) ← 紧随
 
 | 主题 | 文档链接 | 本计划关联章节 |
 |------|----------|----------------|
-| Unit testing（FakeListChatModel） | [Unit testing](https://docs.langchain.com/oss/python/langchain/test/unit-testing) | Task 9 |
+| Unit testing（GenericFakeChatModel） | [Unit testing](https://docs.langchain.com/oss/python/langchain/test/unit-testing) | Task 9 |
 | Integration testing | [Integration testing](https://docs.langchain.com/oss/python/langchain/test/integration-testing) | Task 9 |
 | LangGraph 节点测试 | [Testing individual nodes](https://docs.langchain.com/oss/python/langgraph/test#getting-started) | Task 9 |
 
