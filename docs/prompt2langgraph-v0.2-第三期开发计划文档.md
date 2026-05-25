@@ -274,7 +274,7 @@ Skill 转换不默认执行 Skill 目录下的 scripts。Join 执行不引入新
 
 ### 8.3 Join 边执行支持模块
 
-> **代码库现状基线**：`ir/models.py` 中 `EdgeKind.JOIN = "join"` 已定义。`compiler/langgraph_py.py` 中 `_check_target_capabilities()` 已将 `JOIN` 排除在支持的 edge kind 之外（报 `E_TARGET_009`）。`visualization/mermaid.py` 已能渲染 `JOIN` 边。`tests/fixtures/invalid_join_edge.json` 为测试夹具。以下为在现有基础上补齐 Join 边的执行语义。
+> **代码库现状基线**：`ir/models.py` 中 `EdgeKind.JOIN = "join"` 已定义。`runtime/runner.py` 中 `_check_target_capabilities()` 已将 `JOIN` 排除在支持的 edge kind 之外（报 `E_TARGET_009`）。`visualization/mermaid.py` 已能渲染 `JOIN` 边。`tests/fixtures/invalid_join_edge.json` 为测试夹具。以下为在现有基础上补齐 Join 边的执行语义。
 
 补齐 `join` 边在 IR 模型和编译器中的 Reducer 隐式合并执行语义。
 
@@ -301,7 +301,7 @@ Skill 转换不默认执行 Skill 目录下的 scripts。Join 执行不引入新
   - 如果 JOIN 边的 `join_sources` 中的节点没有共同的 state key 写入，报 diagnostic warning（不阻断编译，但提示 join 语义可能无实际效果）；
   - 如果 `join_sources` 中的节点写入了不同 key 且每个 key 都有 reducer，则各自独立聚合（符合预期行为）。
 - 移除 `JOIN` 从不受支持的 edge kind 列表中：
-  - 在 `_check_target_capabilities()` 中将 `EdgeKind.JOIN` 加入 `supported` 集合；
+  - 在 `_check_target_capabilities()`（位于 `runtime/runner.py`）中将 `EdgeKind.JOIN` 加入 `supported` 集合；
   - 移除 `tests/fixtures/invalid_join_edge.json` 的"invalid"标记（移动为合法测试夹具或保留为缺少 `join_sources` 的无效夹具）。
 - 更新 Mermaid 表达：
   - 在 `visualization/mermaid.py` 中为 JOIN 边增加 `join_sources` 标注；
@@ -330,21 +330,19 @@ Skill 转换不默认执行 Skill 目录下的 scripts。Join 执行不引入新
   - `SideEffectExecutor` 类，基于 `langgraph.types.interrupt()` 实现审批中断；
   - `__init__(node_id: str, security: SecurityPolicy, *, allow_side_effects: bool = False)`；
   - `__call__(inputs: dict, params: dict) -> dict`：
-    1. 若 `allow_side_effects=True`，跳过审批直接调用实际 executor 并返回结果；
+    1. 若 `allow_side_effects=True`，返回审批通过信号，由 compiler 层调用实际 executor；
     2. 否则若 `security.requires_approval=True`，调用 `interrupt()` 挂起，payload 包含：`node_id`、`action`（描述副作用操作）、`inputs`（副作用输入数据）、`idempotency_key`（若配置）、`params`；
     3. `interrupt()` 返回 `{"decision": "approved"}` 或 `{"decision": "rejected", "reason": "..."}`；
-    4. 若审批通过，调用实际 executor 并返回结果；
+    4. 若审批通过，返回审批通过信号，由 compiler 层调用实际 executor；
     5. 若审批拒绝，返回 `{"effect_result": "side_effect_rejected", "reason": reason}` 且不调用实际 executor；
-    6. 若无 `requires_approval` 也无 `idempotency_key`，且 `allow_side_effects=False`，直接拒绝执行（防御性行为，正常应在验证阶段被 `E_SIDE_008` 拦截）。
-  - 实际 executor 的调用路径：
-    - `SideEffectExecutor` 是对现有 `_invoke_executor()` dispatch 的审批包装层，而非独立的执行路径；
-    - 审批通过后（或 `allow_side_effects=True` 时），`SideEffectExecutor` 调用 `_invoke_executor()` 执行 `node.executor.ref` 对应的实际 executor（与 `llm`/`tool` 节点使用相同的 dispatch 逻辑）；
-    - 当 `allow_side_effects=True` 时，通过 `SideEffectExecutor` 包装调用实际 executor，记录副作用执行日志；
-    - 当走审批路径时，审批通过后调用实际 executor。
+    6. 若仅有 `idempotency_key` 但无 `requires_approval`，P1 中仍走审批路径（幂等去重逻辑为 P2 增强），P2 中实现基于 `side_effect_records` state key 的去重；
+    7. 若无 `requires_approval` 也无 `idempotency_key`，且 `allow_side_effects=False`，直接拒绝执行（防御性行为，正常应在验证阶段被 `E_SIDE_008` 拦截）。
+  - `SideEffectExecutor` 是纯审批逻辑层，不持有实际 executor 引用。通过返回审批信号（`__side_effect_signal__`）让 compiler 层决定是否调用实际 executor，实现与 compiler 实现解耦。
 - 扩展编译器：
-  - 在 `_invoke_executor()` 中新增 `side_effect` 节点的处理路径；
-  - 当 `node.kind == "side_effect"` 时，实例化 `SideEffectExecutor` 包装当前 executor，由 `SideEffectExecutor` 决定是否需要审批中断；
-  - 审批通过后，`SideEffectExecutor` 回调 `_invoke_executor()` 执行 `node.executor.ref` 对应的实际 executor；
+  - 在 `_node_wrapper()` 中新增 `side_effect` 节点的处理路径；
+  - 当 `node.kind == "side_effect"` 时，实例化 `SideEffectExecutor` 并调用；
+  - 根据 `SideEffectExecutor` 返回的 `__side_effect_signal__` 信号决定是否调用 `_invoke_executor()` 执行实际 executor；
+  - `SideEffectExecutor` 不直接调用 `_invoke_executor()`，避免与 compiler 内部实现耦合。
   - `SideEffectExecutor` 需要 `interrupt()` 所需的 checkpointer（通过 `compile_workflow_to_graph()` 的已有 `checkpointer` 参数传入）。
 - 扩展 `registry/builtins.py`：
   - 不需要为 `side_effect` 注册新的 `ExecutorType`（复用现有 `BUILTIN` 或 `PYTHON_CALLABLE` 执行实际副作用操作，`SideEffectExecutor` 是包装层）；
@@ -359,15 +357,16 @@ Side Effect 执行流程：
 node.started
   → SideEffectExecutor.__call__(inputs, params)
     → allow_side_effects=True?
-       YES → 调用实际 executor → 返回结果
+       YES → 返回 {"__side_effect_signal__": "allowed"} → compiler 调用实际 executor → 返回结果
        NO  → requires_approval=True?
                YES → interrupt(payload) → 等待 resume
-                      → approved? → 调用实际 executor → 返回结果
+                      → approved? → 返回 {"__side_effect_signal__": "approved"} → compiler 调用实际 executor → 返回结果
                       → rejected? → 返回拒绝结果
                NO  → 检查 idempotency_key
-                      有 key → 检查 state 中是否已有同 key 执行记录
+                      有 key → P1: 仍走审批路径（幂等去重为 P2 增强）
+                               P2: 检查 state 中是否已有同 key 执行记录
                                 有记录 → 跳过执行，返回缓存结果
-                                无记录 → 调用实际 executor → 写入执行记录 → 返回结果
+                                无记录 → 返回审批信号 → compiler 调用实际 executor → 写入执行记录 → 返回结果
                       无 key → 拒绝执行（防御性）
   → node.finished
 ```
@@ -379,16 +378,17 @@ interrupt() resume approved
   → 调用实际 executor → 执行失败（ExecutorError / 网络异常）
     → ExecutorError 传播到 invoke_node()
     → error_sink 记录失败 ExternalCallRecord（status="failed"）
-    → 该节点所在 superstep 未完成，整体 state checkpoint 不被提交
-    → graph 回退到上一个已完成的 checkpoint（即 interrupt() 之前的 checkpoint）
+    → 该节点未完成，其 state 更新不被提交为完整 checkpoint
+    → 同一 superstep 中其他已成功节点的写入通过 pending writes（checkpoint_writes）持久化
     → 调用方通过相同 thread_id 重试 run_workflow()
-      → LangGraph 从 checkpoint 恢复（interrupt 之前的状态）
-      → 节点从头执行（包括重新调用 interrupt()）→ 再次等待审批
+      → LangGraph 从上一个完整 checkpoint 恢复
+      → 已成功节点不重新执行（其 pending writes 已持久化）
+      → 失败节点从头重新执行（包括重新调用 interrupt()）→ 再次等待审批
       → 审批通过后重试实际 executor
       → 重试成功 → 返回结果；重试仍失败 → 再次传播 ExecutorError
 ```
 
-> **重要说明**：根据 LangGraph 的 superstep 事务语义（[Run graph nodes in parallel](https://docs.langchain.com/oss/python/langgraph/use-graph-api#run-graph-nodes-in-parallel)）和 Persistence 文档的 [Pending writes](https://docs.langchain.com/oss/python/langgraph/persistence) 章节，superstep 是事务性的——未完成的 superstep 的 state checkpoint 不会被提交。如果审批通过后执行失败，整个 node 的执行结果不被提交，checkpoint 回退到 `interrupt()` 之前的 state。由于 `interrupt()` 返回的审批结果尚未跨越 superstep 边界（审批和实际执行在同一个 node 内），checkpoint 回退后审批结果也随之失效。重试时节点从头执行（包括重新调用 `interrupt()`），需重新获得审批授权。这符合安全原则：审批授权不应跨失败重试持久化，每次重试应重新获得授权。如果后续需要"审批后失败免审批重试"的语义，需引入 LangGraph 的 `@task` 装饰器将副作用操作包装为独立 task（参见 8.4 节 `@task` 评估说明），利用 durable execution 中"已完成 task 的结果持久化到 checkpoint_writes 不重复执行"的语义。
+> **重要说明**：根据 LangGraph Persistence 文档的 [Pending writes](https://docs.langchain.com/oss/python/langgraph/persistence) 章节，当 superstep 中部分节点失败时，已成功完成节点的写入会通过 `checkpoint_writes`（pending writes）持久化，恢复时不重新执行这些节点。但对于 `SideEffectExecutor` 场景，interrupt 和实际执行在**同一节点内**，该节点未完成则其写入不会被提交为完整 checkpoint。恢复时该节点从头重新执行（包括重新调用 `interrupt()`），需重新获得审批授权。这与安全原则一致：审批授权不应跨失败重试持久化，每次重试应重新获得授权。如果后续需要"审批后失败免审批重试"的语义，需引入 LangGraph 的 `@task` 装饰器将副作用操作包装为独立 task（参见 8.4 节 `@task` 评估说明），利用 durable execution 中"已完成 task 的结果持久化到 checkpoint_writes 不重复执行"的语义。
 
 幂等键去重逻辑：
 
@@ -404,7 +404,7 @@ SideEffectExecutor.__call__() in idempotency_key path:
      → 返回结果
 ```
 
-> **LangGraph Durable Execution 兼容性说明**：LangGraph 的 [Durable Execution](https://docs.langchain.com/oss/python/langgraph/durable-execution) 要求工作流设计为确定性和幂等的，将副作用或非确定性操作包装在 tasks 中。当前第三期使用 `StateGraph` API + `interrupt()` 实现审批中断，审批和实际执行在同一个 superstep 内。由于 LangGraph superstep 是事务性的，审批通过后若执行失败，整个 superstep 的 state 更新被回滚（包括审批结果），重试时需要重新审批（见上方"错误路径行为"说明）。
+> **LangGraph Durable Execution 兼容性说明**：LangGraph 的 [Durable Execution](https://docs.langchain.com/oss/python/langgraph/durable-execution) 要求工作流设计为确定性和幂等的，将副作用或非确定性操作包装在 tasks 中。当前第三期使用 `StateGraph` API + `interrupt()` 实现审批中断，审批和实际执行在同一个节点内。当审批通过后执行失败时，该节点未完成，其 state 更新不被提交；但同一 superstep 中其他已成功节点的写入通过 pending writes 持久化，恢复时不重新执行。对于失败节点本身，重试时需要重新审批（见上方"错误路径行为"说明）。
 >
 > **幂等键去重的性质说明**：本计划的幂等键去重方案通过 `side_effect_records` state key 存储执行记录，属于**应用层幂等**（由 prompt2langgraph 自身的 state 逻辑管理）。这与 LangGraph durable execution 的**框架层幂等**（通过 `@task` + `checkpoint_writes` 实现，已完成 task 不重复执行）不同。两者的区别：
 > - 应用层幂等：去重逻辑完全由本项目管理，不依赖 LangGraph 的 task 恢复语义，审批通过且执行成功后通过 state 记录避免重复；
@@ -616,10 +616,11 @@ Side Effect 应满足：
 - `requires_approval=True` 的 `side_effect` 节点执行时触发 `interrupt()`，CLI 显示 `waiting` 状态和 thread_id；
 - 通过 `pt2lg resume` 传入 `approved` 决策后，副作用执行成功且返回正确结果；
 - 通过 `pt2lg resume` 传入 `rejected` 决策后，副作用不执行且返回拒绝结果；
+- 仅有 `idempotency_key` 但无 `requires_approval` 的 `side_effect` 节点，P1 中仍走审批路径（幂等去重逻辑为 P2 增强）；
 - 不符合安全策略的 `side_effect` 节点（无 `requires_approval`、无 `idempotency_key`、`allow_side_effects=False`）在验证阶段报 `E_SIDE_008`；
 - Resume 恢复 `human_gate` 和 `side_effect` 的中断行为一致（共用相同的 CLI resume 入口）；
 - `tests/fixtures/side_effect_allowed.json` 的编译和执行行为保持不变；
-- P2 可选增强包括 side effect 幂等记录、多中断批量恢复、`edited/respond` 决策和基于 `@task` 的 durable side effect，不作为 P1 完成门槛。
+- P2 可选增强包括 side effect 幂等记录（`side_effect_records` 去重）、多中断批量恢复、`edited/respond` 决策和基于 `@task` 的 durable side effect，不作为 P1 完成门槛。
 
 ### 9.5 Checkpointer 注入验收
 
