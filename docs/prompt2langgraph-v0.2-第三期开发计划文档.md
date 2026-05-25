@@ -16,7 +16,7 @@ v0.2 采用《三期任务划分方案A》中"目标链路优先"的推进策略
 
 第三期的核心特征是：**复用前两期已打通的链路，以最小增量补齐剩余缺口。**
 
-1. Skill 转换复用第一期 `Prompt → LLM → JSON plan → WorkflowSpec` 链路，将输入从自然语言 Prompt 替换为序列化的 `SkillDirectoryAnalysis`；
+1. Skill 转换复用第一期 `Prompt → LLM → JSON plan → WorkflowSpec` 链路，将输入从自然语言 Prompt 替换为 Skill 目录下的 `SKILL.md` 原始文件内容；
 2. Join 执行复用现有 fanout reducer 隐式合并机制，无需新增节点类型；
 3. Side Effect 审批复用现有 `human_gate` 的 `interrupt()` + `Command(resume=...)` 模式；
 4. 运行时持久化复用 LangGraph 的 `BaseCheckpointSaver` 注入接口，CLI 默认使用 `SqliteSaver`。
@@ -27,7 +27,7 @@ v0.2 采用《三期任务划分方案A》中"目标链路优先"的推进策略
 
 v0.2 第三期的阶段目标是：
 
-- 基于 v0.1 已有的 `analyze_skill_dir()` 静态分析能力，实现 Skill → `WorkflowSpec` 的 LLM 驱动转换，使 Skill 不再仅限静态分析，而是具备进入工作流编译链路的能力；
+- 基于 v0.1 已有的 `analyze_skill_dir()` 静态分析能力作为辅助参考，实现 Skill → `WorkflowSpec` 的 LLM 驱动转换，直接读取 Skill 目录下的 `SKILL.md` 原始内容作为 LLM 输入，使 Skill 不再仅限静态分析，而是具备进入工作流编译链路的能力；
 - 补齐 `join` 边在 IR 模型和编译器中的执行语义，通过 Reducer 隐式合并实现多源 fan-in；
 - 为 `side_effect` 节点提供带审批中断的最小执行器，复用现有 LangGraph `interrupt()` + `Command(resume=...)` 机制；
 - 抽象 Chekpointer 注入接口，解耦对 `InMemorySaver` 内部结构的耦合，CLI 默认使用 `SqliteSaver` 提供稳定的本地持久化；
@@ -41,7 +41,7 @@ v0.2 第三期的阶段目标是：
 
 第三期纳入以下范围：
 
-1. 实现 Skill → `WorkflowSpec` 的 LLM 驱动转换器，将 `SkillDirectoryAnalysis` 序列化后发给 LLM 生成简化 JSON plan，再经 `JSONPlanAdapter` 转为 `WorkflowSpec`；
+1. 实现 Skill → `WorkflowSpec` 的 LLM 驱动转换器，直接读取 Skill 目录下的 `SKILL.md` 原始内容发给 LLM 生成简化 JSON plan，再经 `JSONPlanAdapter` 转为 `WorkflowSpec`；
 2. 为 Skill 工作流支持从 CLI/API 注入参数，明确 scripts/assets/references 资源在工作流中的表示方式；
 3. 补齐 `join` 边在 IR 和编译器中的 Reducer 隐式合并执行语义；
 4. 为 `side_effect` 节点提供基于 LangGraph `interrupt()` 的审批中断最小执行器；
@@ -78,9 +78,9 @@ v0.2 第三期的阶段目标是：
 
 > **设计依据**：LangGraph 的 `StateGraph` 采用"增量构建"模式——通过 `add_node` → `add_edge` → `compile` 三步渐进构建，每一步都可独立验证。本计划遵循同样的增量策略：第三期不重新设计架构，而是在前两期已验证稳定的链路和基础设施之上做最小扩展。参见 LangGraph 的 [Use the graph API](https://docs.langchain.com/oss/python/langgraph/use-graph-api) 中的增量构建模式和 [Graph API overview](https://docs.langchain.com/oss/python/langgraph/graph-api)。
 
-### 6.2 Skill 转换：分析资源而非默认执行资源
+### 6.2 Skill 转换：直接使用 SKILL.md 原始内容
 
-Skill 转换器可以从 `SkillDirectoryAnalysis` 中提取资源信息用于生成工作流节点，但不默认执行 Skill 目录下的 scripts。对高危资源（shell 脚本、网络调用、secrets 相关操作）在生成的 workflow 中保留 `human_gate` 审批边界。
+Skill 转换器直接读取 Skill 目录下的 `SKILL.md` 文件原始内容作为 LLM 输入，不经过 `SkillDirectoryAnalysis` 中间结构。`analyze_skill_dir()` 的静态分析结果（风险警告、资源清单）可作为辅助上下文补充给 LLM，但不默认执行 Skill 目录下的 scripts。对高危操作（shell 脚本、网络调用、secrets 相关）在生成的 workflow 中保留 `human_gate` 审批边界。
 
 > **设计依据**：Deep Agents 的 Skills 系统通过 `create_deep_agent(skills=[...])` 将预定义的 skills 注入 agent，但 skills 的执行受 middleware 约束——`HumanInTheLoopMiddleware` 通过 `interrupt_on` 参数配置哪些工具调用需要审批。本计划的 Skill → Workflow 转换遵循同样的"分析-生成-审批"三层模型：分析阶段通过 `analyze_skill_dir()` 提取步骤和风险信号，生成阶段通过 LLM 将步骤映射为工作流节点并对高危步骤插入 `human_gate`，执行阶段通过策略约束和 interrupt 机制确保审批边界。参见 Deep Agents 的 [Customization](https://docs.langchain.com/oss/python/deepagents/customization) 和 [Human-in-the-loop](https://docs.langchain.com/oss/python/langchain/human-in-the-loop)。
 
@@ -159,7 +159,7 @@ Skill 转换不默认执行 Skill 目录下的 scripts。Join 执行不引入新
 
 | 文件 | 关注点 |
 |------|--------|
-| `src/prompt2langgraph/adapters/skill_dir.py` | `analyze_skill_dir()` 静态分析产物作为 Skill 转换输入，不改动 |
+| `src/prompt2langgraph/adapters/skill_dir.py` | `analyze_skill_dir()` 静态分析产物作为 Skill 转换的辅助上下文，不改动 |
 | `src/prompt2langgraph/adapters/json_plan.py` | `JSONPlanAdapter` 继续作为 Skill 转换的结果适配入口 |
 | `src/prompt2langgraph/prompting/parser.py` | `parse_prompt_plan_text()` 复用为 Skill 转换的 JSON 解析 |
 | `src/prompt2langgraph/llm/` | `build_llm_client()` 复用为 Skill 转换的 LLM 客户端构造 |
@@ -183,19 +183,19 @@ Skill 转换不默认执行 Skill 目录下的 scripts。Join 执行不引入新
 
 > **代码库现状基线**：`adapters/skill_dir.py` 已实现 `analyze_skill_dir()` 静态分析函数，输出 `SkillDirectoryAnalysis`（含 `name`、`description`、`steps`、`resources`、`draft_nodes`、`report`）。`adapters/json_plan.py` 已实现 `JSONPlanAdapter.parse()` 将简化 JSON plan 转为 `WorkflowSpec`。`prompting/planner.py` 已实现 `plan_prompt_to_workflow_spec()` 串联 Prompt → LLM → JSON plan → `WorkflowSpec`。以下为在现有基础上新增 Skill 到 Workflow 的 LLM 驱动转换器。
 
-将 `SkillDirectoryAnalysis` 作为输入，通过 LLM 生成简化 JSON plan，再复用 `JSONPlanAdapter` 转为 `WorkflowSpec`。
+直接读取 Skill 目录下的 `SKILL.md` 原始文件内容作为 LLM 输入，通过 LLM 生成简化 JSON plan，再复用 `JSONPlanAdapter` 转为 `WorkflowSpec`。`analyze_skill_dir()` 的静态分析结果（风险警告、资源清单）作为辅助上下文补充给 LLM，但 LLM 的主输入是 `SKILL.md` 原文。
 
 该模块应完成：
 
-- 新增 Prompt 模板：为 Skill → JSON plan 生成设计专用的 system prompt，引导 LLM 将 Skill 步骤映射为节点类型（`llm`、`tool`、`transform`、`human_gate` 等），对 `report.diagnostics` 中 `E_SEC_007` 诊断检测到的高危步骤（file writes、shell execution、network access、secrets）在生成的 workflow 中插入 `human_gate` 节点作为审批边界。
+- 新增 Prompt 模板：为 Skill → JSON plan 生成设计专用的 system prompt，引导 LLM 将 Skill 步骤映射为节点类型（`llm`、`tool`、`transform`、`human_gate` 等），对 `analyze_skill_dir()` 报告中 `E_SEC_007` 诊断检测到的高危步骤（file writes、shell execution、network access、secrets）在生成的 workflow 中插入 `human_gate` 节点作为审批边界。
 - 新增 `prompting/skill_planner.py`：
-  - `build_skill_plan_prompt(analysis: SkillDirectoryAnalysis, *, params: dict[str, str] | None = None) -> str`：将 `SkillDirectoryAnalysis` 序列化为结构化 prompt 文本，包括 name、description、steps、draft_nodes、resources 清单、风险警告摘要和可选的参数上下文；
-  - `plan_skill_to_workflow_spec(analysis: SkillDirectoryAnalysis, *, params: dict[str, str] | None = None, model_client=None) -> WorkflowSpec`：串联 `build_skill_plan_prompt()` → LLM 生成 JSON plan 文本 → `parse_prompt_plan_text()` 解析 → `JSONPlanAdapter().parse()` 适配；
+  - `build_skill_plan_prompt(skill_md_text: str, *, analysis: SkillDirectoryAnalysis | None = None, params: dict[str, str] | None = None) -> str`：将 `SKILL.md` 原始内容作为主输入构建 prompt，可选附加 `analyze_skill_dir()` 的分析结果（风险警告摘要、资源清单）和参数上下文；
+  - `plan_skill_to_workflow_spec(skill_dir: str | Path, *, params: dict[str, str] | None = None, model_client=None) -> WorkflowSpec`：读取 `SKILL.md` 原始内容 → 可选调用 `analyze_skill_dir()` 获取辅助分析 → 串联 `build_skill_plan_prompt()` → LLM 生成 JSON plan 文本 → `parse_prompt_plan_text()` 解析 → `JSONPlanAdapter().parse()` 适配；
   - 复用 `llm.provider.build_llm_client()` 构造 LLM 客户端（与 Planner 共享 `llm/` 基础模块）；
-  - 对 LLM 输出的 JSON plan，在适配失败时返回明确的 `AdapterParseError` 诊断，区分"Skill 分析不完整"和"LLM 生成输出不可解析"两类问题。
+  - 对 LLM 输出的 JSON plan，在适配失败时返回明确的 `AdapterParseError` 诊断，区分"SKILL.md 内容不完整"和"LLM 生成输出不可解析"两类问题。
   - **与 `planner.py` 的关系**：`skill_planner.py` 复用 `planner.py` 的 `generate_plan_text()` 和 `parse_prompt_plan_text()`，仅新增 Skill 专用的 system prompt 构建逻辑（`build_skill_plan_prompt()`）。LLM 调用、JSON 解析和适配逻辑完全复用，不重复实现。
 - Skill 转换结果存储：
-  - 通过 `plan_skill_to_workflow_spec()` 独立返回 `WorkflowSpec`，保持 `SkillDirectoryAnalysis` 不感知 workflow 转换（单一职责：`SkillDirectoryAnalysis` 是确定性静态分析产物，不应承载 LLM 转换结果）；
+  - 通过 `plan_skill_to_workflow_spec()` 独立返回 `WorkflowSpec`；
   - 与 `plan_prompt_to_workflow_spec()` 的模式一致（独立函数返回 `WorkflowSpec`）。
 - Skill 步骤到节点类型的映射规则：
   - LLM 主导映射（通过 system prompt 指导），不硬编码规则表；
@@ -233,7 +233,7 @@ Skill 转换不默认执行 Skill 目录下的 scripts。Join 执行不引入新
 - System prompt 中建议 LLM 使用 `temperature=0.0`，以提高 Skill 转换输出的稳定性和可复现性；
 - 后续可考虑增加"Skill 转换结果缓存"机制（对同一 Skill 目录 + 参数组合缓存 LLM 生成的 JSON plan），但此能力不在第三期范围内。
 
-> **设计依据**：Deep Agents 的 Skills 系统通过 `create_deep_agent(skills=[...])` 将预定义的 skills 作为工具注入 agent（[Customize Deep Agents](https://docs.langchain.com/oss/python/deepagents/customization)）。本计划的 Skill 转换器将 Deep Agents 的"Skills 注入"理念适配到 prompt2langgraph 的"Skills 编译"场景：不是将 Skill 作为工具注入运行时 agent，而是将 Skill 的步骤分析结果通过 LLM 转换为可编译的工作流定义。LangChain v1 的 `init_chat_model()` 辅助函数支持统一的模型客户端构造（[Chat model integrations](https://docs.langchain.com/oss/python/integrations/chat/index)），Skill planner 复用第二期建立的 `llm/` 基础模块。
+> **设计依据**：Deep Agents 的 Skills 系统通过 `create_deep_agent(skills=[...])` 将预定义的 skills 作为工具注入 agent（[Customize Deep Agents](https://docs.langchain.com/oss/python/deepagents/customization)）。本计划的 Skill 转换器将 Deep Agents 的"Skills 注入"理念适配到 prompt2langgraph 的"Skills 编译"场景：不是将 Skill 作为工具注入运行时 agent，而是将 Skill 的原始文档内容通过 LLM 转换为可编译的工作流定义。直接使用 `SKILL.md` 原始内容而非 `SkillDirectoryAnalysis` 中间结构，可以保留文档的完整上下文、格式信息和隐含语义，避免结构化过程中的信息丢失。LangChain v1 的 `init_chat_model()` 辅助函数支持统一的模型客户端构造（[Chat model integrations](https://docs.langchain.com/oss/python/integrations/chat/index)），Skill planner 复用第二期建立的 `llm/` 基础模块。
 
 ### 8.2 Skill 参数注入与资源建模模块
 
@@ -254,7 +254,7 @@ Skill 转换不默认执行 Skill 目录下的 scripts。Join 执行不引入新
   - `SkillPlanRequest` 的 LLM 配置字段（`model`、`base_url`、`api_key`、`temperature`）委托 `llm.config.LLMConfig` 构造 LLM 客户端（与 `PromptPlanRequest` 委托 `build_model_client()` 的模式一致），不独立定义配置加载逻辑；
   - `SkillPlanResult` 包含 `raw_text`、`plan`、`workflow_spec`、`diagnostics`。
 - 资源建模：
-  - 在 Skill → workflow 转换的 system prompt 中，将 `resources.scripts`、`resources.references`、`resources.assets` 信息传递给 LLM，让 LLM 在生成的 JSON plan 中通过 `params` 或节点描述反映资源依赖；
+  - 在 Skill → workflow 转换的 system prompt 中，从 `SKILL.md` 原文中提取资源引用信息，同时可选附加 `analyze_skill_dir()` 扫描的 `scripts/`、`references/`、`assets/` 目录文件清单传递给 LLM，让 LLM 在生成的 JSON plan 中通过 `params` 或节点描述反映资源依赖；
   - 对 `resources.scripts` 中列出的脚本路径，如果 LLM 尝试在 workflow 中引用，生成 `tool` 节点并标记 `security.allowed_tool_refs` 为空（需要在执行前由用户显式授权注册对应的 tool callable）；
   - 不自动将 Skill 资源路径写入 workflow 的 `tool` executor ref。
 - 参数注入：
@@ -538,9 +538,10 @@ SQLite 并发说明：
 
 满足以下条件，方可判定 Skill 转换能力达成交付标准：
 
-- 通过 `analyze_skill_dir()` 获取 `SkillDirectoryAnalysis`，再经 `plan_skill_to_workflow_spec()` 生成可校验的 `WorkflowSpec`；
+- 直接读取 Skill 目录下的 `SKILL.md` 原始内容，经 `plan_skill_to_workflow_spec()` 生成可校验的 `WorkflowSpec`；
+- `analyze_skill_dir()` 的静态分析结果可作为辅助上下文传递给 LLM，但不作为 LLM 的主输入；
 - 生成的 `WorkflowSpec` 能继续进入现有 `validate / compile / run / graph` 流程；
-- 对 Skill 中 `report.diagnostics` 的 `E_SEC_007` 诊断检测到的高危步骤（file writes、shell execution、network access、secrets），LLM 生成的 workflow 中插入了 `human_gate` 节点；
+- 对 `analyze_skill_dir()` 报告中 `E_SEC_007` 诊断检测到的高危步骤（file writes、shell execution、network access、secrets），LLM 生成的 workflow 中插入了 `human_gate` 节点；
 - 转换失败时（LLM 输出不可解析、适配失败），返回明确诊断而非静默失败；
 - 转换过程不默认执行 Skill 目录下的 scripts；
 - `tests/test_skill_dir.py` 中新增 Skill → WorkflowSpec 的 fake model 转换测试。
@@ -550,9 +551,9 @@ SQLite 并发说明：
 Skill 参数注入应满足：
 
 - CLI `pt2lg plan --skill-dir` 命令可接受 Skill 目录和 `--param` 参数；
-- API `plan_skill_to_workflow_spec()` 接受 `SkillDirectoryAnalysis` 和可选的 `params` 参数；
+- API `plan_skill_to_workflow_spec()` 接受 `skill_dir` 路径和可选的 `params` 参数；
 - 注入的参数通过 LLM prompt 上下文影响到生成的 JSON plan；
-- Skill 资源（scripts/assets/references）的信息传递给 LLM 用于生成 workflow 节点。
+- `SKILL.md` 原文中的资源引用及 `analyze_skill_dir()` 扫描的资源信息传递给 LLM 用于生成 workflow 节点。
 
 ### 9.3 Join 边执行验收
 
@@ -674,20 +675,19 @@ Checkpointer 注入应满足：
 ## 附录 A：模块依赖关系
 
 ```
-analyze_skill_dir (v0.1 已有)
+SKILL.md 原始内容 (主输入)
         │
-        ├──→ SkillDirectoryAnalysis
-        │           │
-        │           └──→ 8.1 Skill→WorkflowSpec LLM 转换器
-        │                        │
-        │                        ├── 依赖: llm/ (v0.2-2 已有)
-        │                        ├── 依赖: prompting/parser (v0.2-1 已有)
-        │                        ├── 依赖: adapters/json_plan (v0.1 已有)
-        │                        │
-        │                        └──→ 8.2 Skill 参数注入与资源建模
-        │                                  │
-        │                                  ├── 依赖: cli.py (扩展)
-        │                                  └── 依赖: __init__.py (Public API)
+        ├──→ 8.1 Skill→WorkflowSpec LLM 转换器
+        │            │
+        │            ├── 辅助: analyze_skill_dir() (可选上下文)
+        │            ├── 依赖: llm/ (v0.2-2 已有)
+        │            ├── 依赖: prompting/parser (v0.2-1 已有)
+        │            ├── 依赖: adapters/json_plan (v0.1 已有)
+        │            │
+        │            └──→ 8.2 Skill 参数注入与资源建模
+        │                      │
+        │                      ├── 依赖: cli.py (扩展)
+        │                      └── 依赖: __init__.py (Public API)
         │
 8.4 Side Effect 最小执行闭环 ────── 依赖: 8.5 Checkpointer 注入接口
         │                                      │
