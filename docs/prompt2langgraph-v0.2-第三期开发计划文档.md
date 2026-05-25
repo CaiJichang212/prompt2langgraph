@@ -84,17 +84,15 @@ Skill 转换器可以从 `SkillDirectoryAnalysis` 中提取资源信息用于生
 
 > **设计依据**：Deep Agents 的 Skills 系统通过 `create_deep_agent(skills=[...])` 将预定义的 skills 注入 agent，但 skills 的执行受 middleware 约束——`HumanInTheLoopMiddleware` 通过 `interrupt_on` 参数配置哪些工具调用需要审批。本计划的 Skill → Workflow 转换遵循同样的"分析-生成-审批"三层模型：分析阶段通过 `analyze_skill_dir()` 提取步骤和风险信号，生成阶段通过 LLM 将步骤映射为工作流节点并对高危步骤插入 `human_gate`，执行阶段通过策略约束和 interrupt 机制确保审批边界。参见 Deep Agents 的 [Customization](https://docs.langchain.com/oss/python/deepagents/customization) 和 [Human-in-the-loop](https://docs.langchain.com/oss/python/langchain/human-in-the-loop)。
 
-### 6.3 Join 声明式汇聚：双模式语义
+### 6.3 Join 声明式汇聚：便捷语法模式
 
-Join 边的执行语义设计为两种模式，在不同场景下使用：
+Join 边采用单一的便捷语法模式：`join_sources` 声明哪些源节点需要汇聚到 target，编译器自动为 `join_sources` 中的每个源节点生成 `builder.add_edge(source, target)` 调用。用户只需声明"哪些节点汇聚到哪个节点"，编译器自动生成所需的边连接，无需手写多条 LINEAR 边。
 
-**模式一：便捷语法模式**——当 `join_sources` 中的源节点尚未通过 LINEAR 边连接到 target 时，编译器自动补齐 `builder.add_edge(source, target)` 调用。这是 JOIN 边最常见的用途：用户只需声明"哪些节点汇聚到哪个节点"，编译器自动生成所需的边连接，无需手写多条 LINEAR 边。
+如果 `join_sources` 中的某个源节点已有指向同一 target 的 LINEAR 边，验证阶段报 diagnostic warning 提示重复边定义，编译器跳过该源节点的 `add_edge()` 调用（避免 LangGraph 重复边错误）。
 
-**模式二：纯标注模式**——当 `join_sources` 中的源节点已有指向 target 的 LINEAR 边时，JOIN 边仅作为声明式汇聚标注，不生成额外的 `add_edge()`。编译器仍验证：join_sources 中列出的所有节点确实已通过 LINEAR 边连接到 target（若未连接，回退到模式一补齐边）；这些节点写入的 state key 是否声明了 reducer（若未声明，报 diagnostic warning）。
+基础机制：state schema 中声明的 reducer（如 `APPEND`、`MERGE_DICT`）在 LangGraph 的 superstep 边界自动聚合多源输出。这不需要新增 `join` 节点类型或专门的 join executor，只需在 IR 和编译器层面补齐 join 边的声明语义和必要的边连接。
 
-两种模式共享同一个基础机制：state schema 中声明的 reducer（如 `APPEND`、`MERGE_DICT`）在 LangGraph 的 superstep 边界自动聚合多源输出。这不需要新增 `join` 节点类型或专门的 join executor，只需在 IR 和编译器层面补齐 join 边的声明语义和必要的边连接。
-
-`join_sources` 字段的本质是"语法糖 + 文档标注"——让用户以声明方式表达汇聚意图，编译器自动处理边连接。当 `join_sources` 中的节点缺少到 target 的边时，JOIN 边等价于多条 LINEAR 边的简写；当边已存在时，JOIN 边提供语义可读性和可视化标注。
+`join_sources` 字段的本质是"语法糖"——让用户以声明方式表达汇聚意图，编译器自动处理边连接。JOIN 边等价于多条 LINEAR 边的简写，语义始终确定。
 
 > **设计依据**：LangGraph 的并行执行模型基于 superstep——同时触发的所有节点在同一 superstep 中并发执行，整个 superstep 是事务性的（全部成功或全部回滚）。当多个并行分支写入同一 state key，reducer 在 superstep 边界自动聚合写入。fan-in 的正确工作前提是：**多个并行分支通过各自的 `add_edge()` 指向同一个 target 节点**，LangGraph 才能保证 target 在所有源完成后执行。这正是 [Run graph nodes in parallel](https://docs.langchain.com/oss/python/langgraph/use-graph-api#run-graph-nodes-in-parallel) 中描述的 fan-out/fan-in 模式。LangGraph 的 [Send API](https://docs.langchain.com/oss/python/langgraph/graph-api#send) 为动态 fan-out 提供了 `Send(node, state)` 机制——本计划中已有的 `FANOUT` 边已使用 `Send`，而 `JOIN` 边是对 fan-in 模式的声明式封装。
 
@@ -191,10 +189,11 @@ Skill 转换不默认执行 Skill 目录下的 scripts。Join 执行不引入新
 
 - 新增 Prompt 模板：为 Skill → JSON plan 生成设计专用的 system prompt，引导 LLM 将 Skill 步骤映射为节点类型（`llm`、`tool`、`transform`、`human_gate` 等），对 `report.diagnostics` 中 `E_SEC_007` 诊断检测到的高危步骤（file writes、shell execution、network access、secrets）在生成的 workflow 中插入 `human_gate` 节点作为审批边界。
 - 新增 `prompting/skill_planner.py`：
-  - `build_skill_plan_prompt(analysis: SkillDirectoryAnalysis) -> str`：将 `SkillDirectoryAnalysis` 序列化为结构化 prompt 文本，包括 name、description、steps、draft_nodes、resources 清单和风险警告摘要；
-  - `plan_skill_to_workflow_spec(analysis: SkillDirectoryAnalysis, *, model_client=None) -> WorkflowSpec`：串联 `build_skill_plan_prompt()` → LLM 生成 JSON plan 文本 → `parse_prompt_plan_text()` 解析 → `JSONPlanAdapter().parse()` 适配；
+  - `build_skill_plan_prompt(analysis: SkillDirectoryAnalysis, *, params: dict[str, str] | None = None) -> str`：将 `SkillDirectoryAnalysis` 序列化为结构化 prompt 文本，包括 name、description、steps、draft_nodes、resources 清单、风险警告摘要和可选的参数上下文；
+  - `plan_skill_to_workflow_spec(analysis: SkillDirectoryAnalysis, *, params: dict[str, str] | None = None, model_client=None) -> WorkflowSpec`：串联 `build_skill_plan_prompt()` → LLM 生成 JSON plan 文本 → `parse_prompt_plan_text()` 解析 → `JSONPlanAdapter().parse()` 适配；
   - 复用 `llm.provider.build_llm_client()` 构造 LLM 客户端（与 Planner 共享 `llm/` 基础模块）；
   - 对 LLM 输出的 JSON plan，在适配失败时返回明确的 `AdapterParseError` 诊断，区分"Skill 分析不完整"和"LLM 生成输出不可解析"两类问题。
+  - **与 `planner.py` 的关系**：`skill_planner.py` 复用 `planner.py` 的 `generate_plan_text()` 和 `parse_prompt_plan_text()`，仅新增 Skill 专用的 system prompt 构建逻辑（`build_skill_plan_prompt()`）。LLM 调用、JSON 解析和适配逻辑完全复用，不重复实现。
 - Skill 转换结果存储：
   - 通过 `plan_skill_to_workflow_spec()` 独立返回 `WorkflowSpec`，保持 `SkillDirectoryAnalysis` 不感知 workflow 转换（单一职责：`SkillDirectoryAnalysis` 是确定性静态分析产物，不应承载 LLM 转换结果）；
   - 与 `plan_prompt_to_workflow_spec()` 的模式一致（独立函数返回 `WorkflowSpec`）。
@@ -281,7 +280,7 @@ Skill 转换不默认执行 Skill 目录下的 scripts。Join 执行不引入新
 - 扩展 IR 模型：
   - 在 `EdgeSpec` 中新增 `join_sources: list[str] | None = None` 字段，声明 join 边需要等待的源节点列表；
   - `join_sources` 必须非空且所有 source node id 必须在 workflow 的 nodes 中存在；
-  - `join_sources` 中的节点可以已有指向 target 的 LINEAR 边（纯标注模式），也可以没有（便捷语法模式，编译器自动补齐）；
+  - 当 `kind=JOIN` 时，`source` 字段设为 `join_sources[0]`（保持 `EdgeSpec` 的单一 source 约束），`join_sources` 为必填字段；
   - 当 `join_sources` 为 `None` 或空列表时，编译阶段报错。
 - 扩展验证：
   - 新增 `validate/join_check.py`（或在现有 `validate/graphcheck.py` 中新增 join 校验函数）：
@@ -289,10 +288,11 @@ Skill 转换不默认执行 Skill 目录下的 scripts。Join 执行不引入新
     - 检查所有 `join_sources` 中的节点在 workflow 中存在；
     - 检查 join 边的 target 节点不是 join_sources 中的任何一个（避免自引用）；
     - 验证 join_sources 中节点的 `outputs` 写入的 state key 是否声明了 reducer（对于多个节点写入不同 key 且均无 reducer 的情况，报 diagnostic warning）；
-    - join 边是声明式汇聚标注，编译器据此补齐必要的 `add_edge()` 并验证 reducer 声明。
+    - 检查 `join_sources` 中的源节点是否已有指向同一 target 的 LINEAR 边（若有，报 diagnostic warning 提示重复边定义）；
+    - join 边是声明式汇聚语法糖，编译器据此生成必要的 `add_edge()` 并验证 reducer 声明。
 - 扩展编译器：
-  - **模式一（便捷语法）**：JOIN 边的 `join_sources` 中尚未通过 LINEAR 边连接到 target 的源节点，编译器自动补齐 `builder.add_edge(source, target)` 调用；
-  - **模式二（纯标注）**：如果 `join_sources` 中的所有节点已有指向 target 的 LINEAR 边，则 JOIN 边仅作为声明式汇聚标注，不生成额外的 `add_edge()`，但编译器仍验证边已存在（若不一致报 diagnostic warning）；
+  - JOIN 边的 `join_sources` 中的每个源节点，编译器自动生成 `builder.add_edge(source, target)` 调用；
+  - 如果某个源节点已有指向同一 target 的 LINEAR 边（验证阶段已报 warning），编译器跳过该源节点的 `add_edge()` 调用，避免 LangGraph 重复边错误；
   - JOIN 边的 reducer 聚合语义通过 LangGraph 的 superstep 机制隐式实现：多个 `join_sources` 节点写入同一个 state key，reducer（在 `state_schema.reducers` 中声明）自动聚合；
   - 编译器需要在 `compile_workflow_to_graph()` 中验证：对于每个 JOIN 边，其 `join_sources` 中的节点确实写入了需要 reducer 聚合的 state key（即这些节点的 `outputs` 中有指向同一个 state key 且该 key 声明了 reducer）；
   - 如果 JOIN 边的 `join_sources` 中的节点没有共同的 state key 写入，报 diagnostic warning（不阻断编译，但提示 join 语义可能无实际效果）；
@@ -307,8 +307,8 @@ Skill 转换不默认执行 Skill 目录下的 scripts。Join 执行不引入新
 设计约束：
 
 - 不新增 `join` 节点类型或专门的 join executor；
-- JOIN 边的 reducer 聚合依赖 state reducers 的隐式聚合，编译器仅在 `join_sources` 节点尚未连接到 target 时补齐 `add_edge()`（便捷语法模式），不生成额外的聚合节点；
-- 当 `join_sources` 中所有节点已有指向 target 的 LINEAR 边时，JOIN 边仅作为声明式汇聚标注（纯标注模式），编译器验证边已存在和 reducer 声明；
+- JOIN 边采用单一便捷语法模式：编译器根据 `join_sources` 自动生成 `add_edge()` 调用，语义始终确定；
+- 如果 `join_sources` 中的源节点已有指向同一 target 的 LINEAR 边，验证阶段报 warning，编译器跳过重复的 `add_edge()`；
 - 现有的 fanout map-reduce 机制不受 JOIN 边影响；
 - `check_types()` 仍需校验 join 相关节点的 input/output type 兼容性。
 
@@ -375,29 +375,32 @@ interrupt() resume approved
   → 调用实际 executor → 执行失败（ExecutorError / 网络异常）
     → ExecutorError 传播到 invoke_node()
     → error_sink 记录失败 ExternalCallRecord（status="failed"）
-    → checkpoint 保留在"审批通过后、执行前"的状态
+    → LangGraph superstep 事务回滚：该节点所在 superstep 的所有 state 更新被撤销
+    → checkpoint 回退到 interrupt() 之前的状态
     → 调用方通过相同 thread_id 重试 run_workflow()
-      → LangGraph 从 checkpoint 恢复
-      → SideEffectExecutor 检测 state 中已有审批通过标记
-      → 跳过审批，直接重试实际 executor
+      → LangGraph 从 checkpoint 恢复（interrupt 之前的状态）
+      → SideEffectExecutor 重新执行 interrupt() → 再次等待审批
+      → 审批通过后重试实际 executor
       → 重试成功 → 返回结果；重试仍失败 → 再次传播 ExecutorError
 ```
+
+> **重要说明**：根据 LangGraph 的 superstep 事务语义（[Run graph nodes in parallel](https://docs.langchain.com/oss/python/langgraph/use-graph-api#run-graph-nodes-in-parallel)），superstep 是事务性的——如果节点执行失败，该 superstep 的所有 state 更新都会被回滚。这意味着审批通过后若执行失败，`interrupt()` 返回的审批结果也会被回滚，重试时需要重新审批。这符合安全原则：审批授权不应跨失败重试持久化，每次重试应重新获得授权。如果后续需要"审批后失败免审批重试"的语义，需要引入 LangGraph 的 `@task` 装饰器将副作用操作包装为独立 task（参见 8.4 节 `@task` 评估说明），利用 durable execution 的"已完成 work 不重复执行"语义。
 
 幂等键去重逻辑：
 
 ```
 SideEffectExecutor.__call__() in idempotency_key path:
-  1. 从 state 中读取 side_effect_records（dict[str, dict]）
-  2. 若 idempotency_key 已在 side_effect_records 中存在：
-     → 返回缓存结果 {"effect_result": records[key]["result"]}
-     → 不调用实际 executor
-  3. 若 idempotency_key 不存在：
+  1. 从 state 中读取 side_effect_records（list[dict]）
+  2. 遍历 records 列表，查找 idempotency_key 匹配的记录：
+     若找到 → 返回缓存结果 {"effect_result": matching_record["result"]}
+              → 不调用实际 executor
+  3. 若未找到匹配记录：
      → 调用实际 executor
-     → 将 {key: {"result": result, "timestamp": ...}} 写入 state.side_effect_records
+     → 将 {"key": idempotency_key, "result": result, "timestamp": ...} 追加到 side_effect_records
      → 返回结果
 ```
 
-> **LangGraph Durable Execution 兼容性说明**：LangGraph 的 [Durable Execution](https://docs.langchain.com/oss/python/langgraph/durable-execution) 要求工作流设计为确定性和幂等的，将副作用或非确定性操作包装在 tasks 中。审批和实际执行在同一个 superstep 内——审批通过后若执行失败，checkpoint 保留在审批通过后的状态，重试时跳过审批直接重试执行，符合 LangGraph Durable Execution 的语义（已完成的 work 不重复执行）。幂等键机制进一步增强了 Side Effect 的幂等性：即使外部调用方重复触发同一副作用，通过 state 中的执行记录去重，确保同一幂等键只执行一次。
+> **LangGraph Durable Execution 兼容性说明**：LangGraph 的 [Durable Execution](https://docs.langchain.com/oss/python/langgraph/durable-execution) 要求工作流设计为确定性和幂等的，将副作用或非确定性操作包装在 tasks 中。当前第三期使用 `StateGraph` API + `interrupt()` 实现审批中断，审批和实际执行在同一个 superstep 内。由于 LangGraph superstep 是事务性的，审批通过后若执行失败，整个 superstep 的 state 更新被回滚（包括审批结果），重试时需要重新审批（见上方"错误路径行为"说明）。幂等键机制在审批通过且执行成功的场景下提供去重保障：即使外部调用方重复触发同一副作用，通过 state 中的执行记录去重，确保同一幂等键只执行一次。如果后续需要"审批后失败免审批重试"的语义，需要引入 LangGraph 的 `@task` 装饰器（见下方 `@task` 评估说明）。
 
 - 扩展 CLI resume：
   - `pt2lg resume` 命令支持恢复 `side_effect` 节点的审批中断；
@@ -423,6 +426,20 @@ SideEffectExecutor.__call__() in idempotency_key path:
   - `edited` 决策允许调用方修改参数后再执行（参考 LangChain v1 `HumanInTheLoopMiddleware` 的 `approve`/`edit`/`reject`/`respond` 四种决策）；
   - `respond` 决策允许调用方直接回复文本作为工具结果，不执行实际副作用操作——适用于"ask user"交互场景（参考 LangChain v1 HITL middleware 的 `respond` 类型），此能力不在第三期范围内。
 
+LangGraph `@task` 装饰器评估：
+
+LangGraph 官方文档关于 [Durable Execution](https://docs.langchain.com/oss/python/langgraph/durable-execution) 推荐将副作用操作包装在 `@task` 装饰的函数中，以利用 durable execution 的"已完成 work 不重复执行"语义。经评估，第三期暂不采用 `@task`，原因如下：
+
+1. **当前架构基于 `StateGraph` API**：`@task` 主要用于 Functional API（`@entrypoint` + `@task`），而 prompt2langgraph 的编译器产出 `StateGraph`，在 `StateGraph` 节点内部使用 `@task` 需要额外的架构适配；
+2. **审批中断与 `@task` 的交互复杂**：`interrupt()` 必须在节点函数的顶层调用（不能在 `@task` 内部调用），审批逻辑和实际执行逻辑需要跨节点/task 边界协调，增加了实现复杂度；
+3. **最小闭环优先**：第三期的目标是"最小执行闭环"，使用 `interrupt()` + `Command(resume=...)` 的审批模式已能满足需求，`@task` 的 durable execution 语义（审批后失败免重试审批）属于增强能力。
+
+后续演进方向（不在第三期范围内）：
+
+- 评估将 `SideEffectExecutor` 的实际执行部分包装在 `@task` 中，审批通过后由 `@task` 执行副作用操作，利用 durable execution 语义实现"审批后失败免审批重试"；
+- 评估从 `StateGraph` API 迁移到 Functional API（`@entrypoint` + `@task`），以更自然地集成 `@task` 的 durable execution 能力；
+- 评估 `@task` 对 `retry_policy` 的支持，实现副作用操作的自动重试。
+
 > **设计依据**：LangGraph 的 [Interrupts](https://docs.langchain.com/oss/python/langgraph/interrupts) 机制允许在节点函数内部调用 `interrupt()` 挂起执行，通过 `Command(resume=...)` 恢复。LangChain v1 的 `HumanInTheLoopMiddleware` 提供 `interrupt_on` 配置和 `approve`/`edit`/`reject`/`respond` 四种审批决策（[Human-in-the-loop](https://docs.langchain.com/oss/python/langchain/human-in-the-loop)）。Deep Agents 的 HITL 通过 `create_deep_agent(interrupt_on={...})` 配置审批策略（[Deep Agents HITL](https://docs.langchain.com/oss/python/deepagents/human-in-the-loop)）。本计划的 Side Effect 审批模型是这三种模式的简化融合：用 `interrupt()` 挂起，用 `Command(resume=...)` 恢复，审批决策简化为 `approved`/`rejected` 二元选项。注意 `interrupt()` 依赖 checkpointer（`compile(checkpointer=...)`），这与 8.5 节的 Checkpointer 注入接口联动——没有 checkpointer 则 interrupt 无法生效，这也是第三期需要引入 SqliteSaver 的动因之一。
 
 ### 8.5 运行时状态边界增强模块
@@ -443,11 +460,11 @@ SideEffectExecutor.__call__() in idempotency_key path:
   - 保留 `_clear_thread()` 逻辑（清理 pending interrupt 标记和对应的 SQLite 文件）。
 - 修改 `run_workflow()` 的 Checkpointer 管理：
   - `resume` 时复用同一个 `SqliteSaver` 实例（通过 thread key 映射到 SQLite 文件路径）；
-  - `SqliteSaver` 初始化时调用其 `setup()` 方法（如需要）确保 schema 就绪；
+  - `SqliteSaver` 初始化时构造 `sqlite3.connect()` 连接即可，无需调用 `setup()`（SQLite 会自动创建表结构；`setup()` 是 `PostgresSaver` 的 API，`SqliteSaver` 不需要）；
   - 完成执行或 resume 成功后，可选择性保留或清理 SQLite 文件（建议保留以支持后续 time travel debugging）。
 - 新增依赖：
   - 在 `pyproject.toml` 中新增 `langgraph-checkpoint-sqlite>=2.0` 依赖；
-  - **版本兼容性确认**：实施前需确认 `langgraph-checkpoint-sqlite>=2.0` 与当前项目使用的 `langgraph>=1.0,<2.0` 版本兼容，以及 `SqliteSaver` 的 `from_conn_string()` / `setup()` API 在目标版本中的确切签名。若发现不兼容，优先考虑升级 `langgraph` 依赖范围或降级 `langgraph-checkpoint-sqlite` 版本。
+  - **版本兼容性确认**：实施前需确认 `langgraph-checkpoint-sqlite>=2.0` 与当前项目使用的 `langgraph>=1.0,<2.0` 版本兼容，以及 `SqliteSaver` 的确切构造方式。根据 LangGraph 官方文档，`SqliteSaver` 的构造方式为 `SqliteSaver(sqlite3.connect("path/to/db"))`（注意：`from_conn_string()` 是 `PostgresSaver` 的 API，`SqliteSaver` 不提供该方法）。若发现 API 不兼容，优先考虑升级 `langgraph` 依赖范围或降级 `langgraph-checkpoint-sqlite` 版本。
 - 保持 `InMemorySaver` 兼容路径：
   - `compile_workflow_to_graph()` 的 `checkpointer` 参数声明类型保持为泛型 `Any` 或 `BaseCheckpointSaver`，同时兼容 `InMemorySaver` 和 `SqliteSaver`；
   - 测试仍可使用 `InMemorySaver`（`tests/test_runner.py` 中构造 `InMemorySaver()` 注入）。
@@ -478,10 +495,10 @@ SQLite 并发说明：
 - 不引入生产级 PostgresSaver（作为后续演进方向）；
 - 不在 bundle/lockfile 中写入数据库连接字符串或凭据；
 - `.pt2lg-runtime/` 路径约定保持兼容（从 JSON 文件变为 SQLite 文件）；
-- `SqliteSaver` 的 `setup()` 调用需要处理已有数据库文件的情况（幂等迁移）；
+- `SqliteSaver` 的构造无需 `setup()` 调用（`setup()` 是 `PostgresSaver` 的 API；`SqliteSaver` 通过 `SqliteSaver(sqlite3.connect("path"))` 构造，SQLite 自动创建表结构）；
 - 不完全移除 `InMemorySaver` 路径（`checkpointer=None` 仍创建 `InMemorySaver`，保持向后兼容；测试和 API 调用方无需修改；CLI 通过显式传入 `SqliteSaver` 使用 SQLite 持久化）。
 
-> **设计依据**：LangGraph 的 [Persistence](https://docs.langchain.com/oss/python/langgraph/persistence) 文档列出了 `InMemorySaver`（内置，用于实验）、`SqliteSaver`（需 `langgraph-checkpoint-sqlite`，用于本地开发）和 `PostgresSaver`（需 `langgraph-checkpoint-postgres`，用于生产）三种 checkpointer。`compile(checkpointer=...)` 接受任意 `BaseCheckpointSaver` 实例，调用方可通过依赖注入切换。LangGraph 的 `SqliteSaver` 提供 `from_conn_string()` 类方法和 `setup()` 迁移方法（[Checkpointer libraries](https://docs.langchain.com/oss/python/langgraph/persistence#checkpointer-libraries)）。本计划的 Checkpointer 注入与 LangGraph 原生模式完全一致：`run_workflow()` 接受 `BaseCheckpointSaver` 参数，CLI 默认注入 `SqliteSaver.from_conn_string("path/to/thread.db")`，测试注入 `InMemorySaver`。LangGraph 的 [Interrupts](https://docs.langchain.com/oss/python/langgraph/interrupts) 机制依赖 checkpointer 才能正确工作——`interrupt()` 调用时 graph state 被保存为 checkpoint，resume 时从该 checkpoint 恢复。这也是第三期引入 `SqliteSaver` 的根本动因：稳定的持久化使得 `side_effect` 的审批中断、`human_gate` 的多轮交互和后续 time travel debugging 成为可能。
+> **设计依据**：LangGraph 的 [Persistence](https://docs.langchain.com/oss/python/langgraph/persistence) 文档列出了 `InMemorySaver`（内置，用于实验）、`SqliteSaver`（需 `langgraph-checkpoint-sqlite`，用于本地开发）和 `PostgresSaver`（需 `langgraph-checkpoint-postgres`，用于生产）三种 checkpointer。`compile(checkpointer=...)` 接受任意 `BaseCheckpointSaver` 实例，调用方可通过依赖注入切换。根据 LangGraph 官方文档，`SqliteSaver` 的构造方式为 `SqliteSaver(sqlite3.connect("path/to/db"))`（[Checkpointer libraries](https://docs.langchain.com/oss/python/langgraph/persistence#checkpointer-libraries)），注意 `from_conn_string()` 是 `PostgresSaver` 的 API，`SqliteSaver` 不提供该方法；`setup()` 同样是 `PostgresSaver` 的迁移方法，`SqliteSaver` 不需要。本计划的 Checkpointer 注入与 LangGraph 原生模式完全一致：`run_workflow()` 接受 `BaseCheckpointSaver` 参数，CLI 默认注入 `SqliteSaver(sqlite3.connect("path/to/thread.db"))`，测试注入 `InMemorySaver`。LangGraph 的 [Interrupts](https://docs.langchain.com/oss/python/langgraph/interrupts) 机制依赖 checkpointer 才能正确工作——`interrupt()` 调用时 graph state 被保存为 checkpoint，resume 时从该 checkpoint 恢复。这也是第三期引入 `SqliteSaver` 的根本动因：稳定的持久化使得 `side_effect` 的审批中断、`human_gate` 的多轮交互和后续 time travel debugging 成为可能。
 
 ### 8.6 State Schema 类型系统跨模块考量
 
@@ -502,7 +519,7 @@ SQLite 并发说明：
 **Side Effect → State Key 约定：**
 
 - 副作用执行结果默认写入 `side_effect_results` state key（需在 `state_schema.reducers` 中声明为 `APPEND`）；
-- 幂等键去重通过 `side_effect_records` state key 存储执行记录（dict[str, dict]），需声明为 `MERGE_DICT` reducer；
+- 幂等键去重通过 `side_effect_records` state key 存储执行记录（list[dict]），需声明为 `APPEND` reducer（而非 `MERGE_DICT`，因为幂等键去重需要"先写入优先"语义——遍历列表查找同 key 记录时，最早写入的记录优先；`MERGE_DICT` 是 last-write-wins 语义，不适合幂等去重场景）；
 - 这两个 key 在 workflow 的 `state_schema.reducers` 中自动生成或由 LLM 在 JSON plan 中声明，不要求用户手动配置。
 
 **State Schema 自动推导：**
@@ -571,7 +588,7 @@ Checkpointer 注入应满足：
 - CLI `pt2lg run` / `pt2lg resume` 内部显式构造 `SqliteSaver` 并传入（数据库文件存储在 `.pt2lg-runtime/<hash>.db`）；
 - `compile_workflow_to_graph()` 的 `checkpointer` 参数与 runner 的 `checkpointer` 参数传递一致；
 - 测试可通过注入 `InMemorySaver` 覆盖默认行为；
-- `SqliteSaver` 的 `setup()` 迁移在首次使用时自动执行；
+- `SqliteSaver` 通过 `SqliteSaver(sqlite3.connect("path"))` 构造，无需 `setup()` 调用（`setup()` 是 `PostgresSaver` 的 API）；
 - Resume 成功后默认不清理 `.pt2lg-runtime/<hash>.db` 文件（保留 checkpoint 历史），仅清理内存中的 pending interrupt 标记；
 - `checkpointer` 参数不与 `model_client` 或 `tool_registry` 参数冲突。
 
@@ -624,6 +641,15 @@ Checkpointer 注入应满足：
 
 只要上述能力仍未实现，但 Skill 可经 LLM 生成 WorkflowSpec、Join 可执行 Reducer 隐式合并、Side Effect 可审批中断执行、Checkpointer 可注入切换，第三期依然可以判定为完成。
 
+### 9.9 预期规模边界
+
+第三期各模块的预期规模如下，超出预期规模时不保证正确性，但不应静默产生错误结果：
+
+- Skill 转换预期支持 ≤20 步骤的 Skill（步骤数过多可能导致 LLM 输出质量下降或 JSON 解析失败率上升）；
+- Join 边预期支持 ≤10 个 `join_sources` 节点（LangGraph 对同一 target 的入边数量无硬性限制，但过多并行分支可能影响可读性和调试体验）；
+- SqliteSaver 预期支持单文件 ≤100MB 的 checkpoint 数据（超出建议迁移到 PostgresSaver）；
+- Side Effect 审批中断预期支持单次运行 ≤5 个待审批节点（过多中断点影响用户体验，建议通过 workflow 设计减少审批频率）。
+
 ---
 
 ## 10. 后续衔接建议
@@ -637,7 +663,7 @@ Checkpointer 注入应满足：
 - 阶段性完成标准与里程碑。
 
 后续演进方向（不在 v0.2 范围内）：
-- `LANGCHAIN_TOOL` executor：对接 LangChain `BaseTool` 生态，使 `tool` 节点可直接调用 LangChain 工具；
+- `LANGCHAIN_TOOL` executor：对接 LangChain `BaseTool` 生态，使 `tool` 节点可直接调用 LangChain 工具。当前 `ExecutorType.LANGCHAIN_TOOL` 已在 IR 模型中定义但未实现，与 `PYTHON_CALLABLE` 的定位差异为：前者对接 LangChain `BaseTool` 生态（自动 schema 推导、tool call 集成），后者是受控 Python callable 注册。Skill 转换器生成的 `tool` 节点当前使用 `PYTHON_CALLABLE`，后续可平滑迁移到 `LANGCHAIN_TOOL`；
 - `RetryPolicy`：映射 `NodeSpec.retry` 到 LangGraph 原生 `RetryPolicy`，实现自动重试；
 - 生产级 PostgresSaver：支持 Postgres 持久化，用于生产环境；
 - Skill 脚本预注册：自动分析 Skill 目录下的 Python 脚本并预注册 tool callable；
@@ -711,6 +737,7 @@ analyze_skill_dir (v0.1 已有)
 | 持久化与 Checkpoint | [Persistence](https://docs.langchain.com/oss/python/langgraph/persistence) | 6.5, 8.5 |
 | Checkpointer 集成列表 | [Checkpointer integrations](https://docs.langchain.com/oss/python/integrations/checkpointers/index) | 6.5, 8.5 |
 | Checkpointer 库说明 | [Persistence#checkpointer-libraries](https://docs.langchain.com/oss/python/langgraph/persistence#checkpointer-libraries) | 6.5, 8.5 |
+| Durable Execution | [Durable execution](https://docs.langchain.com/oss/python/langgraph/durable-execution) | 8.4 |
 
 ### LangChain Agent 与 Middleware
 
@@ -747,4 +774,4 @@ analyze_skill_dir (v0.1 已有)
 | 单元测试（fake model） | [Unit testing](https://docs.langchain.com/oss/python/langchain/test/unit-testing) | 6.6 |
 | InMemorySaver checkpointer | [InMemorySaver checkpointer](https://docs.langchain.com/oss/python/langchain/test/unit-testing#inmemorysaver-checkpointer) | 6.6, 8.5 |
 
-> **使用说明**：以上链接基于 LangChain/LangGraph v1 官方文档（docs.langchain.com），查询日期为 2026 年 5 月。后续实施时如遇链接失效，可通过 docs.langchain.com 搜索对应主题关键词获取最新页面。
+> **使用说明**：以上链接基于 LangChain/LangGraph v1 官方文档（docs.langchain.com），查询日期为 2026 年 5 月。LangChain/LangGraph 文档可能随版本更新而重构，如遇链接失效，可通过 docs.langchain.com 搜索对应主题关键词获取最新页面。
