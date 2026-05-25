@@ -10,16 +10,16 @@
 
 ## 2. 阶段定位
 
-v0.2 采用《三期任务划分方案A》中"目标链路优先"的推进策略。第三期对应其中的 **Skill 与控制流补全（Skill & Control Flow Completion）**，核心目标是在 v0.2 第一期已实现的 `Prompt → LLM → JSON plan → WorkflowSpec` 输入闭环和第二期已实现的真实 LLM/Tool 执行能力基础之上，补齐 Skill 到工作流的生成能力、Join 控制流执行语义、Side Effect 最小执行闭环，并增强运行时状态管理的持久化边界。
+v0.2 采用《三期任务划分方案A》中"目标链路优先"的推进策略。第三期对应其中的 **Skill 与控制流补全（Skill & Control Flow Completion）**，核心目标是在 v0.2 第一期已实现的 `Prompt → LLM → JSON plan → WorkflowSpec` 输入闭环和第二期已实现的真实 LLM/Tool 执行能力基础之上，按增强项方式补齐 Skill 到工作流的 alpha 生成能力、Join 控制流最小执行语义、Side Effect 审批最小闭环，并增强运行时状态管理的持久化边界。
 
-第三期是 v0.2 的收尾阶段，其重点在于把 v0.2 初期打通的输入链路和执行链路扩展到更接近项目目标定位的完整度，同时为后续 `side_effect` 审批升级、生产级 checkpointer 和 Web UI 等能力奠定基础。
+第三期是 v0.2 的增强收尾阶段，其重点不是重新定义 v0.2 主版本目标，而是在前两期已打通的输入链路和执行链路之上增加可裁剪能力。若 Skill alpha、Join、Side Effect 或 SQLite 持久化中的部分增强项因复杂度或依赖兼容性暂缓，v0.2 主线仍以 Prompt 输入闭环、真实 LLM/Tool 执行能力和对应诊断测试作为版本达成基线。
 
 第三期的核心特征是：**复用前两期已打通的链路，以最小增量补齐剩余缺口。**
 
-1. Skill 转换复用第一期 `Prompt → LLM → JSON plan → WorkflowSpec` 链路，将输入从自然语言 Prompt 替换为 Skill 目录下的 `SKILL.md` 原始文件内容；
+1. Skill 转换复用第一期 `Prompt → LLM → JSON plan → WorkflowSpec` 链路，将输入从自然语言 Prompt 扩展为 Skill 目录下的 `SKILL.md` 原始内容与 `SkillDirectoryAnalysis` 结构化分析结果；
 2. Join 执行复用现有 fanout reducer 隐式合并机制，无需新增节点类型；
 3. Side Effect 审批复用现有 `human_gate` 的 `interrupt()` + `Command(resume=...)` 模式；
-4. 运行时持久化复用 LangGraph 的 `BaseCheckpointSaver` 注入接口，CLI 默认使用 `SqliteSaver`。
+4. 运行时持久化优先复用 LangGraph 的 `BaseCheckpointSaver` 注入接口，CLI 默认 `SqliteSaver` 作为增强项，在依赖兼容性确认后启用。
 
 ---
 
@@ -27,13 +27,13 @@ v0.2 采用《三期任务划分方案A》中"目标链路优先"的推进策略
 
 v0.2 第三期的阶段目标是：
 
-- 基于 v0.1 已有的 `analyze_skill_dir()` 静态分析能力作为辅助参考，实现 Skill → `WorkflowSpec` 的 LLM 驱动转换，直接读取 Skill 目录下的 `SKILL.md` 原始内容作为 LLM 输入，使 Skill 不再仅限静态分析，而是具备进入工作流编译链路的能力；
-- 补齐 `join` 边在 IR 模型和编译器中的执行语义，通过 Reducer 隐式合并实现多源 fan-in；
-- 为 `side_effect` 节点提供带审批中断的最小执行器，复用现有 LangGraph `interrupt()` + `Command(resume=...)` 机制；
-- 抽象 Chekpointer 注入接口，解耦对 `InMemorySaver` 内部结构的耦合，CLI 默认使用 `SqliteSaver` 提供稳定的本地持久化；
+- 基于 v0.1 已有的 `analyze_skill_dir()` 静态分析能力与 `SKILL.md` 原始内容，实现 Skill → `WorkflowSpec` 的 LLM 驱动 alpha 转换，使 Skill 具备进入工作流编译链路的受控入口；
+- 补齐 `join` 边在 IR 模型和编译器中的最小执行语义，通过 Reducer 隐式合并实现多源 fan-in，并明确 reducer 缺失、并行写入顺序不稳定等约束；
+- 为 `side_effect` 节点提供带审批中断的最小执行器，复用现有 LangGraph `interrupt()` + `Command(resume=...)` 机制，首期仅承诺 approved/rejected 二元审批；
+- 抽象 Checkpointer 注入接口，解耦对 `InMemorySaver` 内部结构的耦合；CLI 默认 `SqliteSaver` 作为可选增强，在依赖兼容性确认后启用；
 - 在整个过程中保持前两期已交付能力（Prompt 输入闭环、真实 LLM/Tool 执行、策略约束体系）的完全兼容。
 
-一句话概括：**第三期是在前两期打通的输入和执行链路之上，补齐 Skill 生成、Join 控制流、Side Effect 闭环和持久化边界，使 v0.2 的产品完整度接近项目目标定位。**
+一句话概括：**第三期是在前两期打通的输入和执行链路之上，以可裁剪方式补齐 Skill alpha 生成、Join 最小控制流、Side Effect 审批闭环和 Checkpointer 注入边界，提升 v0.2 对项目目标的覆盖度。**
 
 ---
 
@@ -41,11 +41,11 @@ v0.2 第三期的阶段目标是：
 
 第三期纳入以下范围：
 
-1. 实现 Skill → `WorkflowSpec` 的 LLM 驱动转换器，直接读取 Skill 目录下的 `SKILL.md` 原始内容发给 LLM 生成简化 JSON plan，再经 `JSONPlanAdapter` 转为 `WorkflowSpec`；
+1. 实现 Skill → `WorkflowSpec` 的 LLM 驱动 alpha 转换器，以 Skill 目录下的 `SKILL.md` 原始内容作为主语义输入，以 `SkillDirectoryAnalysis` 的步骤、资源和风险诊断作为结构化约束上下文，生成简化 JSON plan 后再经 `JSONPlanAdapter` 转为 `WorkflowSpec`；
 2. 为 Skill 工作流支持从 CLI/API 注入参数，明确 scripts/assets/references 资源在工作流中的表示方式；
 3. 补齐 `join` 边在 IR 和编译器中的 Reducer 隐式合并执行语义；
 4. 为 `side_effect` 节点提供基于 LangGraph `interrupt()` 的审批中断最小执行器；
-5. 抽象 Checkpointer 注入接口，支持 `BaseCheckpointSaver` 依赖注入，CLI 默认使用 `SqliteSaver`；
+5. 抽象 Checkpointer 注入接口，支持 `BaseCheckpointSaver` 依赖注入；CLI 默认使用 `SqliteSaver` 作为增强项，不阻塞核心第三期验收；
 6. 同步更新验证、Mermaid 表达、fixtures 与回归测试；
 7. 同步更新文档，至少包括 `README.md`、`CLAUDE.md`、`AGENTS.md`。
 
@@ -78,9 +78,11 @@ v0.2 第三期的阶段目标是：
 
 > **设计依据**：LangGraph 的 `StateGraph` 采用"增量构建"模式——通过 `add_node` → `add_edge` → `compile` 三步渐进构建，每一步都可独立验证。本计划遵循同样的增量策略：第三期不重新设计架构，而是在前两期已验证稳定的链路和基础设施之上做最小扩展。参见 LangGraph 的 [Use the graph API](https://docs.langchain.com/oss/python/langgraph/use-graph-api) 中的增量构建模式和 [Graph API overview](https://docs.langchain.com/oss/python/langgraph/graph-api)。
 
-### 6.2 Skill 转换：直接使用 SKILL.md 原始内容
+### 6.2 Skill 转换：SKILL.md 原文 + 静态分析约束
 
-Skill 转换器直接读取 Skill 目录下的 `SKILL.md` 文件原始内容作为 LLM 输入，不经过 `SkillDirectoryAnalysis` 中间结构。`analyze_skill_dir()` 的静态分析结果（风险警告、资源清单）可作为辅助上下文补充给 LLM，但不默认执行 Skill 目录下的 scripts。对高危操作（shell 脚本、网络调用、secrets 相关）在生成的 workflow 中保留 `human_gate` 审批边界。
+Skill 转换器读取 Skill 目录下的 `SKILL.md` 文件原始内容作为主语义输入，同时将 `analyze_skill_dir()` 的静态分析结果作为结构化约束上下文提供给 LLM，包括步骤提取结果、资源清单、风险诊断和 `draft_nodes`。其中 `SkillDirectoryAnalysis` 不是可直接执行的中间 IR，但其风险诊断优先级高于 LLM 自由判断：若静态分析发现高危操作（shell 脚本、网络调用、secrets、文件写入等），转换器必须在结果中保留诊断，并要求生成 workflow 包含审批边界；若 LLM 输出缺少必要审批边界，后续校验应返回明确 diagnostic，而不是静默接受。
+
+Skill 转换在第三期定位为 alpha 能力，验收重点是“可生成、可诊断、可人工修正”，不承诺任意 Skill 都能一次性转换为可执行工作流，也不默认执行 Skill 目录下的 scripts、assets 或 references。
 
 > **设计依据**：Deep Agents 的 Skills 系统通过 `create_deep_agent(skills=[...])` 将预定义的 skills 注入 agent，但 skills 的执行受 middleware 约束——`HumanInTheLoopMiddleware` 通过 `interrupt_on` 参数配置哪些工具调用需要审批。Deep Agents 的 Skills 有三个值得借鉴的设计点：(1) **渐进式加载（Progressive Disclosure）**：Skills 的 SKILL.md 通过 frontmatter description 做匹配，agent 只在判断需要时才加载完整内容，减少上下文消耗；(2) **Skills + SubAgents 组合**：subagent 不继承父 agent 的 skills，需要显式配置——提示 Skill → Workflow 转换时可能需要区分主 workflow 和子 workflow；(3) **Filesystem Backend 抽象**：Skills 依赖 backend 提供文件访问能力，资源建模可参考此抽象。本计划的 Skill → Workflow 转换遵循"分析-生成-审批"三层模型：分析阶段通过 `analyze_skill_dir()` 提取步骤和风险信号，生成阶段通过 LLM 将步骤映射为工作流节点并对高危步骤插入 `human_gate`，执行阶段通过策略约束和 interrupt 机制确保审批边界。参见 Deep Agents 的 [Customization](https://docs.langchain.com/oss/python/deepagents/customization) 和 [Human-in-the-loop](https://docs.langchain.com/oss/python/langchain/human-in-the-loop)。
 
@@ -92,19 +94,19 @@ Join 边采用单一的便捷语法模式：`join_sources` 声明哪些源节点
 
 基础机制：state schema 中声明的 reducer（如 `APPEND`、`MERGE_DICT`）在 LangGraph 的 superstep 边界自动聚合多源输出。这不需要新增 `join` 节点类型或专门的 join executor，只需在 IR 和编译器层面补齐 join 边的声明语义和必要的边连接。
 
-`join_sources` 字段的本质是"语法糖"——让用户以声明方式表达汇聚意图，编译器自动处理边连接。JOIN 边等价于多条 LINEAR 边的简写，语义始终确定。
+`join_sources` 字段的本质是"语法糖"——让用户以声明方式表达汇聚意图，编译器自动处理边连接。JOIN 边等价于多条 LINEAR 边的简写，但其聚合结果仍遵循 LangGraph reducer 语义：未声明 reducer 的 state key 默认覆盖，多个并行分支的更新顺序不保证稳定。若用户需要稳定顺序，应要求分支输出携带可排序字段，由 target 节点显式排序。
 
 > **设计依据**：LangGraph 的并行执行模型基于 superstep——同时触发的所有节点在同一 superstep 中并发执行，整个 superstep 是事务性的（全部成功或全部回滚）。当多个并行分支写入同一 state key，reducer 在 superstep 边界自动聚合写入。fan-in 的正确工作前提是：**多个并行分支通过各自的 `add_edge()` 指向同一个 target 节点**，LangGraph 才能保证 target 在所有源完成后执行。这正是 [Run graph nodes in parallel](https://docs.langchain.com/oss/python/langgraph/use-graph-api#run-graph-nodes-in-parallel) 中描述的 fan-out/fan-in 模式。LangGraph 的 [Send API](https://docs.langchain.com/oss/python/langgraph/graph-api#send) 为动态 fan-out 提供了 `Send(node, state)` 机制——本计划中已有的 `FANOUT` 边已使用 `Send`，而 `JOIN` 边是对 fan-in 模式的声明式封装。
 
 ### 6.4 Side Effect 审批：中断等待而非预注册执行
 
-Side effect 节点执行时，先通过 LangGraph `interrupt()` 挂起，将副作用详情（节点 ID、参数、幂等键、资源路径）暴露给调用方。调用方通过 CLI `resume` 或 API `resume_payload` 传入审批结果（`approved`/`rejected`）后继续或终止。这与现有 `human_gate` 的 interrupt/resume 机制完全一致，复用已有基础设施。
+Side effect 节点执行时，先通过 LangGraph `interrupt()` 挂起，将副作用详情（节点 ID、参数、幂等键、资源路径）暴露给调用方。调用方通过 CLI `resume` 或 API `resume_payload` 传入审批结果（`approved`/`rejected`）后继续或终止。这与现有 `human_gate` 的 interrupt/resume 机制完全一致，复用已有基础设施。第三期核心闭环只承诺二元审批和拒绝不执行；幂等记录、多中断批量恢复、`edited/respond` 决策和 `@task` durable side effect 属于后续增强，不作为核心完成门槛。
 
 > **设计依据**：LangGraph 的 [Interrupts](https://docs.langchain.com/oss/python/langgraph/interrupts) 机制允许在节点函数内部任意位置调用 `interrupt()` 挂起执行，通过 `Command(resume=...)` 恢复。LangChain v1 的 `HumanInTheLoopMiddleware` 通过 `interrupt_on` 配置需要审批的工具调用，提供 `approve`/`edit`/`reject`/`respond` 四种审批决策。本计划的 Side Effect 审批模型借鉴此模式：`side_effect` 节点在执行前调用 `interrupt()` 等待审批，审批通过后才执行实际的副作用操作。参见 LangChain 的 [Human-in-the-loop](https://docs.langchain.com/oss/python/langchain/human-in-the-loop) 和 [Middleware hooks](https://docs.langchain.com/oss/python/releases/langchain-v1#custom-middleware)。
 
 ### 6.5 Checkpointer 注入：依赖抽象而非具体实现
 
-`run_workflow()` 和 `compile_workflow_to_graph()` 接受 `checkpointer` 参数，类型为 LangGraph 的 `BaseCheckpointSaver`。内部不再耦合 `InMemorySaver` 的私有结构。CLI 默认使用 `SqliteSaver` 提供稳定的本地持久化（替换当前 `.pt2lg-runtime/` JSON 文件方案）。
+`run_workflow()` 和 `compile_workflow_to_graph()` 接受 `checkpointer` 参数，类型为 LangGraph 的 `BaseCheckpointSaver`。核心目标是让运行时依赖 checkpointer 抽象，而不是依赖 `InMemorySaver` 的私有结构。CLI 默认使用 `SqliteSaver` 提供稳定的本地持久化可作为增强项推进；若 `langgraph-checkpoint-sqlite` 依赖或 API 兼容性存在风险，则第三期应先保留现有 CLI 行为，并只交付 checkpointer 注入边界。
 
 > **设计依据**：LangGraph 的 [Persistence](https://docs.langchain.com/oss/python/langgraph/persistence) 文档列出了多种 checkpointer 实现（`InMemorySaver`、`SqliteSaver`、`PostgresSaver` 等），所有实现遵循统一的 `BaseCheckpointSaver` 接口。LangGraph 的 `compile(checkpointer=...)` 接受任意 `BaseCheckpointSaver` 实现，调用方可通过依赖注入切换存储后端而不修改图逻辑。本计划遵循同样的接口抽象原则：`run_workflow()` 和 `compile_workflow_to_graph()` 接受 `BaseCheckpointSaver` 参数，CLI 默认注入 `SqliteSaver`，测试注入 `InMemorySaver`。参见 LangGraph 的 [Checkpointer integrations](https://docs.langchain.com/oss/python/integrations/checkpointers/index) 和 [Persistence](https://docs.langchain.com/oss/python/langgraph/persistence#checkpointer-libraries)。
 
@@ -147,10 +149,10 @@ Skill 转换不默认执行 Skill 目录下的 scripts。Join 执行不引入新
 | `src/prompt2langgraph/registry/builtins.py` | 新增 `builtin.side_effect` schema-only definition（如需要） | 8.4 |
 | `src/prompt2langgraph/runtime/runner.py` | `run_workflow()` 签名扩展 + `_checkpointer_for()` 逻辑重构 | 8.5 |
 | `src/prompt2langgraph/visualization/mermaid.py` | JOIN 边 `join_sources` 标注 + 虚线汇聚箭头 | 8.3 |
-| `src/prompt2langgraph/cli.py` | `plan --skill-dir` 参数 + `run`/`resume` 使用 `SqliteSaver` | 8.2, 8.5 |
+| `src/prompt2langgraph/cli.py` | `plan --skill-dir` 参数 + P2 增强路径中 `run`/`resume` 使用 `SqliteSaver` | 8.2, 8.5 |
 | `src/prompt2langgraph/__init__.py` | 暴露 `SkillPlanRequest`、`SkillPlanResult`、`plan_skill_to_workflow_spec` | 8.2 |
 | `src/prompt2langgraph/prompting/__init__.py` | 导出 `skill_planner` 符号 | 8.1 |
-| `pyproject.toml` | 新增 `langgraph-checkpoint-sqlite>=2.0` 依赖 | 8.5 |
+| `pyproject.toml` | P2 增强路径新增 `langgraph-checkpoint-sqlite>=2.0` 依赖 | 8.5 |
 | `README.md` | 同步 Skill 转换、Join、Side Effect、Checkpointer 能力 | 全部 |
 | `CLAUDE.md` | 同步能力边界与回归要求 | 全部 |
 | `AGENTS.md` | 同步能力边界与回归要求 | 全部 |
@@ -183,7 +185,7 @@ Skill 转换不默认执行 Skill 目录下的 scripts。Join 执行不引入新
 
 > **代码库现状基线**：`adapters/skill_dir.py` 已实现 `analyze_skill_dir()` 静态分析函数，输出 `SkillDirectoryAnalysis`（含 `name`、`description`、`steps`、`resources`、`draft_nodes`、`report`）。`adapters/json_plan.py` 已实现 `JSONPlanAdapter.parse()` 将简化 JSON plan 转为 `WorkflowSpec`。`prompting/planner.py` 已实现 `plan_prompt_to_workflow_spec()` 串联 Prompt → LLM → JSON plan → `WorkflowSpec`。以下为在现有基础上新增 Skill 到 Workflow 的 LLM 驱动转换器。
 
-直接读取 Skill 目录下的 `SKILL.md` 原始文件内容作为 LLM 输入，通过 LLM 生成简化 JSON plan，再复用 `JSONPlanAdapter` 转为 `WorkflowSpec`。`analyze_skill_dir()` 的静态分析结果（风险警告、资源清单）作为辅助上下文补充给 LLM，但 LLM 的主输入是 `SKILL.md` 原文。
+读取 Skill 目录下的 `SKILL.md` 原始文件内容作为主语义输入，并将 `analyze_skill_dir()` 的静态分析结果作为结构化约束上下文，通过 LLM 生成简化 JSON plan，再复用 `JSONPlanAdapter` 转为 `WorkflowSpec`。其中 `SKILL.md` 原文保留完整上下文，`SkillDirectoryAnalysis` 提供步骤、资源和风险事实；当两者冲突时，风险诊断和安全约束优先。
 
 该模块应完成：
 
@@ -469,45 +471,47 @@ LangGraph 官方文档关于 [Durable Execution](https://docs.langchain.com/oss/
 
 > **代码库现状基线**：`runtime/runner.py` 中 `_checkpointer_for()` 创建 `InMemorySaver`，`_save_thread_state()` / `_load_thread_state()` 通过 JSON 序列化 `InMemorySaver.storage` / `.writes` / `.blobs` 内部结构做本地持久化。`compile_workflow_to_graph()` 已接受 `checkpointer` 参数但 runner 使用 `InMemorySaver`。以下为在现有基础上抽象 Checkpointer 注入接口。
 
-抽象 Checkpointer 注入接口，解耦对 `InMemorySaver` 内部结构的依赖，CLI 默认使用 `SqliteSaver` 提供稳定的本地持久化。
+抽象 Checkpointer 注入接口，解耦对 `InMemorySaver` 内部结构的依赖。CLI 默认使用 `SqliteSaver` 提供稳定本地持久化是增强项，应在依赖兼容性确认后启用；若 SQLite checkpointer 暂不可用，第三期仍应先完成 `BaseCheckpointSaver` 依赖注入边界，并保持现有 CLI runtime 状态行为兼容。
 
 该模块应完成：
 
 - 修改 `runtime/runner.py` 中的 `run_workflow()` 签名：
   - 新增 `checkpointer: BaseCheckpointSaver | None = None` 参数（可选依赖注入）；
   - `checkpointer` 为 `None` 时，保持现有行为创建 `InMemorySaver`（向后兼容，测试和 API 调用方无需修改）；
-  - CLI 内部显式构造 `SqliteSaver` 并通过 `checkpointer=sql_saver` 参数传入，不改变 `None` 的默认语义；
-  - 移除对 `_THREAD_CHECKPOINTERS` 全局字典的依赖（checkpointer 生命周期由调用方管理或 runner 内部创建并传递）；
-  - 移除 `_save_thread_state()` / `_load_thread_state()` 的 JSON 序列化逻辑（SqliteSaver 自行管理持久化；`InMemorySaver` 路径不再需要 JSON 持久化）；
-  - 保留 `.pt2lg-runtime/` 目录作为 SQLite 数据库文件的存储路径（文件名用 thread key hash 区分不同 workflow/thread）；
-  - 保留 `_clear_thread()` 逻辑（清理 pending interrupt 标记和对应的 SQLite 文件）。
+  - CLI 内部可在增强路径中显式构造 `SqliteSaver` 并通过 `checkpointer=sql_saver` 参数传入，不改变 `None` 的默认语义；
+  - 优先减少对 `_THREAD_CHECKPOINTERS` 全局字典的依赖，使 checkpointer 生命周期由调用方管理或 runner 内部通过稳定接口管理；
+  - `_save_thread_state()` / `_load_thread_state()` 的 JSON 序列化逻辑在 SQLite 增强路径启用后可被替换；若 SQLite 暂缓，则保留旧逻辑并补充明确诊断，避免破坏现有跨进程 resume；
+  - 保留 `.pt2lg-runtime/` 目录作为本地 runtime 状态存储路径；SQLite 增强路径使用数据库文件，旧路径继续使用 JSON 状态文件；
+  - 保留 `_clear_thread()` 逻辑（清理 pending interrupt 标记和对应 runtime 状态文件）。
 - 修改 `run_workflow()` 的 Checkpointer 管理：
-  - `resume` 时复用同一个 `SqliteSaver` 实例（通过 thread key 映射到 SQLite 文件路径）；
-  - `SqliteSaver` 初始化时构造 `sqlite3.connect()` 连接即可。**实施前需确认**：`langgraph-checkpoint-sqlite>=2.0` 的 `SqliteSaver` 是否需要在构造后调用 `setup()` 创建表结构（根据 LangGraph 官方 Add Memory 文档，多数数据库 checkpointer 提供 `setup()` 方法执行迁移；SQLite 是否自动建表取决于具体版本）。若需要 `setup()`，在 CLI 初始化后调用；如不需要（SQLite 通过 `sqlite3.connect()` 自动建表），则无需。建议实现时添加 `try/except` 防御性调用 `setup()` 以确保跨版本兼容；
-  - 完成执行或 resume 成功后，可选择性保留或清理 SQLite 文件（建议保留以支持后续 time travel debugging）。
+  - P0/P1 路径中，`resume` 继续复用现有 thread key 与 JSON runtime 状态，避免破坏当前跨进程恢复行为；
+  - P2 SQLite 增强路径中，`resume` 时复用同一个 `SqliteSaver` 实例（通过 thread key 映射到 SQLite 文件路径）；
+  - P2 SQLite 增强路径中，`SqliteSaver` 初始化时构造 `sqlite3.connect()` 连接即可。**实施前需确认**：`langgraph-checkpoint-sqlite>=2.0` 的 `SqliteSaver` 是否需要在构造后调用 `setup()` 创建表结构（根据 LangGraph 官方 Add Memory 文档，多数数据库 checkpointer 提供 `setup()` 方法执行迁移；SQLite 是否自动建表取决于具体版本）。若需要 `setup()`，在 CLI 初始化后调用；如不需要（SQLite 通过 `sqlite3.connect()` 自动建表），则无需。建议实现时添加 `try/except` 防御性调用 `setup()` 以确保跨版本兼容；
+  - P2 SQLite 增强路径中，完成执行或 resume 成功后，可选择性保留或清理 SQLite 文件（建议保留以支持后续 time travel debugging）。
 - 新增依赖：
-  - 在 `pyproject.toml` 中新增 `langgraph-checkpoint-sqlite>=2.0` 依赖；
+  - 仅在启用 P2 SQLite 增强路径时，在 `pyproject.toml` 中新增 `langgraph-checkpoint-sqlite>=2.0` 依赖；
   - **版本兼容性确认**：实施前需确认 `langgraph-checkpoint-sqlite>=2.0` 与当前项目使用的 `langgraph>=1.0,<2.0` 版本兼容，以及 `SqliteSaver` 的确切构造方式。根据 LangGraph 官方文档，`SqliteSaver` 的构造方式为 `SqliteSaver(sqlite3.connect("path/to/db"))`（注意：`from_conn_string()` 是 `PostgresSaver` 的 API，`SqliteSaver` 不提供该方法）。若发现 API 不兼容，优先考虑升级 `langgraph` 依赖范围或降级 `langgraph-checkpoint-sqlite` 版本。
 - **备选方案**：若 `langgraph-checkpoint-sqlite>=2.0` 与当前 `langgraph>=1.0,<2.0` 存在无法解决的兼容性问题，回退为保持 `InMemorySaver` 默认行为 + 在文档中说明 SQLite 持久化作为后续升级项（Phase 3 其他功能模块（Skill、Join、Side Effect）不受影响，仅在 CLI `run`/`resume` 的持久化行为上保持现状）。
 - 保持 `InMemorySaver` 兼容路径：
   - `compile_workflow_to_graph()` 的 `checkpointer` 参数声明类型保持为泛型 `Any` 或 `BaseCheckpointSaver`，同时兼容 `InMemorySaver` 和 `SqliteSaver`；
   - 测试仍可使用 `InMemorySaver`（`tests/test_runner.py` 中构造 `InMemorySaver()` 注入）。
 - 更新 CLI：
-  - `pt2lg run` 和 `pt2lg resume` 命令内部使用 `SqliteSaver`（默认路径 `<bundle_dir>/.pt2lg-runtime/<thread_hash>.db`）；
+  - P0 路径保持 `pt2lg run` 和 `pt2lg resume` 的现有行为兼容，继续支持当前 `.pt2lg-runtime/*.json` 跨进程 resume 状态；
+  - P2 增强路径可将 CLI 内部切换为 `SqliteSaver`（默认路径 `<bundle_dir>/.pt2lg-runtime/<thread_hash>.db`）；
   - 不需要新增 CLI 参数（checkpointer 类型不暴露给用户选择，内部默认行为即可）。
 - 更新 public API：
   - `run_workflow()` 接受可选的 `checkpointer` 参数；
   - 调用方可通过注入自定义 `BaseCheckpointSaver` 实现切换存储后端。
 - 保持 `.pt2lg-runtime/` 清理行为：
-  - resume 成功后默认**不清理** `.pt2lg-runtime/<thread_hash>.db` 文件，保留 checkpoint 历史以支持 time travel debugging（与 LangGraph Persistence 的设计理念一致）；
-  - 仅清理 `_PENDING_INTERRUPTS` 内存标记；
-  - 若用户需要显式清理，后续可增加 `--cleanup` 参数（此参数超出第三期范围）。
+  - P0 路径保持现有 JSON 状态文件在 resume 成功后清理的行为；
+  - P2 SQLite 增强路径中，resume 成功后可默认保留 `.pt2lg-runtime/<thread_hash>.db` 文件以支持 time travel debugging，但必须在文档中明确这是行为变化；
+  - 若用户需要显式清理 SQLite checkpoint，后续可增加 `--cleanup` 参数（此参数超出第三期范围）。
 
 旧格式迁移策略：
 
-- 现有 `.pt2lg-runtime/*.json` 文件（旧格式）在第三期后不再支持；
-- `_load_thread_state()` 中增加格式检测：遇到旧 JSON 格式时返回明确诊断，提示用户重新运行 workflow（而非尝试迁移内部结构）；
-- 文档中声明升级到第三期后需清理 `.pt2lg-runtime/` 目录下的旧 JSON 状态文件。
+- 现有 `.pt2lg-runtime/*.json` 文件在 P0 路径继续支持，确保第三期不会破坏已有等待态恢复；
+- 若启用 P2 SQLite 增强路径，`_load_thread_state()` 中增加格式检测：遇到旧 JSON 格式时返回明确诊断，提示用户重新运行 workflow 或清理旧状态文件（不尝试迁移 `InMemorySaver` 私有结构）；
+- 文档中声明 SQLite 增强路径与旧 JSON 状态文件的兼容关系，避免用户误以为旧等待态可无损迁移。
 
 SQLite 并发说明：
 
@@ -518,7 +522,7 @@ SQLite 并发说明：
 
 - 不引入生产级 PostgresSaver（作为后续演进方向）；
 - 不在 bundle/lockfile 中写入数据库连接字符串或凭据；
-- `.pt2lg-runtime/` 路径约定保持兼容（从 JSON 文件变为 SQLite 文件）；
+- `.pt2lg-runtime/` 路径约定保持兼容；P0 保持 JSON 状态文件，P2 SQLite 增强路径使用 `.db` 文件；
 - `SqliteSaver` 的构造方式为 `SqliteSaver(sqlite3.connect("path"))`，实施前需确认是否需要调用 `setup()`（根据具体版本而定；建议实现时添加 `try/except` 防御性调用以确保跨版本兼容）；
 - 不完全移除 `InMemorySaver` 路径（`checkpointer=None` 仍创建 `InMemorySaver`，保持向后兼容；测试和 API 调用方无需修改；CLI 通过显式传入 `SqliteSaver` 使用 SQLite 持久化）。
 
@@ -561,14 +565,22 @@ SQLite 并发说明：
 
 ## 9. 验收标准
 
+第三期验收采用分级标准，避免把所有增强项都绑定为同一完成门槛。
+
+- **P0 回归与边界必达**：前两期能力不回归，现有 CLI/API 行为兼容，新增设计不绕过现有校验、安全和策略体系，全量测试通过；
+- **P1 第三期核心增强**：Skill alpha 可生成并诊断，Join 最小可执行，Side Effect 二元审批闭环可运行，`run_workflow()` 可注入 checkpointer；
+- **P2 可选增强**：CLI 默认 `SqliteSaver`、多中断并行恢复、Side Effect 应用层幂等记录、Mermaid 高级可视化、Skill 资源建模增强。
+
+除非单项条目明确标注为 P2，以下验收默认按 P1 核心增强处理；P2 未完成不应阻塞第三期核心验收。
+
 ### 9.1 Skill → WorkflowSpec 验收
 
 满足以下条件，方可判定 Skill 转换能力达成交付标准：
 
-- 直接读取 Skill 目录下的 `SKILL.md` 原始内容，经 `plan_skill_to_workflow_spec()` 生成可校验的 `WorkflowSpec`；
-- `analyze_skill_dir()` 的静态分析结果可作为辅助上下文传递给 LLM，但不作为 LLM 的主输入；
+- 直接读取 Skill 目录下的 `SKILL.md` 原始内容，并结合 `analyze_skill_dir()` 的步骤、资源和风险诊断上下文，经 `plan_skill_to_workflow_spec()` 生成可校验的 `WorkflowSpec`；
+- `analyze_skill_dir()` 的静态分析结果作为结构化约束上下文传递给 LLM，风险诊断优先级高于 LLM 自由判断；
 - 生成的 `WorkflowSpec` 能继续进入现有 `validate / compile / run / graph` 流程；
-- 对 `analyze_skill_dir()` 报告中 `E_SEC_007` 诊断检测到的高危步骤（file writes、shell execution、network access、secrets），LLM 生成的 workflow 中插入了 `human_gate` 节点；
+- 对 `analyze_skill_dir()` 报告中 `E_SEC_007` 诊断检测到的高危步骤（file writes、shell execution、network access、secrets），转换结果必须保留风险诊断；若 LLM 生成的 workflow 缺少审批边界，应返回明确 diagnostic，不应静默接受；
 - 转换失败时（LLM 输出不可解析、适配失败），返回明确诊断而非静默失败；
 - 转换过程不默认执行 Skill 目录下的 scripts；
 - `tests/test_skill_dir.py` 中新增 Skill → WorkflowSpec 的 fake model 转换测试。
@@ -589,6 +601,7 @@ Join 边执行应满足：
 - `EdgeKind.JOIN` 不再报 `E_TARGET_009` 错误；
 - 带有 `join_sources` 和对应 reducer 声明的 JOIN 边 workflow 可编译并执行；
 - 多个 join_sources 节点的输出通过 reducer 被正确聚合到 target 节点可访问的 state key；
+- 对未声明 reducer 的多源写入给出明确 warning 或 diagnostic，文档说明默认覆盖和并行更新顺序不稳定的 LangGraph 语义；
 - `join_sources` 为空或包含不存在节点时，验证阶段报错；
 - `tests/fixtures/` 中新增合法的 join fixture（如 `fanout_with_join.json`）；
 - Mermaid 渲染为 JOIN 边增加 `join_sources` 标注；
@@ -605,7 +618,8 @@ Side Effect 应满足：
 - 通过 `pt2lg resume` 传入 `rejected` 决策后，副作用不执行且返回拒绝结果；
 - 不符合安全策略的 `side_effect` 节点（无 `requires_approval`、无 `idempotency_key`、`allow_side_effects=False`）在验证阶段报 `E_SIDE_008`；
 - Resume 恢复 `human_gate` 和 `side_effect` 的中断行为一致（共用相同的 CLI resume 入口）；
-- `tests/fixtures/side_effect_allowed.json` 的编译和执行行为保持不变。
+- `tests/fixtures/side_effect_allowed.json` 的编译和执行行为保持不变；
+- P2 可选增强包括 side effect 幂等记录、多中断批量恢复、`edited/respond` 决策和基于 `@task` 的 durable side effect，不作为 P1 完成门槛。
 
 ### 9.5 Checkpointer 注入验收
 
@@ -613,11 +627,12 @@ Checkpointer 注入应满足：
 
 - `run_workflow()` 接受可选的 `checkpointer` 参数（类型为 `BaseCheckpointSaver`）；
 - `checkpointer=None` 时，保持现有行为创建 `InMemorySaver`（向后兼容）；
-- CLI `pt2lg run` / `pt2lg resume` 内部显式构造 `SqliteSaver` 并传入（数据库文件存储在 `.pt2lg-runtime/<hash>.db`）；
+- P0/P1 路径保持 CLI `pt2lg run` / `pt2lg resume` 现有 `.pt2lg-runtime/*.json` 跨进程恢复行为兼容；
+- P2 路径可在 CLI `pt2lg run` / `pt2lg resume` 内部显式构造 `SqliteSaver` 并传入（数据库文件存储在 `.pt2lg-runtime/<hash>.db`）；
 - `compile_workflow_to_graph()` 的 `checkpointer` 参数与 runner 的 `checkpointer` 参数传递一致；
 - 测试可通过注入 `InMemorySaver` 覆盖默认行为；
-- `SqliteSaver` 通过 `SqliteSaver(sqlite3.connect("path"))` 构造，实施前确认是否需要 `setup()` 调用（根据具体版本而定；建议实现时添加 `try/except` 防御性调用）；
-- Resume 成功后默认不清理 `.pt2lg-runtime/<hash>.db` 文件（保留 checkpoint 历史），仅清理内存中的 pending interrupt 标记；
+- P2 SQLite 路径中，`SqliteSaver` 通过 `SqliteSaver(sqlite3.connect("path"))` 构造，实施前确认是否需要 `setup()` 调用（根据具体版本而定；建议实现时添加 `try/except` 防御性调用）；
+- P0/P1 路径保持现有 JSON 状态文件 resume 成功后清理行为；P2 SQLite 路径若默认保留 `.db` 文件，必须在文档中明确说明；
 - `checkpointer` 参数不与 `model_client` 或 `tool_registry` 参数冲突。
 
 ### 9.6 测试验收
@@ -633,7 +648,7 @@ Checkpointer 注入应满足：
   - `tests/test_tool_executor.py` — Tool executor dispatch 路径不受影响；
   - `tests/test_compile_flow.py` — 编译产物路径不受 `compile_workflow_to_graph()` 签名扩展影响；
   - `tests/test_runner.py` — `run_workflow()` 在 checkpointer 注入下行为兼容；
-  - `tests/test_cli.py` — CLI `run`/`resume` 命令在 SqliteSaver 切换后行为兼容；
+  - `tests/test_cli.py` — CLI `run`/`resume` 命令在 P0/P1 路径保持现有 JSON runtime 状态兼容；若启用 P2 SQLite 路径，则补充 SQLite 行为回归；
   - `tests/test_ir_schema.py` — `EdgeSpec` 新增 `join_sources` 字段后 lockfile hash 和 normalize 兼容；
 - `tests/test_skill_dir.py` 扩展覆盖 Skill 到 Workflow 转换；
 - 最终以全量 `uv run pytest` 通过作为第三期回归验收基线。
@@ -651,7 +666,7 @@ Checkpointer 注入应满足：
 - `README.md` 明确 Side Effect 执行默认需审批，除非 workflow policy 显式允许；
 - `CLAUDE.md` 与 `AGENTS.md` 同步反映新的能力边界；
 - 将各模块引用 LangChain/LangGraph 官方文档的相关链接整合到文档中；
-- 更新文档以反映 `SqliteSaver` 替换 `.pt2lg-runtime/` JSON 文件的持久化方案，以及 resume 后默认保留 checkpoint 历史的行为变更；
+- 更新文档以反映 P0/P1 JSON runtime 状态与 P2 `SqliteSaver` 增强路径的兼容关系；若启用 SQLite 路径，还需说明 resume 后默认保留 checkpoint 历史的行为变更；
 - 文档不应错误暗示"所有 Skill 均能完美转换为可执行工作流"或"Join 支持任意复杂聚合逻辑"。
 
 ### 9.8 非目标验收
@@ -667,7 +682,7 @@ Checkpointer 注入应满足：
 - Web UI / HTTP 服务化；
 - 完全自包含静态代码生成。
 
-只要上述能力仍未实现，但 Skill 可经 LLM 生成 WorkflowSpec、Join 可执行 Reducer 隐式合并、Side Effect 可审批中断执行、Checkpointer 可注入切换，第三期依然可以判定为完成。
+只要上述能力仍未实现，但 Skill alpha 可经 LLM 生成可诊断的 WorkflowSpec、Join 可执行 Reducer 隐式合并、Side Effect 可审批中断执行、Checkpointer 可注入切换，第三期核心增强依然可以判定为完成。
 
 ### 9.9 预期规模边界
 
@@ -677,7 +692,7 @@ Checkpointer 注入应满足：
 - Skill 转换预期支持 SKILL.md 内容长度 ≤8000 字符（超出部分可能导致 LLM 上下文窗口不足或 JSON 输出截断）；
 - Skill 转换预期支持 ≤10 个注入参数（参数过多可能导致 LLM 生成的 JSON plan 结构复杂、解析失败率上升）；
 - Join 边预期支持 ≤10 个 `join_sources` 节点（LangGraph 对同一 target 的入边数量无硬性限制，但过多并行分支可能影响可读性和调试体验）；
-- SqliteSaver 预期支持单文件 ≤100MB 的 checkpoint 数据（超出建议迁移到 PostgresSaver）；
+- P2 SqliteSaver 预期支持单文件 ≤100MB 的 checkpoint 数据（超出建议迁移到 PostgresSaver）；
 - Side Effect 审批中断预期支持单次运行 ≤5 个待审批节点（过多中断点影响用户体验，建议通过 workflow 设计减少审批频率）。
 
 ---
@@ -720,7 +735,7 @@ SKILL.md 原始内容 (主输入)
         │
 8.4 Side Effect 最小执行闭环 ────── 依赖: 8.5 Checkpointer 注入接口
         │                                      │
-        ├── 依赖: langgraph interrupt()        ├── 依赖: langgraph-checkpoint-sqlite
+        ├── 依赖: langgraph interrupt()        ├── P2增强: langgraph-checkpoint-sqlite
         ├── 依赖: human_gate resume 模式       ├── 依赖: runner.py (重构)
         └── 依赖: registry/executors (v0.2-2)  └── 依赖: compile_workflow_to_graph()
 
@@ -733,19 +748,19 @@ SKILL.md 原始内容 (主输入)
 
 ### 实施顺序建议
 
-1. **Checkpointer 接口抽象（8.5 前半）** — 先行完成 `run_workflow()` 签名重构：添加 `checkpointer` 参数、移除 `_THREAD_CHECKPOINTERS` 全局字典依赖、移除 `_save_thread_state()` / `_load_thread_state()` 的 JSON 持久化逻辑。**这一步完成后（无需等待 SqliteSaver 切换），步骤 2 即可开始**；
+1. **Checkpointer 接口抽象（8.5 前半）** — 先行完成 `run_workflow()` 签名重构：添加 `checkpointer` 参数，减少对 `_THREAD_CHECKPOINTERS` 全局字典的依赖；P0/P1 路径保留 `_save_thread_state()` / `_load_thread_state()` 的 JSON 持久化兼容逻辑，P2 SQLite 路径启用后再替换为 `SqliteSaver` 管理。**这一步完成后（无需等待 SqliteSaver 切换），步骤 2 即可开始**；
 2. **Side Effect 核心实现（8.4）** — 依赖步骤 1 的 checkpointer 参数注入（使用 `InMemorySaver` 即可覆盖审批中断逻辑和 `RunInterrupt` 事件复用）；实际执行器在 `allow_side_effects=True` 或审批通过后走 `_invoke_executor()` dispatch；
 3. **Join 边执行支持（8.3）** — 独立模块，可与步骤 1 并行；
 4. **Skill → WorkflowSpec LLM 转换器（8.1）** — 依赖第二期的 `llm/` 和第一期的 `prompting/parser`，与步骤 1-3 可并行推进；
 5. **Skill 参数注入与资源建模（8.2）** — 在步骤 4 的 Skill 转换器基础上扩展 CLI 和 API；
-6. **CLI SqliteSaver 切换（8.5 后半）** — 在所有功能模块（步骤 2-5）完成后，将 CLI 默认 checkpointer 从 `InMemorySaver` 切换到 `SqliteSaver`；
+6. **CLI SqliteSaver 切换（8.5 后半，P2）** — 在所有核心功能模块（步骤 2-5）完成且依赖兼容性确认后，再考虑将 CLI 默认 checkpointer 从 JSON runtime 状态切换到 `SqliteSaver`；
 7. **全量回归测试与文档更新** — 在前 6 步均完成后进行。
 
 可并行的任务组：
 - 步骤 1 的接口抽象（`run_workflow()` 签名重构）+ 步骤 3（Join）可并行
 - 步骤 2（Side Effect）在步骤 1 的接口抽象完成后即可开始（无需等待 SqliteSaver 切换）
 - 步骤 4-5（Skill）依赖第二期的 `llm/`，与步骤 1-3 可并行推进
-- 步骤 6（SqliteSaver 切换）在所有功能模块完成后进行
+- 步骤 6（SqliteSaver 切换）为 P2 增强，在所有核心功能模块完成后进行
 
 ---
 
