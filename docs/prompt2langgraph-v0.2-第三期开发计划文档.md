@@ -100,7 +100,7 @@ Join 边采用单一的便捷语法模式：`join_sources` 声明哪些源节点
 
 ### 6.4 Side Effect 审批：中断等待而非预注册执行
 
-Side effect 节点执行时，先通过 LangGraph `interrupt()` 挂起，将副作用详情（节点 ID、参数、幂等键、资源路径）暴露给调用方。调用方通过 CLI `resume` 或 API `resume_payload` 传入审批结果（`approved`/`rejected`）后继续或终止。这与现有 `human_gate` 的 interrupt/resume 机制完全一致，复用已有基础设施。第三期核心闭环只承诺二元审批和拒绝不执行；幂等记录、多中断批量恢复、`edited/respond` 决策和 `@task` durable side effect 属于后续增强，不作为核心完成门槛。
+Side effect 节点执行时，先通过 LangGraph `interrupt()` 挂起，将副作用详情（节点 ID、参数、幂等键、资源路径）暴露给调用方。调用方通过 CLI `resume` 或 API `resume_payload` 传入审批结果（`approved`/`rejected`）后继续或终止。这与现有 `human_gate` 的 interrupt/resume 机制完全一致，复用已有基础设施。第三期核心闭环只承诺二元审批和拒绝不执行；幂等记录、多中断批量恢复、`edited/respond` 决策属于后续增强，不作为核心完成门槛。
 
 > **设计依据**：LangGraph 的 [Interrupts](https://docs.langchain.com/oss/python/langgraph/interrupts) 机制允许在节点函数内部任意位置调用 `interrupt()` 挂起执行，通过 `Command(resume=...)` 恢复。LangChain v1 的 `HumanInTheLoopMiddleware` 通过 `interrupt_on` 配置需要审批的工具调用，提供 `approve`/`edit`/`reject`/`respond` 四种审批决策。本计划的 Side Effect 审批模型借鉴此模式：`side_effect` 节点在执行前调用 `interrupt()` 等待审批，审批通过后才执行实际的副作用操作。参见 LangChain 的 [Human-in-the-loop](https://docs.langchain.com/oss/python/langchain/human-in-the-loop) 和 [Middleware hooks](https://docs.langchain.com/oss/python/releases/langchain-v1#custom-middleware)。
 
@@ -335,7 +335,7 @@ Skill 转换不默认执行 Skill 目录下的 scripts。Join 执行不引入新
     3. `interrupt()` 返回 `{"decision": "approved"}` 或 `{"decision": "rejected", "reason": "..."}`；
     4. 若审批通过，返回审批通过信号，由 compiler 层调用实际 executor；
     5. 若审批拒绝，返回 `{"effect_result": "side_effect_rejected", "reason": reason}` 且不调用实际 executor；
-    6. 若仅有 `idempotency_key` 但无 `requires_approval`，P1 中仍走审批路径（幂等去重逻辑为 P2 增强），P2 中实现基于 `side_effect_records` state key 的去重；
+    6. 若仅有 `idempotency_key` 但无 `requires_approval`，P1 中仍走审批路径（幂等去重逻辑为 P2 增强），P2 中实现基于 `__pt2lg_side_effect_records__` state key 的去重；
     7. 若无 `requires_approval` 也无 `idempotency_key`，且 `allow_side_effects=False`，直接拒绝执行（防御性行为，正常应在验证阶段被 `E_SIDE_008` 拦截）。
   - `SideEffectExecutor` 是纯审批逻辑层，不持有实际 executor 引用。通过返回审批信号（`__side_effect_signal__`）让 compiler 层决定是否调用实际 executor，实现与 compiler 实现解耦。
 - 扩展编译器：
@@ -388,29 +388,25 @@ interrupt() resume approved
       → 重试成功 → 返回结果；重试仍失败 → 再次传播 ExecutorError
 ```
 
-> **重要说明**：根据 LangGraph Persistence 文档的 [Pending writes](https://docs.langchain.com/oss/python/langgraph/persistence) 章节，当 superstep 中部分节点失败时，已成功完成节点的写入会通过 `checkpoint_writes`（pending writes）持久化，恢复时不重新执行这些节点。但对于 `SideEffectExecutor` 场景，interrupt 和实际执行在**同一节点内**，该节点未完成则其写入不会被提交为完整 checkpoint。恢复时该节点从头重新执行（包括重新调用 `interrupt()`），需重新获得审批授权。这与安全原则一致：审批授权不应跨失败重试持久化，每次重试应重新获得授权。如果后续需要"审批后失败免审批重试"的语义，需引入 LangGraph 的 `@task` 装饰器将副作用操作包装为独立 task（参见 8.4 节 `@task` 评估说明），利用 durable execution 中"已完成 task 的结果持久化到 checkpoint_writes 不重复执行"的语义。
+> **重要说明**：根据 LangGraph Persistence 文档的 [Pending writes](https://docs.langchain.com/oss/python/langgraph/persistence) 章节，当 superstep 中部分节点失败时，已成功完成节点的写入会通过 `checkpoint_writes`（pending writes）持久化，恢复时不重新执行这些节点。但对于 `SideEffectExecutor` 场景，interrupt 和实际执行在**同一节点内**，该节点未完成则其写入不会被提交为完整 checkpoint。恢复时该节点从头重新执行（包括重新调用 `interrupt()`），需重新获得审批授权。这与安全原则一致：审批授权不应跨失败重试持久化，每次重试应重新获得授权。
 
 幂等键去重逻辑：
 
 ```
 SideEffectExecutor.__call__() in idempotency_key path:
-  1. 从 state 中读取 side_effect_records（list[dict]）
+  1. 从 state 中读取 `__pt2lg_side_effect_records__`（list[dict]）
   2. 遍历 records 列表，查找 idempotency_key 匹配的记录：
      若找到 → 返回缓存结果 {"effect_result": matching_record["result"]}
               → 不调用实际 executor
   3. 若未找到匹配记录：
      → 调用实际 executor
-     → 将 {"key": idempotency_key, "result": result, "timestamp": ...} 追加到 side_effect_records
+     → 将 {"key": idempotency_key, "result": result, "timestamp": ...} 追加到 `__pt2lg_side_effect_records__`
      → 返回结果
 ```
 
 > **LangGraph Durable Execution 兼容性说明**：LangGraph 的 [Durable Execution](https://docs.langchain.com/oss/python/langgraph/durable-execution) 要求工作流设计为确定性和幂等的，将副作用或非确定性操作包装在 tasks 中。当前第三期使用 `StateGraph` API + `interrupt()` 实现审批中断，审批和实际执行在同一个节点内。当审批通过后执行失败时，该节点未完成，其 state 更新不被提交；但同一 superstep 中其他已成功节点的写入通过 pending writes 持久化，恢复时不重新执行。对于失败节点本身，重试时需要重新审批（见上方"错误路径行为"说明）。
 >
-> **幂等键去重的性质说明**：本计划的幂等键去重方案通过 `side_effect_records` state key 存储执行记录，属于**应用层幂等**（由 prompt2langgraph 自身的 state 逻辑管理）。这与 LangGraph durable execution 的**框架层幂等**（通过 `@task` + `checkpoint_writes` 实现，已完成 task 不重复执行）不同。两者的区别：
-> - 应用层幂等：去重逻辑完全由本项目管理，不依赖 LangGraph 的 task 恢复语义，审批通过且执行成功后通过 state 记录避免重复；
-> - 框架层幂等：通过 `@task` 装饰器由 LangGraph 运行时管理，审批后失败重试时已完成 task 的结果从 `checkpoint_writes` 恢复，不需要重新执行也不需要重新审批。
->
-> 当前选择应用层幂等的原因是最小闭环优先，且不引入 `@task` 的额外复杂度。后续演进方向是将实际副作用执行调用包装为 `@task`，利用框架层幂等实现"审批后失败免审批重试"。如果后续需要"审批后失败免审批重试"的语义，需要引入 LangGraph 的 `@task` 装饰器（见下方 `@task` 评估说明）。
+> **幂等键去重的性质说明**：本计划的幂等键去重方案通过 `__pt2lg_side_effect_records__` state key 存储执行记录，属于**应用层幂等**（由 prompt2langgraph 自身的 state 逻辑管理）。当前选择应用层幂等的原因是最小闭环优先。后续演进方向见附录《LangGraph `@task` 评估说明》。
 
 - 扩展 CLI resume：
   - `pt2lg resume` 命令支持恢复 `side_effect` 节点的审批中断；
@@ -449,21 +445,7 @@ SideEffectExecutor.__call__() in idempotency_key path:
   - `edited` 决策允许调用方修改参数后再执行（参考 LangChain v1 `HumanInTheLoopMiddleware` 的 `approve`/`edit`/`reject`/`respond` 四种决策）；
   - `respond` 决策允许调用方直接回复文本作为工具结果，不执行实际副作用操作——适用于"ask user"交互场景（参考 LangChain v1 HITL middleware 的 `respond` 类型），此能力不在第三期范围内。
 
-LangGraph `@task` 装饰器评估：
 
-LangGraph 官方文档关于 [Durable Execution](https://docs.langchain.com/oss/python/langgraph/durable-execution) 推荐将副作用操作包装在 `@task` 装饰的函数中，以利用 durable execution 的"已完成 work 不重复执行"语义。根据 LangGraph 官方文档 "Using tasks in nodes" 章节，`@task` 并非 Functional API 专属——**`@task` 也可以在 `StateGraph` 的节点函数内部使用**，将节点内的非确定性操作（如 API 调用、文件写入）包装为 task，利用 checkpoint_writes 机制确保失败重试时已完成 task 不重复执行。
-
-经评估，第三期暂不采用 `@task`，原因如下：
-
-1. **审批中断与 `@task` 的交互复杂**：`SideEffectExecutor` 在 `interrupt()` 等待审批通过后调用实际 executor。如果将实际 executor 包装在 `@task` 中，审批逻辑（`interrupt()` 在节点顶层）和实际执行逻辑（`@task` 在节点内部）的状态管理边界不同——`interrupt()` 的 resume 导致节点从头执行，而 `@task` 的结果已持久化到 checkpoint_writes 中，两者的恢复时序需要仔细协调；
-2. **最小闭环优先**：第三期的目标是"最小执行闭环"，使用 `interrupt()` + `Command(resume=...)` 的审批模式已能满足需求。`@task` 的 durable execution 语义（审批后失败免重试审批）属于增强能力；
-3. **幂等键方案已覆盖核心去重需求**：通过 `side_effect_records` state key 的应用层去重，已能在审批通过且执行成功的场景下避免重复副作用，`@task` 的框架层幂等作为后续增强。
-
-后续演进方向（不在第三期范围内）：
-
-- 评估将 `SideEffectExecutor` 的实际执行部分包装在 `@task` 中（在 StateGraph 节点内部直接使用 `@task`），审批通过后由 `@task` 执行副作用操作，利用 durable execution 语义实现"审批后失败免审批重试"——这不需要迁移到 Functional API；
-- 评估 `@task` 对 `retry_policy` 的支持，实现副作用操作的自动重试；
-- 评估从 StateGraph API 迁移到 Functional API（`@entrypoint` + `@task`），以更自然地集成 `@task` 的 durable execution 能力（此为更长期的架构演进方向）。
 
 > **设计依据**：LangGraph 的 [Interrupts](https://docs.langchain.com/oss/python/langgraph/interrupts) 机制允许在节点函数内部调用 `interrupt()` 挂起执行，通过 `Command(resume=...)` 恢复。LangChain v1 的 `HumanInTheLoopMiddleware` 提供 `interrupt_on` 配置和 `approve`/`edit`/`reject`/`respond` 四种审批决策（[Human-in-the-loop](https://docs.langchain.com/oss/python/langchain/human-in-the-loop)）。Deep Agents 的 HITL 通过 `create_deep_agent(interrupt_on={...})` 配置审批策略（[Deep Agents HITL](https://docs.langchain.com/oss/python/deepagents/human-in-the-loop)）。本计划的 Side Effect 审批模型是这三种模式的简化融合：用 `interrupt()` 挂起，用 `Command(resume=...)` 恢复，审批决策简化为 `approved`/`rejected` 二元选项。注意 `interrupt()` 依赖 checkpointer（`compile(checkpointer=...)`），这与 8.5 节的 Checkpointer 注入接口联动——没有 checkpointer 则 interrupt 无法生效，这也是第三期需要引入 SqliteSaver 的动因之一。
 
@@ -537,7 +519,7 @@ SQLite 并发说明：
 - Skill 参数（通过 CLI `--param key=value` 或 API `SkillPlanRequest.params` 传入）自动映射为 workflow 的 `inputs` 中的 state key；
 - 参数类型由 LLM 在生成 JSON plan 时推断（`string` / `number` / `boolean`），默认 string；
 - 生成的 `WorkflowSpec.inputs` 中自动包含这些参数声明；
-- **保留字约束**：内部 state key（`side_effect_results`、`side_effect_records`）为编译器保留，禁止用户参数或 LLM 生成的工作流使用同名 key。Skill 转换器的 system prompt 中应列出这些保留字，并在 `validate_workflow()` 阶段增加冲突检测（若冲突，报 diagnostic error 提示参数改名）。
+- **保留字约束**：内部 state key（`__pt2lg_side_effect_results__`、`__pt2lg_side_effect_records__`）为编译器保留，禁止用户参数或 LLM 生成的工作流使用同名 key。Skill 转换器的 system prompt 中应列出这些保留字，并在 `validate_workflow()` 阶段增加冲突检测（若冲突，报 diagnostic error 提示参数改名）。
 
 **Join Reducer 聚合 → State Key 约束：**
 
@@ -547,19 +529,19 @@ SQLite 并发说明：
 
 **Side Effect → State Key 约定：**
 
-- 副作用执行结果默认写入 `side_effect_results` state key（需在 `state_schema.reducers` 中声明为 `APPEND`）；
-- 幂等键去重通过 `side_effect_records` state key 存储执行记录（list[dict]），需声明为 `APPEND` reducer（而非 `MERGE_DICT`，因为幂等键去重需要"先写入优先"语义——遍历列表查找同 key 记录时，最早写入的记录优先；`MERGE_DICT` 是 last-write-wins 语义，不适合幂等去重场景）；
+- 副作用执行结果默认写入 `__pt2lg_side_effect_results__` state key（需在 `state_schema.reducers` 中声明为 `APPEND`）；
+- 幂等键去重通过 `__pt2lg_side_effect_records__` state key 存储执行记录（list[dict]），需声明为 `APPEND` reducer（而非 `MERGE_DICT`，因为幂等键去重需要"先写入优先"语义——遍历列表查找同 key 记录时，最早写入的记录优先；`MERGE_DICT` 是 last-write-wins 语义，不适合幂等去重场景）；
 - 这两个 key 在 workflow 的 `state_schema.reducers` 中自动生成或由 LLM 在 JSON plan 中声明，不要求用户手动配置。
 
 **State Schema 自动推导：**
 
 - 编译器在处理 JOIN 边和 Side Effect 节点时，自动检查所需的 state key 和 reducer 是否已在 `state_schema.reducers` 中声明；
 - 若未声明，验证阶段报 diagnostic warning 明确告知缺失的 key 和 reducer，并给出建议补齐声明（而非编译器静默修改 state schema），用户可选择手动添加或在生成的 JSON plan 中声明；
-- 为降低用户操作成本，Skill 转换器的 system prompt 中提示 LLM 在生成 JSON plan 时自动为 `side_effect_results` 和 `side_effect_records` 声明 `APPEND` reducer；
+- 为降低用户操作成本，Skill 转换器的 system prompt 中提示 LLM 在生成 JSON plan 时自动为 `__pt2lg_side_effect_results__` 和 `__pt2lg_side_effect_records__` 声明 `APPEND` reducer；
 - 编译器不静默修改 workflow 中的任何 state key 或 reducer 声明（保持"显式、可校验、不可绕过"的设计原则）；
 - 若因缺失 reducer 导致运行时行为不符合预期（如 Join 多源写入被覆盖），compile_report 中明确记录 warning 以便用户追溯。
 
-> **设计依据**：LangGraph 的 [Reducers](https://docs.langchain.com/oss/python/langgraph/graph-api#reducers) 中明确：每个 state key 有独立的 reducer 函数，未显式指定时默认覆盖。这与本计划的 State Schema 推导规则一致——Join 需要显式 reducer 声明才能正确聚合多源写入。LangGraph 的 [Durable Execution](https://docs.langchain.com/oss/python/langgraph/durable-execution) 强调通过 state 持久化确保幂等性，本计划通过 `side_effect_records` state key 存储执行记录来实现幂等键去重。
+> **设计依据**：LangGraph 的 [Reducers](https://docs.langchain.com/oss/python/langgraph/graph-api#reducers) 中明确：每个 state key 有独立的 reducer 函数，未显式指定时默认覆盖。这与本计划的 State Schema 推导规则一致——Join 需要显式 reducer 声明才能正确聚合多源写入。LangGraph 的 [Durable Execution](https://docs.langchain.com/oss/python/langgraph/durable-execution) 强调通过 state 持久化确保幂等性，本计划通过 `__pt2lg_side_effect_records__` state key 存储执行记录来实现幂等键去重。
 
 ---
 
@@ -620,7 +602,7 @@ Side Effect 应满足：
 - 不符合安全策略的 `side_effect` 节点（无 `requires_approval`、无 `idempotency_key`、`allow_side_effects=False`）在验证阶段报 `E_SIDE_008`；
 - Resume 恢复 `human_gate` 和 `side_effect` 的中断行为一致（共用相同的 CLI resume 入口）；
 - `tests/fixtures/side_effect_allowed.json` 的编译和执行行为保持不变；
-- P2 可选增强包括 side effect 幂等记录（`side_effect_records` 去重）、多中断批量恢复、`edited/respond` 决策和基于 `@task` 的 durable side effect，不作为 P1 完成门槛。
+- P2 可选增强包括 side effect 幂等记录（`__pt2lg_side_effect_records__` 去重）、多中断批量恢复、`edited/respond` 决策，不作为 P1 完成门槛。
 
 ### 9.5 Checkpointer 注入验收
 
@@ -714,6 +696,20 @@ Checkpointer 注入应满足：
 - 生产级 PostgresSaver：支持 Postgres 持久化，用于生产环境；
 - Skill 脚本预注册：自动分析 Skill 目录下的 Python 脚本并预注册 tool callable；
 - Agent Server 部署：通过 `langgraph up` 将 workflow 部署为 LangSmith Agent Server。
+
+> **附录：LangGraph `@task` 评估说明**（供后续演进参考，不在第三期实施）
+>
+> 当前第三期使用 `StateGraph` API + `interrupt()` 实现审批中断。LangGraph [Durable Execution](https://docs.langchain.com/oss/python/langgraph/durable-execution) 文档说明 `@task` 可同时用于 `StateGraph`（Graph API）和 Functional API。
+>
+> 第三期暂不采用 `@task`，原因如下：
+> 1. **审批中断与 `@task` 的交互复杂**：`SideEffectExecutor` 在 `interrupt()` 等待审批通过后调用实际 executor。如果将实际 executor 包装在 `@task` 中，审批逻辑（`interrupt()` 在节点顶层）和实际执行逻辑（`@task` 在节点内部）的状态管理边界不同；
+> 2. **最小闭环优先**：使用 `interrupt()` + `Command(resume=...)` 的审批模式已能满足需求。`@task` 的 durable execution 语义（审批后失败免重试审批）属于增强能力；
+> 3. **幂等键方案已覆盖核心去重需求**：通过 `__pt2lg_side_effect_records__` state key 的应用层去重，已能在审批通过且执行成功的场景下避免重复副作用。
+>
+> 后续演进方向（不在第三期范围内）：
+> - 评估将 `SideEffectExecutor` 的实际执行部分包装在 `@task` 中（在 StateGraph 节点内部直接使用 `@task`），利用 durable execution 语义实现"审批后失败免审批重试"；
+> - 评估 `@task` 对 `retry_policy` 的支持，实现副作用操作的自动重试；
+> - 评估从 StateGraph API 迁移到 Functional API（`@entrypoint` + `@task`），以更自然地集成 `@task` 的 durable execution 能力。
 
 ---
 
