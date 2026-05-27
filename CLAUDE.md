@@ -22,7 +22,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Prompt 计划生成基于 `langchain_openai`，默认从 `.env` 读取 `MODEL`、`BASE_URL`、`API_KEY`，优先兼容 Qwen、vLLM 暴露的 OpenAI-style API 及其他第三方兼容接口。Prompt 只生成简化 JSON plan；运行时 `llm` 节点的真实执行需 `external_call=True` + `allowed_models`。
 
-`analyze_skill_dir()` 只做 `SKILL.md` 与资源文件静态分析，不生成可执行工作流，也不执行 skill 脚本。
+`analyze_skill_dir()` 保留静态分析能力。Skill → `WorkflowSpec` 的 LLM 驱动 alpha 转换已实现（`plan --skill-dir`），可诊断、可人工修正，不保证任意 Skill 一次成功；不执行 skill 脚本，不自动注册 tool callable。
 
 ## 常用命令
 
@@ -47,6 +47,9 @@ uv run pt2lg graph tests/fixtures/linear_llm.json --format mermaid
 
 # Prompt 计划生成
 uv run pt2lg plan --prompt "Build a workflow that answers a question with one llm node" --json
+
+# Skill → WorkflowSpec 转换
+uv run pt2lg plan --skill-dir path/to/skill --param key=value --json
 
 # bundle / resume
 uv run pt2lg run build/linear_llm/workflow.lock.json --input '{"question":"hello"}' --json
@@ -92,7 +95,7 @@ uv run pt2lg run tests/fixtures/fanout_map_reduce.json --input '{"items":["alpha
 
 ## 当前执行能力
 
-- runtime/compiler 当前支持 `linear`、`conditional`、`loop`、`fanout`；`join` 只存在于 IR / Mermaid，可表达但不可执行。
+- runtime/compiler 当前支持 `linear`、`conditional`、`loop`、`fanout`、`join`（需声明 `join_sources` + reducer）。
 - `llm` 节点可通过 `ExecutorType.LLM`（ref 格式 `llm.<model_id>`）调用真实模型，需 `external_call=True` + `allowed_models` 白名单。
 - `tool` 节点可通过 `ExecutorType.PYTHON_CALLABLE` 执行受控 callable，需 `allowed_tool_refs` 白名单 + `ToolCallableRegistry` 注册。
 - 真实 executor 和 mock executor 可通过 executor ref 区分（`builtin.echo_llm` = mock，`llm.qwen-plus` = real）。
@@ -102,7 +105,7 @@ uv run pt2lg run tests/fixtures/fanout_map_reduce.json --input '{"items":["alpha
 - 成功 bundle 包含：`workflow.ir.json`、`workflow.lock.json`、`manifest.json`、`compile_report.json`、`graph.mmd`、`generated/*.py`。
 - `workflow.lock.json` 是 bundle `run` / `graph` / `resume` 的入口；加载时会校验其与 `workflow.ir.json` 的 hash 一致性。
 - 编译失败会清理已知旧产物和 `generated/`，避免误用旧 bundle。
-- `human_gate` 基于 LangGraph `interrupt()`；CLI bundle 运行的等待态保存在 bundle下 `.pt2lg-runtime/`，resume 成功后清理。该持久化格式依赖 `InMemorySaver` 内部结构，只适合短期本地开发，不是稳定交换格式。
+- `human_gate` 基于 LangGraph `interrupt()`；CLI bundle 运行的等待态保存在 bundle 下 `.pt2lg-runtime/`。安装可选依赖 `checkpoint-sqlite`（`langgraph-checkpoint-sqlite>=2.0`）后，CLI 使用 `SqliteSaver` 提供更稳定的本地 checkpoint，路径为 `.pt2lg-runtime/<thread_hash>.db`。旧 `.json` runtime 状态文件与新的 `.db` checkpoint 不互相迁移。SQLite checkpoint 默认保留以支持后续 time travel debugging，但 resume 成功后不再自动清理 `.db` 文件。
 - `collect_metrics=True` 时，`RunResult.external_calls` 中可获取成功和失败调用的 `ExternalCallRecord`。
 - CLI `run` 命令能根据 workflow 节点类型自动构造 `model_client` 和 `tool_registry`。
 
@@ -115,7 +118,7 @@ uv run pt2lg run tests/fixtures/fanout_map_reduce.json --input '{"items":["alpha
 - 不要重新引入第二套产物写入路径；产物统一经 `runtime.artifacts` 生成。
 - 不要在 `prompt2langgraph.cli` 模块导入阶段急切导入 `langgraph` 或 `langchain_openai`。
 - 不要在 manifest、compile report、lockfile 中写入真实 secret 或 secret 名称。
-- 不要把 `join` edge 当成当前可执行能力。
+- 不要宣称 JOIN 可执行而不声明 `join_sources` 和 reducer（未声明 reducer 的并行写入会覆盖且顺序不稳定）。
 - 不要让 Prompt 入口直接生成并执行 Workflow IR；Prompt 只生成简化 JSON plan。
 - 不要把 `plan` 命令演化成直接运行 workflow 的命令。
 
