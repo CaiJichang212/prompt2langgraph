@@ -165,11 +165,22 @@ class EdgeSpec(BaseModel):
     condition: ConditionSpec | None = None
     map: MapSpec | None = None
     loop_guard: LoopGuard | None = None
+    join_sources: list[str] | None = None
 
     @field_validator("id", "source", "target")
     @classmethod
     def ids_match_identifier(cls, value: str) -> str:
         return _validate_identifier(value)
+
+    @model_validator(mode="after")
+    def check_join_sources_for_join_edges(self) -> EdgeSpec:
+        if self.kind is EdgeKind.JOIN:
+            # Intentional no-op: join_sources type/semantic validation is
+            # delegated to join_check.py to keep model_validator lightweight.
+            pass
+        elif self.join_sources is not None:
+            raise ValueError(f"join_sources is only valid for JOIN edges, not {self.kind.value}")
+        return self
 
 
 class WorkflowSpec(BaseModel):
