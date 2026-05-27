@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 from typing import Any
@@ -103,18 +104,42 @@ def run(
         _emit(result_payload, json_output, "run failed")
         raise typer.Exit(1)
 
+    from uuid import uuid4
+
+    from prompt2langgraph.ir.lockfile import sha256_canonical_json
+    from prompt2langgraph.ir.normalize import normalize_workflow
     from prompt2langgraph.runtime.runner import run_workflow
 
     model_client, tool_registry = _build_runtime_clients(workflow_or_report)
 
+    thread_id = f"cli_{uuid4().hex}"
+    # Compute thread_key using the same method as _thread_key in runner.py
+    workflow_hash = sha256_canonical_json(
+        normalize_workflow(workflow_or_report).model_dump(mode="json")
+    )
+    thread_key = (workflow_hash, thread_id)
+    checkpointer, checkpointer_diagnostics = _build_cli_checkpointer(
+        workflow_json, thread_id, thread_key
+    )
+    if checkpointer_diagnostics is not None:
+        result_payload = {
+            "status": "failed",
+            "output": {},
+            "diagnostics": [item.model_dump(mode="json") for item in checkpointer_diagnostics],
+        }
+        _emit(result_payload, json_output, "run failed")
+        raise typer.Exit(1)
+
     result = run_workflow(
         workflow_or_report,
         input_payload,
+        thread_id=thread_id,
         model_client=model_client,
         tool_registry=tool_registry,
         state_store_dir=_runtime_state_store_dir(workflow_json),
+        checkpointer=checkpointer,
     )
-    _emit(result.model_dump(mode="json"), json_output, result.status)
+    _emit(result.model_dump(mode="json"), json_output, _status_text(result))
     if result.status != "succeeded":
         raise typer.Exit(1)
 
@@ -175,16 +200,125 @@ def graph(
 
 @app.command()
 def plan(
-    prompt: str = typer.Option(..., "--prompt"),
-    model: str | None = typer.Option(None, "--model"),
-    base_url: str | None = typer.Option(None, "--base-url"),
-    api_key: str | None = typer.Option(None, "--api-key"),
-    temperature: float = typer.Option(0.0, "--temperature"),
-    validate_output: bool = typer.Option(False, "--validate"),
-    json_output: bool = typer.Option(False, "--json", help="Emit a machine-readable plan."),
+    prompt: str | None = typer.Option(None, "--prompt"),  # noqa: B008
+    skill_dir: Path | None = typer.Option(None, "--skill-dir"),  # noqa: B008
+    model: str | None = typer.Option(None, "--model"),  # noqa: B008
+    base_url: str | None = typer.Option(None, "--base-url"),  # noqa: B008
+    api_key: str | None = typer.Option(None, "--api-key"),  # noqa: B008
+    temperature: float = typer.Option(0.0, "--temperature"),  # noqa: B008
+    validate_output: bool = typer.Option(False, "--validate"),  # noqa: B008
+    json_output: bool = typer.Option(False, "--json", help="Emit a machine-readable plan."),  # noqa: B008
+    param: list[str] = typer.Option([], "--param"),  # noqa: B008
 ) -> None:
-    """Generate a simplified JSON plan from a prompt using an LLM."""
+    """Generate a simplified JSON plan from a prompt or skill directory using an LLM."""
 
+    # Mutual exclusion check
+    if prompt is None and skill_dir is None:
+        _emit_validation_report(
+            ValidationReport(
+                diagnostics=[
+                    Diagnostic(
+                        code=E_PARSE_001,
+                        severity="error",
+                        message="must specify either --prompt or --skill-dir",
+                        location=DiagnosticLocation(source="plan"),
+                    )
+                ]
+            ),
+            json_output,
+        )
+        raise typer.Exit(1) from None
+
+    if prompt is not None and skill_dir is not None:
+        _emit_validation_report(
+            ValidationReport(
+                diagnostics=[
+                    Diagnostic(
+                        code=E_PARSE_001,
+                        severity="error",
+                        message="cannot specify both --prompt and --skill-dir",
+                        location=DiagnosticLocation(source="plan"),
+                    )
+                ]
+            ),
+            json_output,
+        )
+        raise typer.Exit(1) from None
+
+    # Parse param list
+    params = _parse_plan_params(param, json_output)
+
+    if skill_dir is not None:
+        _run_skill_plan(
+            skill_dir,
+            params,
+            model,
+            base_url,
+            api_key,
+            temperature,
+            validate_output,
+            json_output,
+        )
+    else:
+        _run_prompt_plan(
+            prompt,
+            model,
+            base_url,
+            api_key,
+            temperature,
+            validate_output,
+            json_output,
+        )
+
+
+def _parse_plan_params(param_list: list[str], json_output: bool = False) -> dict[str, str]:
+    """Parse a list of key=value strings into a dictionary.
+
+    Raises typer.Exit if any item is malformed.
+    """
+    params: dict[str, str] = {}
+    for item in param_list:
+        if "=" not in item:
+            report = ValidationReport(
+                diagnostics=[
+                    Diagnostic(
+                        code=E_PARSE_001,
+                        severity="error",
+                        message=f"--param value must be key=value, got {item!r}",
+                        location=DiagnosticLocation(source="plan"),
+                    )
+                ]
+            )
+            _emit_validation_report(report, json_output)
+            raise typer.Exit(1) from None
+        key, value = item.split("=", 1)
+        if not key.strip():
+            report = ValidationReport(
+                diagnostics=[
+                    Diagnostic(
+                        code=E_PARSE_001,
+                        severity="error",
+                        message=f"--param key must not be empty, got {item!r}",
+                        location=DiagnosticLocation(source="plan"),
+                    )
+                ]
+            )
+            _emit_validation_report(report, json_output)
+            raise typer.Exit(1) from None
+        params[key] = value
+    return params
+
+
+def _run_prompt_plan(
+    prompt: str,
+    model: str | None,
+    base_url: str | None,
+    api_key: str | None,
+    temperature: float,
+    validate_output: bool,
+    json_output: bool,
+) -> None:
+    """Execute the prompt plan generation path."""
     from prompt2langgraph.prompting import PromptPlanRequest
     from prompt2langgraph.prompting.parser import parse_prompt_plan_text
     from prompt2langgraph.prompting.planner import generate_plan_text
@@ -265,6 +399,116 @@ def plan(
     _emit(payload, json_output, _json_dumps(plan_data))
 
 
+def _run_skill_plan(
+    skill_dir: Path,
+    params: dict[str, str],
+    model: str | None,
+    base_url: str | None,
+    api_key: str | None,
+    temperature: float,
+    validate_output: bool,
+    json_output: bool,
+) -> None:
+    """Execute the skill plan generation path.
+
+    Uses plan_skill_to_workflow_spec() as the single entry point for
+    Skill → JSON plan → WorkflowSpec conversion. Pre-checks static
+    analysis for fatal errors before the LLM call.
+    """
+    from prompt2langgraph.adapters.base import AdapterParseError
+    from prompt2langgraph.adapters.skill_dir import analyze_skill_dir
+    from prompt2langgraph.prompting import SkillPlanRequest
+    from prompt2langgraph.prompting.skill_planner import plan_skill_to_workflow_spec
+
+    request = SkillPlanRequest(
+        skill_dir=str(skill_dir),
+        params=params,
+        model=model,
+        base_url=base_url,
+        api_key=api_key,
+        temperature=temperature,
+    )
+
+    # Step 1: Static analysis — check for fatal errors before LLM call
+    analysis = analyze_skill_dir(str(skill_dir))
+    fatal_diagnostics = [d for d in analysis.report.diagnostics if d.severity == "error"]
+    if fatal_diagnostics:
+        report = ValidationReport(diagnostics=fatal_diagnostics)
+        _emit_validation_report(report, json_output)
+        raise typer.Exit(1) from None
+
+    # Step 2–4: LLM generate → parse → adapt (single entry point)
+    # Pass precomputed analysis to avoid double analyze_skill_dir()
+    try:
+        result = plan_skill_to_workflow_spec(request, analysis=analysis)
+    except AdapterParseError as exc:
+        # Distinguish error phase from exception message
+        msg = str(exc).lower()
+        if "failed to read skill file" in msg:
+            code = E_PARSE_001
+            hint = "SKILL.md is missing or unreadable"
+        elif "failed to parse generated json plan" in msg:
+            code = E_PARSE_001
+            hint = "LLM output could not be parsed as JSON plan"
+        elif "failed to adapt" in msg or "json plan" in msg:
+            code = E_PARSE_001
+            hint = "JSON plan could not be adapted to WorkflowSpec"
+        else:
+            code = E_PARSE_001
+            hint = str(exc)
+        report = ValidationReport(
+            diagnostics=[
+                Diagnostic(
+                    code=code,
+                    severity="error",
+                    message="skill plan generation failed",
+                    location=DiagnosticLocation(
+                        source=exc.source or "skill",
+                        path=exc.path,
+                        line=exc.line,
+                        column=exc.column,
+                    ),
+                    hint=hint,
+                )
+            ]
+        )
+        _emit_validation_report(report, json_output)
+        raise typer.Exit(1) from None
+    except Exception as exc:
+        report = ValidationReport(
+            diagnostics=[
+                Diagnostic(
+                    code=E_RUNTIME_010,
+                    severity="error",
+                    message="LLM call failed during skill plan generation",
+                    location=DiagnosticLocation(source="skill"),
+                    hint=str(exc),
+                )
+            ]
+        )
+        _emit_validation_report(report, json_output)
+        raise typer.Exit(1) from None
+
+    # Output the original simplified JSON plan (not the IR dump)
+    # to stay consistent with the --prompt path output format
+    plan_data = result.plan or {}
+    payload: dict[str, Any] = {"ok": True, "plan": plan_data}
+
+    # Include static analysis diagnostics in output
+    if result.diagnostics:
+        payload["diagnostics"] = [d.model_dump(mode="json") for d in result.diagnostics]
+
+    if validate_output and result.workflow_spec is not None:
+        validation_report = validate_workflow(result.workflow_spec)
+        payload["validation"] = validation_report.model_dump(mode="json")
+        payload["validation"]["ok"] = validation_report.ok
+        if not validation_report.ok:
+            _emit(payload, json_output, _json_dumps(plan_data))
+            raise typer.Exit(1) from None
+
+    _emit(payload, json_output, _json_dumps(plan_data))
+
+
 @app.command()
 def resume(
     workflow_json: Path,
@@ -287,9 +531,28 @@ def resume(
         raise typer.Exit(1)
 
     resume_payload = _parse_resume_payload(resume)
+    from prompt2langgraph.ir.lockfile import sha256_canonical_json
+    from prompt2langgraph.ir.normalize import normalize_workflow
     from prompt2langgraph.runtime.runner import run_workflow
 
     model_client, tool_registry = _build_runtime_clients(workflow_or_report)
+
+    # Compute thread_key using the same method as _thread_key in runner.py
+    workflow_hash = sha256_canonical_json(
+        normalize_workflow(workflow_or_report).model_dump(mode="json")
+    )
+    thread_key = (workflow_hash, thread_id)
+    checkpointer, checkpointer_diagnostics = _build_cli_checkpointer(
+        workflow_json, thread_id, thread_key
+    )
+    if checkpointer_diagnostics is not None:
+        result_payload = {
+            "status": "failed",
+            "output": {},
+            "diagnostics": [item.model_dump(mode="json") for item in checkpointer_diagnostics],
+        }
+        _emit(result_payload, json_output, "resume failed")
+        raise typer.Exit(1)
 
     result = run_workflow(
         workflow_or_report,
@@ -299,8 +562,9 @@ def resume(
         model_client=model_client,
         tool_registry=tool_registry,
         state_store_dir=_runtime_state_store_dir(workflow_json),
+        checkpointer=checkpointer,
     )
-    _emit(result.model_dump(mode="json"), json_output, result.status)
+    _emit(result.model_dump(mode="json"), json_output, _status_text(result))
     if result.status != "succeeded":
         raise typer.Exit(1)
 
@@ -317,12 +581,8 @@ def _build_runtime_clients(workflow: WorkflowSpec) -> tuple[Any, Any]:
     model_client = None
     tool_registry = None
 
-    has_llm_node = any(
-        n.executor.type is ExecutorType.LLM for n in workflow.nodes
-    )
-    has_tool_node = any(
-        n.executor.type is ExecutorType.PYTHON_CALLABLE for n in workflow.nodes
-    )
+    has_llm_node = any(n.executor.type is ExecutorType.LLM for n in workflow.nodes)
+    has_tool_node = any(n.executor.type is ExecutorType.PYTHON_CALLABLE for n in workflow.nodes)
 
     if has_llm_node and workflow.policies.external_call:
         from prompt2langgraph.llm.provider import build_llm_client
@@ -504,6 +764,54 @@ def _parse_resume_payload(value: str) -> Any:
         return value
 
 
+def _build_cli_checkpointer(
+    workflow_json: Path,
+    thread_id: str,
+    thread_key: tuple[str, str] | None = None,
+) -> tuple[Any, list[Diagnostic] | None]:
+    """Construct CLI-specific SQLite checkpointer.
+
+    Path is `<bundle_dir>/.pt2lg-runtime/<thread_hash>.db`.
+    If langgraph-checkpoint-sqlite is unavailable or initialization fails, returns (None, diagnostics).
+
+    When thread_key is provided, uses it to compute the thread_hash (matching _thread_key in runner).
+    Otherwise falls back to using workflow_json path for backward compatibility.
+    """  # noqa: E501
+    try:
+        from langgraph.checkpoint.sqlite import SqliteSaver
+    except ImportError:
+        return None, None
+
+    import sqlite3
+
+    runtime_dir = _runtime_state_store_dir(workflow_json)
+    if thread_key is not None:
+        # Use the same hash computation as _thread_key in runner.py
+        thread_hash = hashlib.sha256(f"{thread_key[0]}:{thread_key[1]}".encode()).hexdigest()[:16]
+    else:
+        # Fallback: use workflow_json path (legacy behavior)
+        thread_hash = hashlib.sha256(f"{workflow_json}:{thread_id}".encode()).hexdigest()[:16]
+    db_path = runtime_dir / f"{thread_hash}.db"
+
+    try:
+        runtime_dir.mkdir(parents=True, exist_ok=True)
+        conn = sqlite3.connect(str(db_path), check_same_thread=False)
+        checkpointer = SqliteSaver(conn)
+        if callable(getattr(checkpointer, "setup", None)):
+            checkpointer.setup()
+        return checkpointer, None
+    except Exception as exc:  # pragma: no cover
+        return None, [
+            Diagnostic(
+                code=E_RUNTIME_010,
+                severity="error",
+                message="failed to initialize SQLite checkpointer",
+                location=DiagnosticLocation(source=str(db_path)),
+                hint=str(exc),
+            )
+        ]
+
+
 def _runtime_state_store_dir(workflow_json: Path) -> Path:
     if workflow_json.name == "workflow.lock.json":
         return workflow_json.parent / ".pt2lg-runtime"
@@ -536,6 +844,22 @@ def _emit(payload: dict[str, Any], json_output: bool, text: str) -> None:
         typer.echo(_json_dumps(payload))
     else:
         typer.echo(text)
+
+
+def _status_text(result: Any) -> str:
+    """Generate human-readable status text, distinguishing interrupt kinds."""
+    if result.status == "waiting" and result.interrupt is not None:
+        thread_id = getattr(result, "thread_id", "unknown")
+        if result.interrupt.kind == "side_effect_approval":
+            return (
+                "Workflow is waiting for side effect approval."
+                f" Resume with: pt2lg resume ... --thread-id {thread_id}"
+            )
+        return (
+            "Workflow is waiting for human approval."
+            f" Resume with: pt2lg resume ... --thread-id {thread_id}"
+        )
+    return result.status
 
 
 def _json_dumps(payload: Any) -> str:
