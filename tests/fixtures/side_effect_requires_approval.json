@@ -1,0 +1,32 @@
+{
+  "schema_version": "0.1",
+  "workflow_id": "side_effect_requires_approval",
+  "name": "Side Effect Requires Approval",
+  "entrypoint": "record_effect",
+  "state_schema": {
+    "input": {"question": {"type": "string"}},
+    "output": {"effect_result": {"type": "string"}},
+    "channels": {
+      "question": {"type": "string"},
+      "effect_result": {"type": "string"}
+    },
+    "private": {},
+    "reducers": {}
+  },
+  "nodes": [
+    {
+      "id": "record_effect",
+      "kind": "side_effect",
+      "executor": {"ref": "builtin.identity_transform", "type": "builtin"},
+      "inputs": {"value": {"state_key": "question"}},
+      "outputs": {"value": {"state_key": "effect_result"}},
+      "params": {},
+      "security": {
+        "requires_approval": true
+      }
+    }
+  ],
+  "edges": [],
+  "policies": {"allow_side_effects": false},
+  "metadata": {}
+}

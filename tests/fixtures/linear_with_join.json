@@ -1,0 +1,61 @@
+{
+  "schema_version": "0.1",
+  "workflow_id": "linear_with_join",
+  "name": "Linear with Join",
+  "entrypoint": "fetch_a",
+  "state_schema": {
+    "input": {"query": {"type": "string"}},
+    "output": {"combined": {"type": "string"}},
+    "channels": {
+      "query": {"type": "string"},
+      "result_a": {"type": "string"},
+      "result_b": {"type": "string"},
+      "combined": {"type": "string"}
+    },
+    "private": {},
+    "reducers": {}
+  },
+  "nodes": [
+    {
+      "id": "fetch_a",
+      "kind": "transform",
+      "executor": {"ref": "builtin.identity_transform", "type": "builtin"},
+      "inputs": {"value": {"state_key": "query"}},
+      "outputs": {"value": {"state_key": "result_a"}},
+      "params": {}
+    },
+    {
+      "id": "fetch_b",
+      "kind": "transform",
+      "executor": {"ref": "builtin.identity_transform", "type": "builtin"},
+      "inputs": {"value": {"state_key": "query"}},
+      "outputs": {"value": {"state_key": "result_b"}},
+      "params": {}
+    },
+    {
+      "id": "combine",
+      "kind": "transform",
+      "executor": {"ref": "builtin.identity_transform", "type": "builtin"},
+      "inputs": {"value": {"state_key": "result_b"}},
+      "outputs": {"value": {"state_key": "combined"}},
+      "params": {}
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge_a_to_b",
+      "source": "fetch_a",
+      "target": "fetch_b",
+      "kind": "linear"
+    },
+    {
+      "id": "join_combine",
+      "source": "fetch_b",
+      "target": "combine",
+      "kind": "join",
+      "join_sources": ["fetch_a", "fetch_b"]
+    }
+  ],
+  "policies": {},
+  "metadata": {}
+}

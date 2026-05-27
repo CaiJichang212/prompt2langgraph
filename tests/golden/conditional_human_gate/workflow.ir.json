@@ -3,6 +3,7 @@
     {
       "condition": null,
       "id": "after_approval",
+      "join_sources": null,
       "kind": "linear",
       "loop_guard": null,
       "map": null,
@@ -18,6 +19,7 @@
         }
       },
       "id": "route_by_confidence",
+      "join_sources": null,
       "kind": "conditional",
       "loop_guard": null,
       "map": null,

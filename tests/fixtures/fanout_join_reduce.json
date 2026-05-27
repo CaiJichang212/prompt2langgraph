@@ -1,7 +1,7 @@
 {
   "schema_version": "0.1",
-  "workflow_id": "invalid_join_edge",
-  "name": "Invalid Join Edge (missing join_sources)",
+  "workflow_id": "fanout_join_reduce",
+  "name": "Fanout Join Reduce",
   "entrypoint": "start",
   "state_schema": {
     "input": {"items": {"type": "array", "item_type": {"type": "string"}}},
@@ -23,7 +23,15 @@
       "params": {}
     },
     {
-      "id": "process",
+      "id": "branch_a",
+      "kind": "transform",
+      "executor": {"ref": "builtin.identity_transform", "type": "builtin"},
+      "inputs": {"value": {"state_key": "items"}},
+      "outputs": {"value": {"state_key": "results"}},
+      "params": {}
+    },
+    {
+      "id": "branch_b",
       "kind": "transform",
       "executor": {"ref": "builtin.identity_transform", "type": "builtin"},
       "inputs": {"value": {"state_key": "items"}},
@@ -41,21 +49,23 @@
   ],
   "edges": [
     {
-      "id": "fanout_items",
+      "id": "start_to_a",
       "source": "start",
-      "target": "process",
-      "kind": "fanout",
-      "map": {
-        "items_state_key": "items",
-        "item_state_key": "items",
-        "result_state_key": "results"
-      }
+      "target": "branch_a",
+      "kind": "linear"
+    },
+    {
+      "id": "start_to_b",
+      "source": "start",
+      "target": "branch_b",
+      "kind": "linear"
     },
     {
       "id": "join_results",
-      "source": "process",
+      "source": "branch_a",
       "target": "aggregate",
-      "kind": "join"
+      "kind": "join",
+      "join_sources": ["branch_a", "branch_b"]
     }
   ],
   "policies": {},

@@ -3,6 +3,7 @@
     {
       "condition": null,
       "id": "fanout_items",
+      "join_sources": null,
       "kind": "fanout",
       "loop_guard": null,
       "map": {

@@ -1,13 +1,14 @@
 {
   "schema_version": "0.1",
-  "workflow_id": "invalid_join_edge",
-  "name": "Invalid Join Edge (missing join_sources)",
+  "workflow_id": "join_edge_example",
+  "name": "Join Edge Example",
   "entrypoint": "start",
   "state_schema": {
     "input": {"items": {"type": "array", "item_type": {"type": "string"}}},
     "output": {"results": {"type": "array", "item_type": {"type": "string"}}},
     "channels": {
       "items": {"type": "array", "item_type": {"type": "string"}},
+      "item": {"type": "string"},
       "results": {"type": "array", "item_type": {"type": "string"}}
     },
     "private": {},
@@ -26,7 +27,15 @@
       "id": "process",
       "kind": "transform",
       "executor": {"ref": "builtin.identity_transform", "type": "builtin"},
-      "inputs": {"value": {"state_key": "items"}},
+      "inputs": {"value": {"state_key": "item"}},
+      "outputs": {"value": {"state_key": "results"}},
+      "params": {}
+    },
+    {
+      "id": "process_b",
+      "kind": "transform",
+      "executor": {"ref": "builtin.identity_transform", "type": "builtin"},
+      "inputs": {"value": {"state_key": "item"}},
       "outputs": {"value": {"state_key": "results"}},
       "params": {}
     },
@@ -41,13 +50,24 @@
   ],
   "edges": [
     {
-      "id": "fanout_items",
+      "id": "fanout_to_process",
       "source": "start",
       "target": "process",
       "kind": "fanout",
       "map": {
         "items_state_key": "items",
-        "item_state_key": "items",
+        "item_state_key": "item",
+        "result_state_key": "results"
+      }
+    },
+    {
+      "id": "fanout_to_process_b",
+      "source": "start",
+      "target": "process_b",
+      "kind": "fanout",
+      "map": {
+        "items_state_key": "items",
+        "item_state_key": "item",
         "result_state_key": "results"
       }
     },
@@ -55,7 +75,8 @@
       "id": "join_results",
       "source": "process",
       "target": "aggregate",
-      "kind": "join"
+      "kind": "join",
+      "join_sources": ["process", "process_b"]
     }
   ],
   "policies": {},

@@ -1,0 +1,75 @@
+{
+  "schema_version": "0.1",
+  "workflow_id": "fanout_to_join",
+  "name": "Fanout to Join",
+  "entrypoint": "start",
+  "state_schema": {
+    "input": {"query": {"type": "string"}},
+    "output": {"result_a": {"type": "string"}, "result_b": {"type": "string"}, "done": {"type": "string"}},
+    "channels": {
+      "query": {"type": "string"},
+      "result_a": {"type": "string"},
+      "result_b": {"type": "string"},
+      "done": {"type": "string"}
+    },
+    "private": {},
+    "reducers": {}
+  },
+  "nodes": [
+    {
+      "id": "start",
+      "kind": "transform",
+      "executor": {"ref": "builtin.identity_transform", "type": "builtin"},
+      "inputs": {"value": {"state_key": "query"}},
+      "outputs": {"value": {"state_key": "query"}},
+      "params": {}
+    },
+    {
+      "id": "branch_a",
+      "kind": "transform",
+      "executor": {"ref": "builtin.identity_transform", "type": "builtin"},
+      "inputs": {"value": {"state_key": "query"}},
+      "outputs": {"value": {"state_key": "result_a"}},
+      "params": {}
+    },
+    {
+      "id": "branch_b",
+      "kind": "transform",
+      "executor": {"ref": "builtin.identity_transform", "type": "builtin"},
+      "inputs": {"value": {"state_key": "query"}},
+      "outputs": {"value": {"state_key": "result_b"}},
+      "params": {}
+    },
+    {
+      "id": "finish",
+      "kind": "transform",
+      "executor": {"ref": "builtin.identity_transform", "type": "builtin"},
+      "inputs": {"value": {"state_key": "result_b"}},
+      "outputs": {"value": {"state_key": "done"}},
+      "params": {}
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge_start_a",
+      "source": "start",
+      "target": "branch_a",
+      "kind": "linear"
+    },
+    {
+      "id": "edge_start_b",
+      "source": "start",
+      "target": "branch_b",
+      "kind": "linear"
+    },
+    {
+      "id": "join_finish",
+      "source": "branch_b",
+      "target": "finish",
+      "kind": "join",
+      "join_sources": ["branch_a", "branch_b"]
+    }
+  ],
+  "policies": {},
+  "metadata": {}
+}

@@ -1,21 +1,23 @@
 {
   "schema_version": "0.1",
-  "workflow_id": "invalid_join_edge",
-  "name": "Invalid Join Edge (missing join_sources)",
-  "entrypoint": "start",
+  "workflow_id": "fanout_with_join",
+  "name": "Fanout with Join",
+  "entrypoint": "split",
   "state_schema": {
     "input": {"items": {"type": "array", "item_type": {"type": "string"}}},
-    "output": {"results": {"type": "array", "item_type": {"type": "string"}}},
+    "output": {"aggregated": {"type": "string"}},
     "channels": {
       "items": {"type": "array", "item_type": {"type": "string"}},
-      "results": {"type": "array", "item_type": {"type": "string"}}
+      "item": {"type": "string"},
+      "results": {"type": "array", "item_type": {"type": "string"}},
+      "aggregated": {"type": "string"}
     },
     "private": {},
     "reducers": {"results": "append"}
   },
   "nodes": [
     {
-      "id": "start",
+      "id": "split",
       "kind": "transform",
       "executor": {"ref": "builtin.identity_transform", "type": "builtin"},
       "inputs": {"value": {"state_key": "items"}},
@@ -31,31 +33,41 @@
       "params": {}
     },
     {
-      "id": "aggregate",
+      "id": "process_b",
+      "kind": "transform",
+      "executor": {"ref": "builtin.identity_transform", "type": "builtin"},
+      "inputs": {"value": {"state_key": "items"}},
+      "outputs": {"value": {"state_key": "results"}},
+      "params": {}
+    },
+    {
+      "id": "join_aggregate",
       "kind": "transform",
       "executor": {"ref": "builtin.identity_transform", "type": "builtin"},
       "inputs": {"value": {"state_key": "results"}},
-      "outputs": {"value": {"state_key": "results"}},
+      "outputs": {"value": {"state_key": "aggregated"}},
       "params": {}
     }
   ],
   "edges": [
     {
-      "id": "fanout_items",
-      "source": "start",
+      "id": "split_to_process",
+      "source": "split",
       "target": "process",
-      "kind": "fanout",
-      "map": {
-        "items_state_key": "items",
-        "item_state_key": "items",
-        "result_state_key": "results"
-      }
+      "kind": "linear"
     },
     {
-      "id": "join_results",
+      "id": "split_to_process_b",
+      "source": "split",
+      "target": "process_b",
+      "kind": "linear"
+    },
+    {
+      "id": "join_processed",
       "source": "process",
-      "target": "aggregate",
-      "kind": "join"
+      "target": "join_aggregate",
+      "kind": "join",
+      "join_sources": ["process", "process_b"]
     }
   ],
   "policies": {},

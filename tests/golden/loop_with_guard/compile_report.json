@@ -54,7 +54,7 @@
     }
   ],
   "ok": true,
-  "registry_hash": "sha256:0574afffef2a54009163c4dd875acbbc57b8381639cedf994868fb9321ba02a8",
+  "registry_hash": "sha256:c454bc06f24b62cef0238632e0cdeb3304851a73dbe2f4ee675c9a5e472c1813",
   "state_channels": {
     "answer": {
       "item_type": null,
@@ -68,6 +68,6 @@
     }
   },
   "timings_ms": "<timings_ms>",
-  "workflow_hash": "sha256:52c2b085c52b60387b266b2dc958f3484be1d347d66e96a5c56636af4e29653d",
+  "workflow_hash": "sha256:8c397765eeaafe5093b07a7eeede1e5feda9a5050795d5861abcf228a1557c85",
   "workflow_id": "loop_with_guard"
 }

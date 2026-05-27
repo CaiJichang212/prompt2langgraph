@@ -3,6 +3,7 @@
     {
       "condition": null,
       "id": "compose_to_finalize",
+      "join_sources": null,
       "kind": "linear",
       "loop_guard": null,
       "map": null,
@@ -12,6 +13,7 @@
     {
       "condition": null,
       "id": "retry",
+      "join_sources": null,
       "kind": "loop",
       "loop_guard": {
         "counter_key": "_loop_counts",

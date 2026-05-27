@@ -14,9 +14,9 @@
   "langgraph_version": "1.1.10",
   "policy_hash": "sha256:87be6d3c7a70f135eb54694744ddee09a10969330dac73327848578d8108f88f",
   "prompt2langgraph_version": "0.1.0",
-  "registry_hash": "sha256:0574afffef2a54009163c4dd875acbbc57b8381639cedf994868fb9321ba02a8",
+  "registry_hash": "sha256:c454bc06f24b62cef0238632e0cdeb3304851a73dbe2f4ee675c9a5e472c1813",
   "schema_version": "0.1",
   "target": "langgraph-py",
-  "workflow_hash": "sha256:b780c2aeb1c6d599068d5b0a8507bef5b534e8891229e8266d62b777cd3848af",
+  "workflow_hash": "sha256:0c8a646e2cb895776522375eee21ec736c39915cdaa322e0f317a4e3820a03b1",
   "workflow_id": "fanout_map_reduce"
 }

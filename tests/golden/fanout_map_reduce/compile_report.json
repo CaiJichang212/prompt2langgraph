@@ -48,7 +48,7 @@
     }
   ],
   "ok": true,
-  "registry_hash": "sha256:0574afffef2a54009163c4dd875acbbc57b8381639cedf994868fb9321ba02a8",
+  "registry_hash": "sha256:c454bc06f24b62cef0238632e0cdeb3304851a73dbe2f4ee675c9a5e472c1813",
   "state_channels": {
     "item": {
       "item_type": null,
@@ -75,6 +75,6 @@
     }
   },
   "timings_ms": "<timings_ms>",
-  "workflow_hash": "sha256:b780c2aeb1c6d599068d5b0a8507bef5b534e8891229e8266d62b777cd3848af",
+  "workflow_hash": "sha256:0c8a646e2cb895776522375eee21ec736c39915cdaa322e0f317a4e3820a03b1",
   "workflow_id": "fanout_map_reduce"
 }
