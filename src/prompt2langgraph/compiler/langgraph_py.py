@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import operator
 import re
+import warnings
 from collections.abc import Callable
 from typing import Annotated, Any
 
@@ -68,11 +69,21 @@ def compile_workflow_to_graph(
     builder.add_edge(START, workflow.entrypoint)
 
     outgoing_sources: set[str] = set()
+    added_edges: set[tuple[str, str]] = set()
+
     for edge in workflow.edges:
         if edge.kind is EdgeKind.LINEAR:
             if edge.source in loop_sources:
                 continue
-            builder.add_edge(edge.source, edge.target)
+            if (edge.source, edge.target) in added_edges:
+                warnings.warn(
+                    f'duplicate edge "{edge.id}" ({edge.source}'
+                    f' -> {edge.target}) already added, skipping',
+                    stacklevel=2,
+                )
+            else:
+                builder.add_edge(edge.source, edge.target)
+                added_edges.add((edge.source, edge.target))
         elif edge.kind is EdgeKind.CONDITIONAL:
             if edge.condition is None:
                 raise ValueError(f'conditional edge "{edge.id}" requires condition')
@@ -94,11 +105,33 @@ def compile_workflow_to_graph(
             if edge.map is None:
                 raise ValueError(f'fanout edge "{edge.id}" requires map')
             builder.add_conditional_edges(edge.source, _fanout_router(edge))
+        elif edge.kind is EdgeKind.JOIN:
+            if edge.join_sources is None:
+                raise ValueError(f'join edge "{edge.id}" requires join_sources')
+            for source in edge.join_sources:
+                if (source, edge.target) in added_edges:
+                    warnings.warn(
+                        f'duplicate edge from "{source}" to "{edge.target}"'
+                        f' via join edge "{edge.id}" already added, skipping',
+                        stacklevel=2,
+                    )
+                else:
+                    builder.add_edge(source, edge.target)
+                    added_edges.add((source, edge.target))
+                    outgoing_sources.add(source)
         else:
             raise ValueError(
                 f'edge "{edge.id}" kind "{edge.kind.value}" is not supported by v0.1c compiler'
             )
-        outgoing_sources.add(edge.source)
+        if edge.kind is not EdgeKind.JOIN:
+            outgoing_sources.add(edge.source)
+        else:
+            # JOIN edges: the edge.source field is informational only;
+            # actual fan-in sources come from join_sources.
+            # Still add edge.source to outgoing_sources to prevent
+            # a false END edge when source ∉ join_sources (W_JOIN_001).
+            if edge.source:
+                outgoing_sources.add(edge.source)
 
     for node in workflow.nodes:
         if node.id not in outgoing_sources:
@@ -113,6 +146,12 @@ def _state_schema_for(workflow: WorkflowSpec) -> type[TypedDict]:
     for edge in workflow.edges:
         if edge.kind is EdgeKind.LOOP and edge.loop_guard is not None:
             state_types.setdefault(edge.loop_guard.counter_key, TypeSpec(type=TypeName.OBJECT))
+
+    # Internal state key for side_effect rejection signaling.
+    # Only injected when workflow contains side_effect nodes.
+    has_side_effect = any(node.kind == "side_effect" for node in workflow.nodes)
+    if has_side_effect:
+        state_types["__pt2lg_side_effect_rejected__"] = TypeSpec(type=TypeName.STRING)
 
     for state_key, type_spec in state_types.items():
         annotation = _python_type_for(type_spec)
@@ -179,7 +218,11 @@ def _invoke_executor(
 
     if executor.dynamic and executor.type is ExecutorType.LLM:
         if model_client is None:
-            raise ExecutorError(E_SEC_013, f'node "{node.id}" requires model_client for LLM executor', executor_ref=executor.ref)
+            raise ExecutorError(
+                E_SEC_013,
+                f'node "{node.id}" requires model_client for LLM executor',
+                executor_ref=executor.ref,
+            )
         from prompt2langgraph.registry.llm_executor import LLMExecutor
 
         llm_executor = LLMExecutor(model_client=model_client)
@@ -198,11 +241,17 @@ def _invoke_executor(
 
     if executor.dynamic and executor.type is ExecutorType.PYTHON_CALLABLE:
         if tool_registry is None:
-            raise ExecutorError(E_SEC_015, f'node "{node.id}" requires tool_registry for Tool executor', executor_ref=executor.ref)
+            raise ExecutorError(
+                E_SEC_015,
+                f'node "{node.id}" requires tool_registry for Tool executor',
+                executor_ref=executor.ref,
+            )
         timeout_s = node.timeout_s or policies.default_timeout_s
         from prompt2langgraph.registry.tool_executor import ToolExecutor
 
-        tool_executor = ToolExecutor(registry=tool_registry, tool_ref=executor.ref, timeout_s=timeout_s)
+        tool_executor = ToolExecutor(
+            registry=tool_registry, tool_ref=executor.ref, timeout_s=timeout_s
+        )
         result = tool_executor(inputs, params)
         if policies.collect_metrics and metrics_sink is not None:
             metrics_sink(
@@ -236,6 +285,7 @@ def _node_wrapper(
     effective_policies = policies if policies is not None else PolicySpec()
 
     def invoke_node(state: dict[str, Any]) -> dict[str, Any]:
+        from prompt2langgraph.registry.side_effect_executor import side_effect_handler
         from prompt2langgraph.runtime.events import ExternalCallRecord
 
         if event_sink is not None:
@@ -244,17 +294,68 @@ def _node_wrapper(
             input_name: _state_value(state, selector.state_key, node.id)
             for input_name, selector in node.inputs.items()
         }
+
+        # Prepare inputs and params (may be overridden by side_effect handler).
+        params = node.params
+
+        # Handle side_effect node approval flow
+        # NOTE: This is a compiler-level intercept rather than an executor handler
+        # because side_effect needs to wrap the actual executor invocation with
+        # approval logic. The builtin.side_effect handler is a passthrough;
+        # the real approval + execution orchestration happens here.
+        # Direct executor.invoke() bypasses approval — this is acceptable because
+        # validate_workflow() enforces E_SIDE_008 at the validation boundary.
+        if node.kind == "side_effect":
+            handler_result = side_effect_handler(
+                inputs,
+                node.params,
+                security=node.security,
+                allow_side_effects=effective_policies.allow_side_effects,
+                node_id=node.id,
+                executor_ref=executor.ref,
+            )
+            # Check if rejected (handler returns __pt2lg_side_effect_rejected__ signal)
+            if handler_result.get("__pt2lg_side_effect_rejected__"):
+                # Rejected — write rejection info to a dedicated state key
+                # instead of overwriting user-declared output keys.
+                # User output keys are left untouched because the executor
+                # never ran; writing None could violate type constraints
+                # (e.g., a number-typed key with SUM reducer).
+                reason = handler_result.get("reason", "rejected by approver")
+                update = {"__pt2lg_side_effect_rejected__": reason}
+                if event_sink is not None:
+                    event_sink("node.finished", node.id)
+                return update
+            # Approval granted — extract inputs and params from the signal dict.
+            # The handler returns {"__pt2lg_side_effect_approved__": True,
+            # "inputs": ..., "params": ...}; we use the embedded values.
+            inputs = handler_result.get("inputs", inputs)
+            params = handler_result.get("params", node.params)
+
         try:
             raw_outputs = _invoke_executor(
                 node,
                 executor,
                 inputs,
-                node.params,
+                params,
                 policies=effective_policies,
                 model_client=model_client,
                 tool_registry=tool_registry,
                 metrics_sink=metrics_sink,
             )
+            # Record successful external call for side_effect after approval
+            if (
+                node.kind == "side_effect"
+                and effective_policies.collect_metrics
+                and metrics_sink is not None
+            ):
+                metrics_sink(
+                    ExternalCallRecord(
+                        node_id=node.id,
+                        executor_ref=executor.ref,
+                        status="succeeded",
+                    )
+                )
         except ExecutorError as exc:
             if exc.node_id is None:
                 exc.node_id = node.id
@@ -262,7 +363,7 @@ def _node_wrapper(
                 exc.executor_ref = executor.ref
             if error_sink is not None:
                 error_sink(exc)
-            if error_sink is None and effective_policies.collect_metrics and metrics_sink is not None:
+            if effective_policies.collect_metrics and metrics_sink is not None:
                 metrics_sink(
                     ExternalCallRecord(
                         node_id=node.id,
