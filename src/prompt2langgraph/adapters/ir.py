@@ -14,3 +14,7 @@ class IRAdapter(SourceAdapter):
 
     def parse(self, data: Mapping[str, Any], *, source: str | None = None) -> WorkflowSpec:
         return WorkflowSpec.model_validate(data)
+
+    def emit(self, workflow: WorkflowSpec) -> dict[str, Any]:
+        """Serialize a WorkflowSpec to a plain dict."""
+        return workflow.model_dump(mode="json")
