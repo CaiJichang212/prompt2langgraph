@@ -10,6 +10,8 @@ from prompt2langgraph.ir.models import WorkflowSpec
 from prompt2langgraph.prompting import (
     PromptPlanRequest,
     PromptPlanResult,
+    SkillPlanRequest,
+    SkillPlanResult,
     plan_prompt_to_workflow_spec,
 )
 from prompt2langgraph.validate.validator import validate_workflow
@@ -43,6 +45,22 @@ def run_workflow(*args: Any, **kwargs: Any) -> Any:
     return _run_workflow(*args, **kwargs)
 
 
+def plan_skill_to_workflow_spec(
+    request: Any, *, model_client: Any | None = None, analysis: Any | None = None
+) -> Any:
+    """Public API wrapper for plan_skill_to_workflow_spec.
+
+    Returns SkillPlanResult with workflow_spec, diagnostics, raw_text, plan fields.
+    """
+    from prompt2langgraph.prompting.skill_planner import (
+        plan_skill_to_workflow_spec as _plan_skill_to_workflow_spec,
+    )
+
+    return _plan_skill_to_workflow_spec(
+        request, model_client=model_client, analysis=analysis
+    )
+
+
 def __getattr__(name: str) -> Any:
     if name == "CompileResult":
         from prompt2langgraph.runtime.artifacts import CompileResult
@@ -57,10 +75,13 @@ __all__ = [
     "DiagnosticLocation",
     "PromptPlanRequest",
     "PromptPlanResult",
+    "SkillPlanRequest",
+    "SkillPlanResult",
     "ValidationReport",
     "WorkflowSpec",
     "compile_workflow",
     "plan_prompt_to_workflow_spec",
+    "plan_skill_to_workflow_spec",
     "run_workflow",
     "validate_workflow",
 ]
