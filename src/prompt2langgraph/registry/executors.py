@@ -1,10 +1,12 @@
 """Executor registry definitions."""
+
 from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
+from prompt2langgraph.diagnostics.report import Diagnostic
 from prompt2langgraph.ir.models import ExecutorType, TypeSpec
 
 ExecutorHandler = Callable[[dict[str, Any], dict[str, Any]], dict[str, Any]]
@@ -30,7 +32,7 @@ class ExecutorError(RuntimeError):
         super().__init__(message)
 
     def to_diagnostic(self) -> Diagnostic:
-        from prompt2langgraph.diagnostics.report import Diagnostic, DiagnosticLocation
+        from prompt2langgraph.diagnostics.report import DiagnosticLocation
 
         return Diagnostic(
             code=self.code,
