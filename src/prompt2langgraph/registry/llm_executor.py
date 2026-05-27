@@ -1,4 +1,5 @@
 """Real LLM executor for llm-type nodes."""
+
 from __future__ import annotations
 
 from langchain_core.language_models import BaseChatModel
@@ -41,7 +42,9 @@ class LLMExecutor:
             try:
                 messages.extend(dict_messages_to_langchain(inputs["messages"]))
             except ValueError as exc:
-                raise ExecutorError(E_LLM_003, f"invalid message format: {exc}", hint=str(exc)) from exc
+                raise ExecutorError(
+                    E_LLM_003, f"invalid message format: {exc}", hint=str(exc)
+                ) from exc
         elif "question" in inputs:
             messages.append(HumanMessage(content=str(inputs["question"])))
         else:
