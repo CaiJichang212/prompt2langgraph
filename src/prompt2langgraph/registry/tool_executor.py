@@ -1,8 +1,9 @@
 """Tool executor and callable registry for tool-type nodes."""
+
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
-from typing import Any
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FuturesTimeoutError
 
 from prompt2langgraph.diagnostics.codes import E_SEC_015
 from prompt2langgraph.registry.executors import ExecutorError, ExecutorHandler
