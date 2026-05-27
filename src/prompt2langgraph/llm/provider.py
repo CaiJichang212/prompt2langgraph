@@ -1,9 +1,10 @@
 """Unified LLM client construction."""
+
 from __future__ import annotations
 
 from langchain_core.language_models import BaseChatModel
 
-from prompt2langgraph.llm.config import LLMConfig, load_llm_config
+from prompt2langgraph.llm.config import load_llm_config
 
 
 def build_llm_client(
@@ -24,5 +25,5 @@ def build_llm_client(
         api_key=effective_api_key,
         temperature=temperature if temperature is not None else config.temperature,
         max_tokens=max_tokens if max_tokens is not None else config.max_tokens,
-        request_timeout=timeout_s or config.request_timeout_s,
+        request_timeout=timeout_s if timeout_s is not None else config.request_timeout_s,
     )
