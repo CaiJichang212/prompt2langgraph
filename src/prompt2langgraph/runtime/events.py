@@ -19,6 +19,7 @@ class RunEvent(BaseModel):
 
 class RunInterrupt(BaseModel):
     node_id: str
+    kind: Literal["human_gate", "side_effect_approval"] = "human_gate"
     payload: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -52,3 +53,4 @@ class RunResult(BaseModel):
     metrics: RunMetrics = Field(default_factory=RunMetrics)
     tool_calls: list[dict[str, Any]] = Field(default_factory=list)
     external_calls: list[ExternalCallRecord] = Field(default_factory=list)
+    side_effect_rejections: dict[str, str] = Field(default_factory=dict)
