@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, Field
 
 from prompt2langgraph.adapters.json_plan import JSONPlanAdapter
+from prompt2langgraph.diagnostics.report import Diagnostic
 from prompt2langgraph.ir.models import WorkflowSpec
 from prompt2langgraph.prompting.parser import parse_prompt_plan_text
 
@@ -23,7 +24,7 @@ class PromptPlanRequest(BaseModel):
 class PromptPlanResult(BaseModel):
     raw_text: str
     plan: dict | None = None
-    diagnostics: list[dict] = Field(default_factory=list)
+    diagnostics: list[Diagnostic] = Field(default_factory=list)
 
 
 SYSTEM_PROMPT = """You generate simplified JSON plan objects for prompt2langgraph.
@@ -65,7 +66,7 @@ Rules:
 - For conditional edges, "routes" must map "true" and "false" to valid node ids.
 - For loop edges, "loop_guard.max_iterations" must be a positive integer.
 - For fanout edges, the workflow must define a reducer (e.g. "append") for the result state key.
-"""
+"""  # noqa: E501
 
 
 def build_model_client(request: PromptPlanRequest) -> ChatOpenAI:
@@ -77,6 +78,21 @@ def build_model_client(request: PromptPlanRequest) -> ChatOpenAI:
         api_key=request.api_key,
         temperature=request.temperature,
     )
+
+
+def _extract_response_content(response: Any) -> str:
+    """Extract text content from an LLM response object.
+
+    Handles str, list, None, and other response.content formats.
+    """
+    raw = response.content
+    if isinstance(raw, str):
+        return raw
+    if isinstance(raw, list):
+        return "".join(str(item) for item in raw)
+    if raw is None:
+        return ""
+    return str(raw)
 
 
 def generate_plan_text(
@@ -91,16 +107,7 @@ def generate_plan_text(
             {"role": "user", "content": request.prompt},
         ]
     )
-    raw = response.content
-    if isinstance(raw, str):
-        content = raw
-    elif isinstance(raw, list):
-        content = "".join(str(item) for item in raw)
-    elif raw is None:
-        content = ""
-    else:
-        content = str(raw)
-    return PromptPlanResult(raw_text=content)
+    return PromptPlanResult(raw_text=_extract_response_content(response))
 
 
 def plan_prompt_to_workflow_spec(
