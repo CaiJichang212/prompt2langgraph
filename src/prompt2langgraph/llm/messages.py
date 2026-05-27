@@ -1,4 +1,5 @@
 """OpenAI-style dict messages to LangChain BaseMessage conversion."""
+
 from __future__ import annotations
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
