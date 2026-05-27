@@ -111,6 +111,7 @@ def build_manifest(
                 "source": edge.source,
                 "target": edge.target,
                 "kind": edge.kind.value,
+                **({"join_sources": edge.join_sources} if edge.join_sources is not None else {}),
             }
             for edge in normalized.edges
         ],
@@ -159,7 +160,13 @@ def build_compile_report(
             for node in normalized.nodes
         ],
         "edges": [
-            {"id": edge.id, "source": edge.source, "target": edge.target, "kind": edge.kind.value}
+            {
+                "id": edge.id,
+                "source": edge.source,
+                "target": edge.target,
+                "kind": edge.kind.value,
+                **({"join_sources": edge.join_sources} if edge.join_sources is not None else {}),
+            }
             for edge in normalized.edges
         ],
         "state_channels": {
