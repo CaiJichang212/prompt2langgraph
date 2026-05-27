@@ -41,6 +41,10 @@ def join(inputs: dict[str, Any], params: dict[str, Any]) -> dict[str, Any]:
     return dict(inputs)
 
 
+def side_effect(inputs: dict[str, Any], params: dict[str, Any]) -> dict[str, Any]:
+    return dict(inputs)
+
+
 def builtin_node_registry() -> NodeRegistry:
     return NodeRegistry(
         [
@@ -145,6 +149,13 @@ def builtin_executor_registry() -> ExecutorRegistry:
                 input_schema={"docs_ref": ARTIFACT_REF},
                 output_schema={},
                 handler=join,
+            ),
+            ExecutorDefinition(
+                ref="builtin.side_effect",
+                type=ExecutorType.BUILTIN,
+                input_schema={"value": ANY},
+                output_schema={"value": ANY},
+                handler=side_effect,
             ),
             ExecutorDefinition(
                 ref="llm.qwen-plus",
