@@ -81,6 +81,10 @@ def check_graph(workflow: WorkflowSpec) -> list[Diagnostic]:
             )
 
         outgoing[edge.source].extend(_reachable_targets(edge))
+        # JOIN edges: also record outgoing edges for each join_sources node
+        if edge.kind is EdgeKind.JOIN and edge.join_sources:
+            for src in edge.join_sources:
+                outgoing[src].append(edge.target)
         if edge.kind in {EdgeKind.CONDITIONAL, EdgeKind.FANOUT}:
             dynamic_sources.add(edge.source)
         else:
