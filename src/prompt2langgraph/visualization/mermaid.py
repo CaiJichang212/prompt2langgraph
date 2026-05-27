@@ -35,10 +35,20 @@ def _edge_lines(edge) -> list[str]:
     if edge.kind is EdgeKind.FANOUT:
         return [f"    {edge.source} -- fanout --> {edge.target}"]
     if edge.kind is EdgeKind.JOIN:
+        if edge.join_sources:
+            return [
+                f"    {source} -- join:{edge.id} --> {edge.target}" for source in edge.join_sources
+            ]
+        # Fallback: join_sources is empty — validator (E_JOIN_001) rejects
+        # this, so this path is effectively unreachable in validated workflows.
         return [f"    {edge.source} -- join --> {edge.target}"]
     return [f"    {edge.source} --> {edge.target}"]
 
 
 def _terminal_nodes(workflow: WorkflowSpec) -> list[str]:
-    outgoing = {edge.source for edge in workflow.edges}
+    outgoing: set[str] = set()
+    for edge in workflow.edges:
+        outgoing.add(edge.source)
+        if edge.kind is EdgeKind.JOIN and edge.join_sources:
+            outgoing.update(edge.join_sources)
     return [node.id for node in workflow.nodes if node.id not in outgoing]
