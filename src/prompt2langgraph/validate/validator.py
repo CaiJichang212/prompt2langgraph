@@ -12,10 +12,12 @@ from prompt2langgraph.registry.executors import ExecutorRegistry
 from prompt2langgraph.registry.nodes import NodeRegistry
 from prompt2langgraph.registry.tool_executor import ToolCallableRegistry
 from prompt2langgraph.validate.graphcheck import check_graph
+from prompt2langgraph.validate.join_check import check_join_edges
 from prompt2langgraph.validate.security import (
     check_external_policy,
     check_model_whitelist,
     check_security,
+    check_side_effect_reducer,
     check_tool_refs,
 )
 from prompt2langgraph.validate.typecheck import check_types
@@ -54,8 +56,10 @@ def validate_workflow(
     diagnostics: list[Diagnostic] = []
     diagnostics.extend(_check_registries(spec, node_registry, executor_registry))
     diagnostics.extend(check_graph(spec))
+    diagnostics.extend(check_join_edges(spec))
     diagnostics.extend(check_types(spec, executor_registry, node_registry))
     diagnostics.extend(check_security(spec, node_registry))
+    diagnostics.extend(check_side_effect_reducer(spec))
     diagnostics.extend(check_external_policy(spec))
     diagnostics.extend(check_model_whitelist(spec))
     if tool_registry is not None:
