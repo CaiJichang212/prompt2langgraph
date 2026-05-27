@@ -2,9 +2,15 @@
 
 from __future__ import annotations
 
-from prompt2langgraph.diagnostics.codes import E_SEC_013, E_SEC_014, E_SEC_015, E_SIDE_008
+from prompt2langgraph.diagnostics.codes import (
+    E_SEC_013,
+    E_SEC_014,
+    E_SEC_015,
+    E_SIDE_008,
+    W_SIDE_001,
+)
 from prompt2langgraph.diagnostics.report import Diagnostic, DiagnosticLocation
-from prompt2langgraph.ir.models import ExecutorType, WorkflowSpec
+from prompt2langgraph.ir.models import ExecutorType, ReducerName, WorkflowSpec
 from prompt2langgraph.registry.nodes import NodeRegistry
 from prompt2langgraph.registry.tool_executor import ToolCallableRegistry
 
@@ -117,4 +123,37 @@ def check_tool_refs(
                     location=DiagnosticLocation(node_id=node.id),
                 )
             )
+    return diagnostics
+
+
+def check_side_effect_reducer(workflow: WorkflowSpec) -> list[Diagnostic]:
+    """检查：若 workflow 包含 side_effect 节点，检查 __pt2lg_side_effect_rejected__ reducer。
+
+    __pt2lg_side_effect_rejected__ 是 compiler 实际写入的拒绝信号 key。
+    未声明 APPEND reducer 时输出 warning diagnostic（不阻断），
+    因为多个 side_effect 节点的拒绝信息会被覆盖。
+    """
+    diagnostics: list[Diagnostic] = []
+    has_side_effect = any(node.kind == "side_effect" for node in workflow.nodes)
+    if not has_side_effect:
+        return diagnostics
+
+    key = "__pt2lg_side_effect_rejected__"
+    reducer = workflow.state_schema.reducers.get(key)
+    if reducer is not ReducerName.APPEND:
+        current = reducer.value if reducer is not None else "not declared"
+        diagnostics.append(
+            Diagnostic(
+                code=W_SIDE_001,
+                severity="warning",
+                message=(
+                    f"workflow contains side_effect nodes but '{key}'"
+                    f" reducer is not APPEND (current: {current})"
+                ),
+                hint=(
+                    f"side effect rejections from multiple nodes may be overwritten;"
+                    f" add '{key}' with 'append' reducer to state_schema.reducers"
+                ),
+            )
+        )
     return diagnostics
