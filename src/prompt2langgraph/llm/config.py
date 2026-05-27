@@ -1,4 +1,5 @@
 """LLM configuration model and loader."""
+
 from __future__ import annotations
 
 import os
