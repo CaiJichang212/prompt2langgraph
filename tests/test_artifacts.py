@@ -213,6 +213,16 @@ def test_mermaid_labels_special_edge_kinds() -> None:
     join_data = json.loads((FIXTURES / "linear_llm.json").read_text(encoding="utf-8"))
     join_data["nodes"].append(
         {
+            "id": "archive",
+            "kind": "transform",
+            "executor": {"ref": "builtin.identity_transform", "type": "builtin"},
+            "inputs": {"value": {"state_key": "question"}},
+            "outputs": {"value": {"state_key": "question"}},
+            "params": {},
+        }
+    )
+    join_data["nodes"].append(
+        {
             "id": "finish",
             "kind": "transform",
             "executor": {"ref": "builtin.identity_transform", "type": "builtin"},
@@ -222,14 +232,17 @@ def test_mermaid_labels_special_edge_kinds() -> None:
         }
     )
     join_data["edges"] = [
-        {"id": "join_finish", "source": "compose", "target": "finish", "kind": "join"}
+        {"id": "join_finish", "source": "compose", "target": "finish", "kind": "join", "join_sources": ["compose", "archive"]},
     ]
+    join_data["state_schema"]["channels"]["question"] = {"type": "string"}
+    join_data["state_schema"]["input"]["question"] = {"type": "string"}
+    join_data["state_schema"]["output"]["question"] = {"type": "string"}
 
     join_mermaid = workflow_to_mermaid(WorkflowSpec.model_validate(join_data))
 
     assert "compose -- loop --> compose" in loop_mermaid
     assert "start -- fanout --> process_item" in fanout_mermaid
-    assert "compose -- join --> finish" in join_mermaid
+    assert "join:join_finish" in join_mermaid
 
 
 def test_compile_report_contains_hashes_tables_and_compile_id() -> None:
@@ -681,6 +694,8 @@ def test_lockfile_hash_stability_same_workflow() -> None:
         "fanout_map_reduce.json",
         "side_effect_allowed.json",
         "tool_identity.json",
+        "fanout_to_join.json",
+        "side_effect_requires_approval.json",
     ],
 )
 def test_lockfile_hash_stability_across_fixtures(fixture_name: str) -> None:

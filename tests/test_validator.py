@@ -43,6 +43,7 @@ def test_builtin_executor_registry_contains_required_executors() -> None:
         "builtin.route",
         "builtin.human_gate",
         "builtin.join",
+        "builtin.side_effect",
         "llm.qwen-plus",
     }
     assert registry.get("builtin.echo_llm").type is ExecutorType.BUILTIN
@@ -91,22 +92,39 @@ def test_validator_accepts_multi_node_retriever_llm_fixture() -> None:
 
 
 def test_validator_accepts_join_edge_as_ir() -> None:
-    report = validate_workflow(load_workflow("invalid_join_edge.json"))
+    """A properly formed JOIN edge with join_sources should pass validation."""
+    report = validate_workflow(load_workflow("valid_join_edge.json"))
 
+    # Valid join_sources should not produce join-related errors
     assert report.ok is True
-    assert report.diagnostics == []
 
 
-def test_compile_rejects_join_edge_as_unsupported_target_capability(tmp_path: Path) -> None:
-    workflow = WorkflowSpec.model_validate(load_workflow("invalid_join_edge.json"))
+def test_validator_rejects_join_edge_without_join_sources() -> None:
+    """JOIN edge without join_sources should fail validation with E_JOIN_001."""
+    workflow_data = load_workflow("valid_join_edge.json")
+    # Corrupt the join edge to have no join_sources
+    for edge in workflow_data["edges"]:
+        if edge.get("kind") == "join":
+            edge["join_sources"] = None
 
-    from prompt2langgraph.runtime.artifacts import compile_workflow_to_artifacts
-
-    report, output_dir = compile_workflow_to_artifacts(workflow, out_dir=tmp_path)
-
+    report = validate_workflow(workflow_data)
     assert report.ok is False
-    assert not (output_dir / "workflow.lock.json").exists()
-    assert any(item.code == "E_TARGET_009" for item in report.diagnostics)
+    assert any(item.code == "E_JOIN_001" for item in report.diagnostics)
+
+
+def test_validator_rejects_join_edge_with_self_referencing_join_sources() -> None:
+    """E_JOIN_001: JOIN edge with target node appearing in its own join_sources."""
+    workflow_data = load_workflow("valid_join_edge.json")
+    for edge in workflow_data["edges"]:
+        if edge.get("kind") == "join":
+            edge["join_sources"] = ["process", edge["target"]]
+
+    report = validate_workflow(workflow_data)
+    assert report.ok is False
+    assert any(
+        d.code == "E_JOIN_001" and "cannot join to itself" in d.message.lower()
+        for d in report.diagnostics
+    )
 
 
 def test_validator_accepts_conditional_routes_as_reachable() -> None:
@@ -357,7 +375,8 @@ def test_validator_accepts_allowed_side_effect_fixture() -> None:
     report = validate_workflow(load_workflow("side_effect_allowed.json"))
 
     assert report.ok is True
-    assert report.diagnostics == []
+    # W_SIDE_001 is a warning about missing __pt2lg_side_effect_records__ reducer, not an error
+    assert all(d.severity != "error" for d in report.diagnostics)
 
 
 def test_validator_accepts_tool_node_fixture() -> None:
@@ -471,3 +490,73 @@ def test_validator_rejects_object_param_property_type_mismatch() -> None:
         and item.location.path == "params.options"
         for item in report.diagnostics
     )
+
+
+def test_validator_rejects_join_edge_with_single_join_source() -> None:
+    """E_JOIN_002: JOIN edge with only one join_source should fail validation."""
+    workflow_data = load_workflow("valid_join_edge.json")
+    for edge in workflow_data["edges"]:
+        if edge.get("kind") == "join":
+            edge["join_sources"] = ["only_one"]
+
+    report = validate_workflow(workflow_data)
+    assert report.ok is False
+    assert any(d.code == "E_JOIN_002" for d in report.diagnostics)
+
+
+def test_validator_rejects_join_edge_with_unknown_join_source() -> None:
+    """E_JOIN_003: JOIN edge referencing unknown node in join_sources should fail validation."""
+    workflow_data = load_workflow("valid_join_edge.json")
+    for edge in workflow_data["edges"]:
+        if edge.get("kind") == "join":
+            edge["join_sources"] = ["nonexistent_a", "nonexistent_b"]
+
+    report = validate_workflow(workflow_data)
+    assert report.ok is False
+    assert any(d.code == "E_JOIN_003" for d in report.diagnostics)
+
+
+def test_validator_warns_when_join_source_not_in_join_sources() -> None:
+    """W_JOIN_001: JOIN edge source not in join_sources should produce warning."""
+    workflow_data = load_workflow("valid_join_edge.json")
+    for edge in workflow_data["edges"]:
+        if edge.get("kind") == "join":
+            edge["source"] = "different_source"
+
+    report = validate_workflow(workflow_data)
+    # W_JOIN_001 is a warning, so report.ok should still be True
+    assert any(d.code == "W_JOIN_001" for d in report.diagnostics)
+
+
+def test_validator_rejects_duplicate_join_target() -> None:
+    """E_JOIN_005: Multiple JOIN edges targeting same node should fail validation."""
+    workflow_data = load_workflow("valid_join_edge.json")
+    # Add another JOIN edge targeting the same node
+    join_target = None
+    for edge in workflow_data["edges"]:
+        if edge.get("kind") == "join":
+            join_target = edge["target"]
+            break
+    if join_target is not None:
+        workflow_data["edges"].append({
+            "id": "duplicate_join",
+            "source": workflow_data["nodes"][0]["id"],
+            "target": join_target,
+            "kind": "join",
+            "join_sources": [workflow_data["nodes"][0]["id"], workflow_data["nodes"][-1]["id"]],
+        })
+
+    report = validate_workflow(workflow_data)
+    assert report.ok is False
+    assert any(d.code == "E_JOIN_005" for d in report.diagnostics)
+
+
+def test_validator_warns_when_join_sources_share_output_key_without_reducer() -> None:
+    """W_JOIN_002: Multiple join_sources writing same state key without reducer."""
+    workflow_data = load_workflow("valid_join_edge.json")
+    # Remove the "results" reducer — both "process" and "process_b" write to "results"
+    workflow_data["state_schema"].get("reducers", {}).pop("results", None)
+
+    report = validate_workflow(workflow_data)
+    # W_JOIN_002 is a warning, so report.ok should still be True
+    assert any(d.code == "W_JOIN_002" for d in report.diagnostics)

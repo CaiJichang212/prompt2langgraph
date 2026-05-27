@@ -155,10 +155,12 @@ def test_invalid_examples_return_expected_validation_diagnostics(
 def test_invalid_join_edge_example_is_rejected_by_compile_target(
     tmp_path: Path,
 ) -> None:
-    workflow = load_workflow(EXAMPLES / "invalid" / "join_edge.json")
+    # The join_edge.json example has a JOIN edge without join_sources,
+    # which fails validation with E_JOIN_001
+    import json as json_module
+    data = json_module.loads((EXAMPLES / "invalid" / "join_edge.json").read_text(encoding="utf-8"))
 
-    result = pt2lg.compile_workflow(workflow, out_dir=tmp_path)
-
-    assert result.ok is False
-    assert any(diagnostic["code"] == "E_TARGET_009" for diagnostic in result.diagnostics)
-    assert not (result.output_dir / "workflow.lock.json").exists()
+    workflow = pt2lg.WorkflowSpec.model_validate(data)
+    report = pt2lg.validate_workflow(workflow)
+    assert not report.ok
+    assert any(d.code == "E_JOIN_001" for d in report.diagnostics)

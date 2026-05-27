@@ -711,7 +711,8 @@ def test_resume_command_continues_pending_interrupt_across_processes(tmp_path: P
     waiting = json.loads(waiting_result.stdout)
     assert waiting["status"] == "waiting"
     state_store = lockfile.parent / ".pt2lg-runtime"
-    assert list(state_store.glob("*.json"))
+    # SQLite checkpointer uses .db files; legacy uses .json files
+    assert list(state_store.glob("*.json")) or list(state_store.glob("*.db"))
 
     resume_result = subprocess.run(
         [
@@ -735,6 +736,8 @@ def test_resume_command_continues_pending_interrupt_across_processes(tmp_path: P
     resumed = json.loads(resume_result.stdout)
     assert resumed["status"] == "succeeded"
     assert resumed["output"] == {"answer": "Answer: hello"}
+    # .json runtime state files should be cleaned up after successful run.
+    # .db checkpoint files are intentionally preserved for time travel debugging.
     assert list(state_store.glob("*.json")) == []
 
 
@@ -762,3 +765,210 @@ def test_resume_command_calls_build_runtime_clients(tmp_path: Path) -> None:
         )
         # 验证 _build_runtime_clients 被调用
         mock_build.assert_called_once()
+
+
+def test_plan_command_requires_either_prompt_or_skill_dir() -> None:
+    """plan 命令在无 --prompt 且无 --skill-dir 时应失败。"""
+    result = CliRunner().invoke(
+        app,
+        ["plan", "--json"],
+    )
+
+    assert result.exit_code != 0
+    payload = json.loads(result.stdout)
+    assert payload["ok"] is False
+    assert any(item["code"] == "E_PARSE_001" for item in payload["diagnostics"])
+
+
+def test_plan_command_rejects_both_prompt_and_skill_dir() -> None:
+    """plan 命令在同时传入 --prompt 与 --skill-dir 时应失败。"""
+    result = CliRunner().invoke(
+        app,
+        [
+            "plan",
+            "--prompt",
+            "build a workflow",
+            "--skill-dir",
+            str(FIXTURES / "skill_basic"),
+            "--json",
+        ],
+    )
+
+    assert result.exit_code != 0
+    payload = json.loads(result.stdout)
+    assert payload["ok"] is False
+    assert any(item["code"] == "E_PARSE_001" for item in payload["diagnostics"])
+
+
+def test_plan_command_rejects_param_without_equals_sign() -> None:
+    """plan 命令在 --param 无 = 时应失败并返回诊断。"""
+    result = CliRunner().invoke(
+        app,
+        [
+            "plan",
+            "--skill-dir",
+            str(FIXTURES / "skill_basic"),
+            "--param",
+            "invalid",
+            "--json",
+        ],
+    )
+
+    assert result.exit_code != 0
+    payload = json.loads(result.stdout)
+    assert payload["ok"] is False
+    assert any(item["code"] == "E_PARSE_001" for item in payload["diagnostics"])
+
+
+def test_skill_plan_command_emits_json_plan_payload(monkeypatch) -> None:
+    """plan --skill-dir 应输出 JSON plan payload。"""
+
+    class FakeModel:
+        def invoke(self, messages):
+            return type(
+                "Response",
+                (),
+                {
+                    "content": (
+                        '{"name":"SkillWorkflow",'
+                        '"nodes":[{"id":"compose","kind":"llm",'
+                        '"executor":"builtin.echo_llm"}],"edges":[]}'
+                    )
+                },
+            )()
+
+    monkeypatch.setattr(
+        "prompt2langgraph.llm.provider.build_llm_client",
+        lambda **kwargs: FakeModel(),
+    )
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "plan",
+            "--skill-dir",
+            str(FIXTURES / "skill_basic"),
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["ok"] is True
+    assert payload["plan"]["name"] == "SkillWorkflow"
+
+
+def test_skill_plan_command_reports_parse_failure_as_json(monkeypatch) -> None:
+    """plan --skill-dir 在 LLM 返回无效 JSON 时应返回诊断。"""
+
+    class FakeModel:
+        def invoke(self, messages):
+            return type("Response", (), {"content": "not valid json"})()
+
+    monkeypatch.setattr(
+        "prompt2langgraph.llm.provider.build_llm_client",
+        lambda **kwargs: FakeModel(),
+    )
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "plan",
+            "--skill-dir",
+            str(FIXTURES / "skill_basic"),
+            "--json",
+        ],
+    )
+
+    assert result.exit_code != 0
+    payload = json.loads(result.stdout)
+    assert payload["ok"] is False
+    assert any(item["code"] == "E_PARSE_001" for item in payload["diagnostics"])
+
+
+def test_plan_command_rejects_empty_param_key() -> None:
+    """plan 命令在 --param key 为空时应失败并返回诊断。"""
+    result = CliRunner().invoke(
+        app,
+        [
+            "plan",
+            "--skill-dir",
+            str(FIXTURES / "skill_basic"),
+            "--param",
+            "=value",
+            "--json",
+        ],
+    )
+
+    assert result.exit_code != 0
+    payload = json.loads(result.stdout)
+    assert payload["ok"] is False
+    assert any(item["code"] == "E_PARSE_001" for item in payload["diagnostics"])
+
+
+def test_skill_plan_command_with_validate_flag(monkeypatch) -> None:
+    """plan --skill-dir --validate 应返回包含 validation 结果的输出。"""
+
+    class FakeModel:
+        def invoke(self, messages):
+            return type(
+                "Response",
+                (),
+                {
+                    "content": (
+                        '{"name":"SkillWorkflow",'
+                        '"nodes":[{"id":"compose","kind":"llm",'
+                        '"executor":"builtin.echo_llm"}],"edges":[]}'
+                    )
+                },
+            )()
+
+    monkeypatch.setattr(
+        "prompt2langgraph.llm.provider.build_llm_client",
+        lambda **kwargs: FakeModel(),
+    )
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "plan",
+            "--skill-dir",
+            str(FIXTURES / "skill_basic"),
+            "--validate",
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["ok"] is True
+    assert "validation" in payload
+    assert payload["validation"]["ok"] is True
+
+
+def test_skill_plan_command_reports_llm_call_failure_as_diagnostic(monkeypatch) -> None:
+    """plan --skill-dir 在 LLM 调用失败时应返回诊断。"""
+
+    class FakeModel:
+        def invoke(self, messages):
+            raise RuntimeError("connection refused")
+
+    monkeypatch.setattr(
+        "prompt2langgraph.llm.provider.build_llm_client",
+        lambda **kwargs: FakeModel(),
+    )
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "plan",
+            "--skill-dir",
+            str(FIXTURES / "skill_basic"),
+            "--json",
+        ],
+    )
+
+    assert result.exit_code != 0
+    payload = json.loads(result.stdout)
+    assert payload["ok"] is False
+    assert any(item["code"] == "E_RUNTIME_010" for item in payload["diagnostics"])

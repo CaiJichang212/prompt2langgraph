@@ -155,11 +155,34 @@ def test_run_workflow_reports_actual_node_events_for_failed_node() -> None:
 
 
 def test_run_workflow_rejects_unsupported_edge_kind_as_target_diagnostic() -> None:
-    result = run_workflow(load_workflow("invalid_join_edge.json"), {"question": "hello"})
+    """Test that an unsupported edge kind is rejected at schema validation."""
+    # Create a workflow with an unsupported edge kind (invalid EdgeKind value)
+    import json as json_module
+    from pathlib import Path
+
+    FIXTURES = Path(__file__).parent / "fixtures"
+    workflow_data = json_module.loads((FIXTURES / "linear_llm.json").read_text(encoding="utf-8"))
+    workflow_data["edges"].append(
+        {"id": "unsupported", "source": "compose", "target": "archive", "kind": "unsupported_kind"}
+    )
+    workflow_data["nodes"].append({
+        "id": "archive",
+        "kind": "transform",
+        "executor": {"ref": "builtin.identity_transform", "type": "builtin"},
+        "inputs": {},
+        "outputs": {},
+        "params": {},
+    })
+    workflow_data["state_schema"]["channels"]["archive"] = {"type": "string"}
+    workflow_data["state_schema"]["input"]["archive"] = {"type": "string"}
+    workflow_data["state_schema"]["output"]["archive"] = {"type": "string"}
+
+    result = run_workflow(workflow_data, {"question": "hello"})
 
     assert result.status == "failed"
     assert result.output == {}
-    assert any(diagnostic.code == "E_TARGET_009" for diagnostic in result.diagnostics)
+    # Unsupported edge kind fails schema validation
+    assert any(diagnostic.code == "E_SCHEMA_002" for diagnostic in result.diagnostics)
 
 
 def test_run_workflow_waits_at_human_gate_and_resumes_with_same_thread() -> None:
@@ -468,3 +491,69 @@ def test_executor_error_executor_ref_default_none() -> None:
 
     err = ExecutorError("E_SEC_013", "test error")
     assert err.executor_ref is None
+
+
+def test_run_workflow_accepts_injected_checkpointer_for_interrupt_resume() -> None:
+    """run_workflow 接受注入的 checkpointer，支持 interrupt/resume 生命周期。"""
+    from langgraph.checkpoint.memory import InMemorySaver
+
+    workflow = load_workflow("conditional_human_gate.json")
+    checkpointer = InMemorySaver()
+
+    # First run: should wait at human_gate
+    waiting = run_workflow(
+        workflow,
+        {"question": "hello", "confidence": 0.5},
+        thread_id="checkpointer-test-thread",
+        checkpointer=checkpointer,
+    )
+
+    assert waiting.status == "waiting"
+    assert waiting.interrupt is not None
+    assert waiting.interrupt.node_id == "approval"
+
+    # Resume with same thread_id should succeed using injected checkpointer
+    resumed = run_workflow(
+        workflow,
+        {},
+        thread_id="checkpointer-test-thread",
+        resume_payload="approved",
+        checkpointer=checkpointer,
+    )
+
+    assert resumed.status == "succeeded"
+    assert resumed.thread_id == "checkpointer-test-thread"
+    assert resumed.output == {"answer": "Answer: hello"}
+
+
+def test_run_workflow_accepts_injected_checkpointer_for_side_effect_resume() -> None:
+    """run_workflow with injected checkpointer supports side_effect interrupt/resume."""
+    from langgraph.checkpoint.memory import InMemorySaver
+
+    workflow = load_workflow("side_effect_requires_approval.json")
+    checkpointer = InMemorySaver()
+
+    # First run: should wait at side_effect approval
+    waiting = run_workflow(
+        workflow,
+        {"question": "hello"},
+        thread_id="side-effect-checkpointer-thread",
+        checkpointer=checkpointer,
+    )
+
+    assert waiting.status == "waiting"
+    assert waiting.interrupt is not None
+    assert waiting.interrupt.kind == "side_effect_approval"
+
+    # Resume with approved decision
+    resumed = run_workflow(
+        workflow,
+        {},
+        thread_id="side-effect-checkpointer-thread",
+        resume_payload={"decision": "approved"},
+        checkpointer=checkpointer,
+    )
+
+    assert resumed.status == "succeeded"
+    assert resumed.thread_id == "side-effect-checkpointer-thread"
+    assert resumed.output == {"effect_result": "hello"}

@@ -225,3 +225,55 @@ def test_workflow_without_policies_field_gets_defaults() -> None:
     assert workflow.policies.allowed_tool_refs == []
     assert workflow.policies.allow_side_effects is False
     assert workflow.policies.default_timeout_s == 60
+
+
+def test_normalize_workflow_sorts_join_sources() -> None:
+    """normalize_workflow should sort join_sources for deterministic hashing."""
+    data = json.loads((FIXTURES / "fanout_with_join.json").read_text(encoding="utf-8"))
+    # Reverse the join_sources order
+    for edge in data["edges"]:
+        if edge.get("kind") == "join" and edge.get("join_sources"):
+            edge["join_sources"] = list(reversed(edge["join_sources"]))
+
+    workflow = WorkflowSpec.model_validate(data)
+    normalized = normalize_workflow(workflow)
+
+    for edge in normalized.edges:
+        if edge.kind.value == "join" and edge.join_sources:
+            assert edge.join_sources == sorted(edge.join_sources)
+
+
+def test_normalize_join_sources_produces_stable_hash() -> None:
+    """Workflows with different join_sources order should produce same lockfile hash after normalize."""
+    from prompt2langgraph.ir.lockfile import build_workflow_lock
+
+    data_a = json.loads((FIXTURES / "fanout_with_join.json").read_text(encoding="utf-8"))
+    data_b = json.loads((FIXTURES / "fanout_with_join.json").read_text(encoding="utf-8"))
+
+    # Reverse join_sources in data_b
+    for edge in data_b["edges"]:
+        if edge.get("kind") == "join" and edge.get("join_sources"):
+            edge["join_sources"] = list(reversed(edge["join_sources"]))
+
+    workflow_a = WorkflowSpec.model_validate(data_a)
+    workflow_b = WorkflowSpec.model_validate(data_b)
+
+    lock_a = build_workflow_lock(workflow_a)
+    lock_b = build_workflow_lock(workflow_b)
+
+    assert lock_a["workflow_hash"] == lock_b["workflow_hash"]
+
+
+def test_non_join_edge_with_join_sources_raises_validation_error() -> None:
+    """Non-JOIN edge with join_sources should fail Pydantic validation."""
+    from pydantic import ValidationError
+    from prompt2langgraph.ir.models import EdgeSpec
+
+    with pytest.raises(ValidationError, match="join_sources is only valid for JOIN edges"):
+        EdgeSpec(
+            id="bad_edge",
+            source="a",
+            target="b",
+            kind="linear",
+            join_sources=["a", "b"],
+        )

@@ -1,6 +1,8 @@
 import json
 from pathlib import Path
 
+import pytest
+
 import prompt2langgraph as pt2lg
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -53,16 +55,15 @@ def test_public_compile_workflow_rejects_langgraph_compile_failures(tmp_path: Pa
             "params": {},
         }
     )
+    # JOIN edge without join_sources fails at join validation
     data["edges"] = [
         {"id": "unsupported_join", "source": "compose", "target": "finish", "kind": "join"}
     ]
+
     workflow = pt2lg.WorkflowSpec.model_validate(data)
-
-    result = pt2lg.compile_workflow(workflow, out_dir=tmp_path)
-
-    assert result.ok is False
-    assert not (result.output_dir / "workflow.lock.json").exists()
-    assert any(item["code"] == "E_TARGET_009" for item in result.diagnostics)
+    report = pt2lg.validate_workflow(workflow)
+    assert not report.ok
+    assert any(d.code == "E_JOIN_001" for d in report.diagnostics)
 
 
 class _FakeModel:
@@ -99,3 +100,25 @@ def test_public_prompt_workflow_can_be_validated() -> None:
     report = pt2lg.validate_workflow(workflow)
 
     assert report.ok is True
+
+
+def test_public_api_exports_skill_planning_entrypoints() -> None:
+    assert "SkillPlanRequest" in pt2lg.__all__
+    assert "SkillPlanResult" in pt2lg.__all__
+    assert "plan_skill_to_workflow_spec" in pt2lg.__all__
+
+
+def test_public_skill_plan_workflow_can_be_validated() -> None:
+    request = pt2lg.SkillPlanRequest(skill_dir=str(FIXTURES / "skill_basic"))
+    result = pt2lg.plan_skill_to_workflow_spec(request, model_client=_FakeModel())
+
+    assert result is not None
+    assert result.workflow_spec is not None
+    report = pt2lg.validate_workflow(result.workflow_spec)
+    assert report.ok is True
+
+
+def test_public_api_exports_generate_skill_plan_text() -> None:
+    """generate_skill_plan_text should be exported from prompting module."""
+    from prompt2langgraph.prompting import generate_skill_plan_text
+    assert callable(generate_skill_plan_text)

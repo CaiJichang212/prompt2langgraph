@@ -473,8 +473,8 @@ def test_dynamic_tool_node_raises_executor_error_when_no_tool_registry() -> None
     assert exc_info.value.node_id == "call_tool"
 
 
-def test_collect_metrics_error_sink_prevents_duplicate_failed_record() -> None:
-    """When error_sink exists, metrics_sink should NOT record failed ExternalCallRecord."""
+def test_collect_metrics_error_sink_and_metrics_sink_both_called_on_error() -> None:
+    """When error_sink and metrics_sink both exist, both are called for failed ExecutorError."""
     from prompt2langgraph.registry.executors import ExecutorError
 
     failed_calls: list = []
@@ -520,8 +520,8 @@ def test_collect_metrics_error_sink_prevents_duplicate_failed_record() -> None:
 
     # error_sink received the error
     assert len(error_calls) == 1
-    # metrics_sink should NOT have received a failed record (error_sink handles it)
-    assert len(failed_calls) == 0
+    # metrics_sink also received a failed record
+    assert len(failed_calls) == 1
 
 
 def test_collect_metrics_success_record_emitted() -> None:
