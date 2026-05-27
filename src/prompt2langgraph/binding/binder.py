@@ -28,7 +28,9 @@ def bind_workflow(
             "type": executor.type.value,
             "capabilities": list(executor.required_capabilities),
             "dynamic": executor.dynamic,
-            "allowed_models": list(workflow.policies.allowed_models) if executor.type is ExecutorType.LLM else [],
+            "allowed_models": list(workflow.policies.allowed_models)
+            if executor.type is ExecutorType.LLM
+            else [],
             "external_call": workflow.policies.external_call,
         }
     return BoundWorkflow(workflow=workflow, executor_bindings=bindings)
