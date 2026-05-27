@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import logging
 from collections import defaultdict
 from pathlib import Path
 from time import perf_counter
@@ -22,13 +23,24 @@ from prompt2langgraph.ir.models import EdgeKind, WorkflowSpec
 from prompt2langgraph.ir.normalize import normalize_workflow
 from prompt2langgraph.registry.builtins import builtin_executor_registry
 from prompt2langgraph.registry.executors import ExecutorRegistry
-from prompt2langgraph.runtime.events import ExternalCallRecord, RunEvent, RunInterrupt, RunMetrics, RunResult
+from prompt2langgraph.runtime.events import (
+    ExternalCallRecord,
+    RunEvent,
+    RunInterrupt,
+    RunMetrics,
+    RunResult,
+)
 from prompt2langgraph.validate.validator import validate_workflow
+
+_logger = logging.getLogger(__name__)
 
 _THREAD_CHECKPOINTERS: dict[tuple[str, str], InMemorySaver] = {}
 _PENDING_INTERRUPTS: set[tuple[str, str]] = set()
 _NO_RESUME = object()
 LOCAL_STATE_FORMAT_VERSION = 1
+
+# Valid interrupt kind values for RunInterrupt.kind field.
+_VALID_INTERRUPT_KINDS = frozenset({"human_gate", "side_effect_approval"})
 
 
 def run_workflow(
@@ -41,6 +53,7 @@ def run_workflow(
     state_store_dir: Path | None = None,
     model_client: Any | None = None,
     tool_registry: Any | None = None,
+    checkpointer: Any | None = None,
 ) -> RunResult:
     started_at = perf_counter()
     run_id = _new_id("run")
@@ -56,24 +69,49 @@ def run_workflow(
         return _failed_result(run_id, thread_id, events, report.diagnostics, started_at)
 
     thread_key = _thread_key(workflow, thread_id)
-    if is_resume and state_store_dir is not None:
+    if is_resume and checkpointer is None and state_store_dir is not None:
         state_diagnostic = _load_thread_state(thread_key, state_store_dir)
         if state_diagnostic is not None:
             return _failed_result(run_id, thread_id, events, [state_diagnostic], started_at)
     if is_resume and thread_key not in _PENDING_INTERRUPTS:
-        return _failed_result(
-            run_id,
-            thread_id,
-            events,
-            [
-                Diagnostic(
-                    code=E_RUNTIME_010,
-                    severity="error",
-                    message=f'no pending interrupt for thread "{thread_id}"',
+        # When using an external checkpointer (e.g., SqliteSaver), the interrupt state
+        # is persisted in the checkpointer database, not in the process-local
+        # _PENDING_INTERRUPTS set. Check if a checkpoint exists for this thread.
+        if checkpointer is not None:
+            config = {"configurable": {"thread_id": thread_id}}
+            try:
+                checkpoint = checkpointer.get(config)
+            except Exception:
+                _logger.warning("checkpointer.get() failed for thread %s", thread_id, exc_info=True)
+                checkpoint = None
+            if checkpoint is None:
+                return _failed_result(
+                    run_id,
+                    thread_id,
+                    events,
+                    [
+                        Diagnostic(
+                            code=E_RUNTIME_010,
+                            severity="error",
+                            message=f'no pending interrupt for thread "{thread_id}"',
+                        )
+                    ],
+                    started_at,
                 )
-            ],
-            started_at,
-        )
+        else:
+            return _failed_result(
+                run_id,
+                thread_id,
+                events,
+                [
+                    Diagnostic(
+                        code=E_RUNTIME_010,
+                        severity="error",
+                        message=f'no pending interrupt for thread "{thread_id}"',
+                    )
+                ],
+                started_at,
+            )
 
     input_diagnostics = [] if is_resume else _check_input_payload(workflow, input_payload)
     if input_diagnostics:
@@ -109,12 +147,14 @@ def run_workflow(
         )
 
     try:
-        checkpointer = _checkpointer_for(thread_key)
+        active_checkpointer = (
+            _checkpointer_for(thread_key) if checkpointer is None else checkpointer
+        )
         graph = compile_workflow_to_graph(
             workflow,
             executor_registry,
             event_sink=record_node_event,
-            checkpointer=checkpointer,
+            checkpointer=active_checkpointer,
             policies=workflow.policies,
             model_client=model_client,
             tool_registry=tool_registry,
@@ -150,7 +190,7 @@ def run_workflow(
     interrupt = _extract_interrupt(final_state, events)
     if interrupt is not None:
         _PENDING_INTERRUPTS.add(thread_key)
-        if state_store_dir is not None:
+        if checkpointer is None and state_store_dir is not None:
             _save_thread_state(thread_key, state_store_dir)
         return RunResult(
             status="waiting",
@@ -163,7 +203,10 @@ def run_workflow(
             metrics=RunMetrics(
                 duration_ms=_duration_ms(started_at),
                 call_count=len(external_calls),
-                total_latency_ms=sum(r.latency_ms for r in external_calls if r.latency_ms is not None) or None,
+                total_latency_ms=sum(
+                    r.latency_ms for r in external_calls if r.latency_ms is not None
+                )
+                or None,
             ),
             external_calls=external_calls,
         )
@@ -180,9 +223,11 @@ def run_workflow(
         metrics=RunMetrics(
             duration_ms=_duration_ms(started_at),
             call_count=len(external_calls),
-            total_latency_ms=sum(r.latency_ms for r in external_calls if r.latency_ms is not None) or None,
+            total_latency_ms=sum(r.latency_ms for r in external_calls if r.latency_ms is not None)
+            or None,
         ),
         external_calls=external_calls,
+        side_effect_rejections=_extract_side_effect_rejections(final_state),
     )
 
 
@@ -195,11 +240,19 @@ def _thread_key(workflow: WorkflowSpec, thread_id: str) -> tuple[str, str]:
     return workflow_hash, thread_id
 
 
-def _clear_thread(thread_key: tuple[str, str], state_store_dir: Path | None = None) -> None:
+def _clear_thread(
+    thread_key: tuple[str, str],
+    state_store_dir: Path | None = None,
+) -> None:
     _PENDING_INTERRUPTS.discard(thread_key)
+    had_local_checkpointer = thread_key in _THREAD_CHECKPOINTERS
     _THREAD_CHECKPOINTERS.pop(thread_key, None)
     if state_store_dir is not None:
-        _state_file(thread_key, state_store_dir).unlink(missing_ok=True)
+        if had_local_checkpointer:
+            _state_file(thread_key, state_store_dir).unlink(missing_ok=True)
+    # External checkpointer .db files are intentionally NOT cleaned up
+    # to support time travel debugging after successful completion.
+    # The caller is responsible for checkpointer lifecycle management.
 
 
 # Runtime Persistence Contract
@@ -372,7 +425,14 @@ def _extract_interrupt(state: dict[str, Any], events: list[RunEvent]) -> RunInte
         return None
 
     interrupt_value = interrupts[0].value
-    payload = interrupt_value if isinstance(interrupt_value, dict) else {"value": interrupt_value}
+    if isinstance(interrupt_value, dict):
+        kind = interrupt_value.get("kind", "human_gate")
+        if kind not in _VALID_INTERRUPT_KINDS:
+            kind = "human_gate"
+        payload = {k: v for k, v in interrupt_value.items() if k != "kind"}
+    else:
+        kind = "human_gate"
+        payload = {"value": interrupt_value}
     node_id = next(
         (event.node_id for event in reversed(events) if event.type == "node.started"), None
     )
@@ -388,7 +448,7 @@ def _extract_interrupt(state: dict[str, Any], events: list[RunEvent]) -> RunInte
             payload=payload,
         )
     )
-    return RunInterrupt(node_id=node_id, payload=payload)
+    return RunInterrupt(node_id=node_id, kind=kind, payload=payload)
 
 
 def _new_id(prefix: str) -> str:
@@ -400,7 +460,20 @@ def _duration_ms(started_at: float) -> float:
 
 
 def _declared_output(workflow: WorkflowSpec, state: dict[str, Any]) -> dict[str, Any]:
-    return {key: state[key] for key in workflow.state_schema.output if key in state}
+    output_keys = set(workflow.state_schema.output)
+    return {key: state[key] for key in output_keys if key in state}
+
+
+def _extract_side_effect_rejections(state: dict[str, Any]) -> dict[str, str]:
+    """Extract side_effect rejection info from internal state key.
+
+    Returns a dict mapping node/reason info so callers can inspect
+    rejections without relying on internal state key names.
+    """
+    rejection = state.get("__pt2lg_side_effect_rejected__")
+    if rejection:
+        return {"rejected": str(rejection)}
+    return {}
 
 
 def _failed_result(
@@ -446,7 +519,13 @@ def _check_input_payload(workflow: WorkflowSpec, input_payload: dict[str, Any]) 
 
 def _check_target_capabilities(workflow: WorkflowSpec) -> list[Diagnostic]:
     diagnostics: list[Diagnostic] = []
-    supported = {EdgeKind.LINEAR, EdgeKind.CONDITIONAL, EdgeKind.LOOP, EdgeKind.FANOUT}
+    supported = {
+        EdgeKind.LINEAR,
+        EdgeKind.CONDITIONAL,
+        EdgeKind.LOOP,
+        EdgeKind.FANOUT,
+        EdgeKind.JOIN,
+    }
     for edge in workflow.edges:
         if edge.kind not in supported:
             diagnostics.append(
