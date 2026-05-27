@@ -40,17 +40,19 @@ Prompt 计划生成能力已落地：通过 `plan_prompt_to_workflow_spec()` 或
 - LLM 执行：`llm` 节点可通过 `ExecutorType.LLM`（ref 格式 `llm.<model_id>`）调用真实模型，需 `external_call=True` + `allowed_models` 白名单。`LLMExecutor` 在 `registry/llm_executor.py`。
 - Tool 执行：`tool` 节点可通过 `ExecutorType.PYTHON_CALLABLE` 执行受控 callable，需 `allowed_tool_refs` 白名单 + `ToolCallableRegistry` 注册。`ToolExecutor` 在 `registry/tool_executor.py`。
 - Prompt 只生成简化 JSON plan；运行时 `llm` 节点的真实执行需 `external_call=True` + `allowed_models`。
-- skill：`analyze_skill_dir()` 只做 `SKILL.md` frontmatter、编号步骤、资源文件和风险词静态分析，输出 `SkillDirectoryAnalysis`/`draft_nodes` 和诊断；不生成可执行 `WorkflowSpec`，也不执行 skill 脚本。
+- skill：`analyze_skill_dir()` 保留静态分析能力；Skill → `WorkflowSpec` 的 LLM 驱动 alpha 转换已实现（`plan --skill-dir`），可诊断、可人工修正，不保证任意 Skill 一次成功；不执行 skill 脚本，不自动注册 tool callable。
 - 节点类型 registry：`llm`、`tool`、`retriever`、`transform`、`router`、`human_gate`、`join`、`side_effect`。
 - 内置 executor：`builtin.echo_llm`、`builtin.mock_retriever`、`builtin.identity_transform`、`builtin.route`、`builtin.human_gate`、`builtin.join`。动态 executor：`llm.qwen-plus`（`ExecutorType.LLM`，`dynamic=True`）。
-- `compile_workflow_to_graph()` 和 `run_workflow()` 当前目标能力支持 `linear`、`conditional`、`loop`、`fanout`。
-- `human_gate` 使用 LangGraph `interrupt()`；CLI 对 lockfile bundle 的等待态会写入 bundle 目录下 `.pt2lg-runtime/`，恢复成功后清理对应状态文件；该本地持久化依赖当前 LangGraph `InMemorySaver` 内部结构，不是稳定交换格式。
+- `compile_workflow_to_graph()` 和 `run_workflow()` 当前目标能力支持 `linear`、`conditional`、`loop`、`fanout`、`join`（基于 `join_sources` + reducer）。
+- `human_gate` 使用 LangGraph `interrupt()`；CLI 对 lockfile bundle 的等待态会写入 bundle 目录下 `.pt2lg-runtime/`。安装可选依赖 `checkpoint-sqlite`（`langgraph-checkpoint-sqlite>=2.0`）后，CLI 使用 `SqliteSaver` 提供更稳定的本地 checkpoint，路径为 `.pt2lg-runtime/<thread_hash>.db`。旧 `.json` runtime 状态文件与新的 `.db` checkpoint 不互相迁移。SQLite checkpoint 默认保留以支持后续 time travel debugging，但 resume 成功后不再自动清理 `.db` 文件。
 - 编译产物路径已统一：CLI `pt2lg compile` 和 public `compile_workflow()` 都通过 `runtime.artifacts.compile_workflow_to_artifacts()` 写入 bundle，包含 compile id、timing、policy summary 和 binding summary。
 - 编译失败时不能留下可误用的旧 bundle；`compile_workflow_to_artifacts()` 会清理同一输出目录下已知的旧产物文件和 `generated/`，但保留无关文件。
 - binding summary 记录 executor ref、type、required capabilities 名称、dynamic 标记、allowed_models 和 external_call。
 - `llm/` 顶层模块为 LLM 客户端构造共享入口（`LLMConfig`、`build_llm_client()`、`dict_messages_to_langchain()`），`.env` 配置同时服务于 Prompt 计划生成和运行时 LLM 执行。
 - `collect_metrics=True` 时，`RunResult.external_calls` 中可获取成功和失败调用的 `ExternalCallRecord`。
 - CLI `run` 命令能根据 workflow 节点类型自动构造 `model_client` 和 `tool_registry`。
+- `run_workflow()` 支持 `checkpointer` 注入以实现状态持久化和恢复。
+- `side_effect` 节点默认需要审批，通过 `pt2lg resume --resume '{"decision":"approved"}'` 恢复执行。
 - 策略约束在 `validate_workflow()` 阶段即被检查：`external_call` 开关、`allowed_models` 白名单、`allowed_tool_refs` 白名单。
 
 ## Do & Don't
@@ -67,7 +69,7 @@ Prompt 计划生成能力已落地：通过 `plan_prompt_to_workflow_spec()` 或
 ### Don't
 - 不要把上层 `ref-projects/` 的参考工程内容当作本项目源码。
 - 不要重新引入 `cli._write_compile_artifacts()` 一类的第二套产物写入路径。
-- 不要宣称 `join` edge 可执行（当前 LangGraph runner/compiler 不支持）。
+- 不要宣称 JOIN 可执行而不声明 `join_sources` 和 reducer（未声明 reducer 的并行写入会覆盖且顺序不稳定）。
 - 不要在 `tests/test_compile_flow.py` 模块导入阶段执行编译、写文件或打印 smoke output。
 - 不要在 `prompt2langgraph.cli` 模块导入阶段急切导入 `langgraph` 或 `langchain_openai`。
 - 不要在 manifest、compile report 和 lockfile 中写入真实 secret 或 secret 名称。
@@ -97,6 +99,7 @@ uv run pt2lg validate tests/fixtures/linear_llm.json --json
 uv run pt2lg run tests/fixtures/linear_llm.json --input '{"question":"hello"}' --json
 uv run pt2lg graph tests/fixtures/linear_llm.json --format mermaid
 uv run pt2lg plan --prompt "Build a workflow that answers a question with one llm node" --json
+uv run pt2lg plan --skill-dir path/to/skill --param key=value --json
 ```
 
 全量测试基线：
@@ -133,6 +136,7 @@ uv run pt2lg run build/linear_llm/workflow.lock.json --input '{"question":"hello
 ```bash
 uv run pt2lg run tests/fixtures/loop_with_guard.json --input '{"question":"hello"}' --json
 uv run pt2lg run tests/fixtures/fanout_map_reduce.json --input '{"items":["alpha","beta"]}' --json
+uv run pt2lg run tests/fixtures/join.json --input '{"data":"test"}' --json
 uv run pt2lg compile tests/fixtures/conditional_human_gate.json --out build --json
 uv run pt2lg run build/conditional_human_gate/workflow.lock.json --input '{"question":"hello","confidence":0.5}' --json
 uv run pt2lg resume build/conditional_human_gate/workflow.lock.json --thread-id '<thread_id>' --resume '"approved"' --json
