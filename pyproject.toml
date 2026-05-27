@@ -14,6 +14,9 @@ dependencies = [
   "typing-extensions>=4.12",
 ]
 
+[project.optional-dependencies]
+checkpoint-sqlite = ["langgraph-checkpoint-sqlite>=2.0"]
+
 [project.scripts]
 pt2lg = "prompt2langgraph.cli:app"
 
