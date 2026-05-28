@@ -13,6 +13,10 @@ from prompt2langgraph.registry.executors import ExecutorError
 _SIDE_EFFECT_APPROVED_KEY = "__pt2lg_side_effect_approved__"
 _SIDE_EFFECT_REJECTED_KEY = "__pt2lg_side_effect_rejected__"
 
+# Public constants for cross-module reference (e.g., compiler _node_wrapper).
+SIDE_EFFECT_APPROVED_KEY = _SIDE_EFFECT_APPROVED_KEY
+SIDE_EFFECT_REJECTED_KEY = _SIDE_EFFECT_REJECTED_KEY
+
 
 def side_effect_handler(
     inputs: dict[str, Any],
@@ -20,8 +24,8 @@ def side_effect_handler(
     *,
     security: SecurityPolicy | None = None,
     allow_side_effects: bool = False,
-    node_id: str,
-    executor_ref: str,
+    node_id: str = "unknown",
+    executor_ref: str = "unknown",
 ) -> dict[str, Any]:
     """Handle side effect node with approval interrupt.
 
