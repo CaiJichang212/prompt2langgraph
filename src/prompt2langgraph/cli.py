@@ -411,14 +411,16 @@ def _run_skill_plan(
 ) -> None:
     """Execute the skill plan generation path.
 
-    Uses plan_skill_to_workflow_spec() as the single entry point for
-    Skill → JSON plan → WorkflowSpec conversion. Pre-checks static
-    analysis for fatal errors before the LLM call.
+    Uses generate_skill_plan_text() → parse_prompt_plan_text() →
+    JSONPlanAdapter().parse() pipeline, consistent with _run_prompt_plan().
+    Pre-checks static analysis for fatal errors before the LLM call.
     """
     from prompt2langgraph.adapters.base import AdapterParseError
+    from prompt2langgraph.adapters.json_plan import JSONPlanAdapter
     from prompt2langgraph.adapters.skill_dir import analyze_skill_dir
     from prompt2langgraph.prompting import SkillPlanRequest
-    from prompt2langgraph.prompting.skill_planner import plan_skill_to_workflow_spec
+    from prompt2langgraph.prompting.parser import parse_prompt_plan_text
+    from prompt2langgraph.prompting.skill_planner import generate_skill_plan_text
 
     request = SkillPlanRequest(
         skill_dir=str(skill_dir),
@@ -437,38 +439,24 @@ def _run_skill_plan(
         _emit_validation_report(report, json_output)
         raise typer.Exit(1) from None
 
-    # Step 2–4: LLM generate → parse → adapt (single entry point)
-    # Pass precomputed analysis to avoid double analyze_skill_dir()
+    # Step 2: LLM generate → parse (lower-level pipeline, same as _run_prompt_plan)
     try:
-        result = plan_skill_to_workflow_spec(request, analysis=analysis)
+        result = generate_skill_plan_text(request, analysis=analysis)
+        plan_data = parse_prompt_plan_text(result.raw_text)
     except AdapterParseError as exc:
-        # Distinguish error phase from exception message
-        msg = str(exc).lower()
-        if "failed to read skill file" in msg:
-            code = E_PARSE_001
-            hint = "SKILL.md is missing or unreadable"
-        elif "failed to parse generated json plan" in msg:
-            code = E_PARSE_001
-            hint = "LLM output could not be parsed as JSON plan"
-        elif "failed to adapt" in msg or "json plan" in msg:
-            code = E_PARSE_001
-            hint = "JSON plan could not be adapted to WorkflowSpec"
-        else:
-            code = E_PARSE_001
-            hint = str(exc)
         report = ValidationReport(
             diagnostics=[
                 Diagnostic(
-                    code=code,
+                    code=E_PARSE_001,
                     severity="error",
-                    message="skill plan generation failed",
+                    message="failed to parse generated skill plan",
                     location=DiagnosticLocation(
                         source=exc.source or "skill",
                         path=exc.path,
                         line=exc.line,
                         column=exc.column,
                     ),
-                    hint=hint,
+                    hint=str(exc),
                 )
             ]
         )
@@ -491,15 +479,37 @@ def _run_skill_plan(
 
     # Output the original simplified JSON plan (not the IR dump)
     # to stay consistent with the --prompt path output format
-    plan_data = result.plan or {}
     payload: dict[str, Any] = {"ok": True, "plan": plan_data}
 
     # Include static analysis diagnostics in output
-    if result.diagnostics:
-        payload["diagnostics"] = [d.model_dump(mode="json") for d in result.diagnostics]
+    if analysis.report.diagnostics:
+        payload["diagnostics"] = [
+            d.model_dump(mode="json") for d in analysis.report.diagnostics
+        ]
 
-    if validate_output and result.workflow_spec is not None:
-        validation_report = validate_workflow(result.workflow_spec)
+    if validate_output:
+        try:
+            workflow = JSONPlanAdapter().parse(plan_data, source="skill")
+        except (AdapterParseError, ValidationError) as exc:
+            validation_report = ValidationReport(
+                diagnostics=[
+                    Diagnostic(
+                        code=E_PARSE_001
+                        if isinstance(exc, AdapterParseError)
+                        else E_SCHEMA_002,
+                        severity="error",
+                        message="skill plan failed adapter validation",
+                        location=DiagnosticLocation(source="skill"),
+                        hint=str(exc),
+                    )
+                ]
+            )
+            payload["validation"] = validation_report.model_dump(mode="json")
+            payload["validation"]["ok"] = False
+            _emit(payload, json_output, _json_dumps(plan_data))
+            raise typer.Exit(1) from None
+
+        validation_report = validate_workflow(workflow)
         payload["validation"] = validation_report.model_dump(mode="json")
         payload["validation"]["ok"] = validation_report.ok
         if not validation_report.ok:
