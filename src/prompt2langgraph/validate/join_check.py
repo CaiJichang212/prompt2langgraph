@@ -23,7 +23,7 @@ def check_join_edges(workflow: WorkflowSpec) -> list[Diagnostic]:
     - E_JOIN_001: join_sources is missing/empty, or target appears in join_sources
     - E_JOIN_002: join_sources has fewer than 2 elements
     - E_JOIN_003: join_sources references non-existent nodes
-    - E_JOIN_004: join_sources node already has a LINEAR/CONDITIONAL edge to the same target
+    - E_JOIN_004: join_sources node already has a LINEAR/CONDITIONAL/FANOUT/LOOP edge to the same target
     - E_JOIN_005: same target is referenced by multiple JOIN edges
     - E_JOIN_006: join_sources contains duplicate node ids
     - W_JOIN_001: source field not in join_sources (warning, non-blocking)
