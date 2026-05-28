@@ -469,11 +469,15 @@ def _extract_side_effect_rejections(state: dict[str, Any]) -> dict[str, str]:
 
     Returns a dict mapping node/reason info so callers can inspect
     rejections without relying on internal state key names.
+
+    Handles both single string (default) and list (APPEND reducer) values.
     """
     rejection = state.get("__pt2lg_side_effect_rejected__")
-    if rejection:
-        return {"rejected": str(rejection)}
-    return {}
+    if not rejection:
+        return {}
+    if isinstance(rejection, list):
+        return {"rejected": "; ".join(str(r) for r in rejection)}
+    return {"rejected": str(rejection)}
 
 
 def _failed_result(
