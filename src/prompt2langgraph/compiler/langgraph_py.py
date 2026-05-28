@@ -149,6 +149,9 @@ def _state_schema_for(workflow: WorkflowSpec) -> type[TypedDict]:
 
     # Internal state key for side_effect rejection signaling.
     # Only injected when workflow contains side_effect nodes.
+    # Default type is STRING for single rejection; if multiple rejections
+    # must be preserved (APPEND reducer), the state key type should be set
+    # to ARRAY and values written as lists. See W_SIDE_001 diagnostic.
     has_side_effect = any(node.kind == "side_effect" for node in workflow.nodes)
     if has_side_effect:
         state_types["__pt2lg_side_effect_rejected__"] = TypeSpec(type=TypeName.STRING)
@@ -285,7 +288,11 @@ def _node_wrapper(
     effective_policies = policies if policies is not None else PolicySpec()
 
     def invoke_node(state: dict[str, Any]) -> dict[str, Any]:
-        from prompt2langgraph.registry.side_effect_executor import side_effect_handler
+        from prompt2langgraph.registry.side_effect_executor import (
+            SIDE_EFFECT_APPROVED_KEY,
+            SIDE_EFFECT_REJECTED_KEY,
+            side_effect_handler,
+        )
         from prompt2langgraph.runtime.events import ExternalCallRecord
 
         if event_sink is not None:
@@ -315,7 +322,7 @@ def _node_wrapper(
                 executor_ref=executor.ref,
             )
             # Check if rejected (handler returns __pt2lg_side_effect_rejected__ signal)
-            if handler_result.get("__pt2lg_side_effect_rejected__"):
+            if handler_result.get(SIDE_EFFECT_REJECTED_KEY):
                 # Rejected — write rejection info to a dedicated state key
                 # instead of overwriting user-declared output keys.
                 # User output keys are left untouched because the executor
@@ -325,6 +332,16 @@ def _node_wrapper(
                 update = {"__pt2lg_side_effect_rejected__": reason}
                 if event_sink is not None:
                     event_sink("node.finished", node.id)
+                # Record rejected side_effect for metrics observability
+                if effective_policies.collect_metrics and metrics_sink is not None:
+                    metrics_sink(
+                        ExternalCallRecord(
+                            node_id=node.id,
+                            executor_ref=executor.ref,
+                            status="failed",
+                            error_code="E_SIDE_008",
+                        )
+                    )
                 return update
             # Approval granted — extract inputs and params from the signal dict.
             # The handler returns {"__pt2lg_side_effect_approved__": True,
@@ -343,9 +360,12 @@ def _node_wrapper(
                 tool_registry=tool_registry,
                 metrics_sink=metrics_sink,
             )
-            # Record successful external call for side_effect after approval
+            # Record successful external call for side_effect after approval.
+            # Only for BUILTIN executors: LLM and PYTHON_CALLABLE executors
+            # are already recorded by _invoke_executor() above.
             if (
                 node.kind == "side_effect"
+                and not executor.dynamic
                 and effective_policies.collect_metrics
                 and metrics_sink is not None
             ):
