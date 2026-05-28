@@ -113,8 +113,7 @@ def test_public_skill_plan_workflow_can_be_validated() -> None:
     result = pt2lg.plan_skill_to_workflow_spec(request, model_client=_FakeModel())
 
     assert result is not None
-    assert result.workflow_spec is not None
-    report = pt2lg.validate_workflow(result.workflow_spec)
+    report = pt2lg.validate_workflow(result)
     assert report.ok is True
 
 

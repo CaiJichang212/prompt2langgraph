@@ -70,20 +70,20 @@ def test_plan_skill_to_workflow_spec_with_fake_model():
     request = SkillPlanRequest(skill_dir="tests/fixtures/skill_basic")
     result = plan_skill_to_workflow_spec(request, model_client=FakeSkillModel())
 
-    assert result.workflow_spec is not None
-    assert result.workflow_spec.workflow_id == "skillworkflow"
-    assert result.workflow_spec.entrypoint == "step_1"
-    report = validate_workflow(result.workflow_spec)
+    assert result is not None
+    assert result.workflow_id == "skillworkflow"
+    assert result.entrypoint == "step_1"
+    report = validate_workflow(result)
     assert report.ok, f"validation failed: {report.diagnostics}"
 
 
-def test_plan_skill_to_workflow_spec_returns_skill_plan_result():
-    """Result is a SkillPlanResult with workflow_spec field."""
+def test_plan_skill_to_workflow_spec_returns_workflow_spec():
+    """plan_skill_to_workflow_spec() returns WorkflowSpec directly."""
     request = SkillPlanRequest(skill_dir="tests/fixtures/skill_basic")
     result = plan_skill_to_workflow_spec(request, model_client=FakeSkillModel())
 
-    assert isinstance(result, SkillPlanResult)
-    assert isinstance(result.workflow_spec, WorkflowSpec)
+    assert isinstance(result, WorkflowSpec)
+    assert result.workflow_id == "skillworkflow"
 
 
 def test_plan_skill_to_workflow_spec_no_edges_raises():
@@ -200,14 +200,14 @@ def test_build_skill_plan_prompt_with_params():
 
 
 def test_plan_skill_to_workflow_spec_includes_analysis_context():
-    """plan_skill_to_workflow_spec uses analyze_skill_dir output and propagates diagnostics."""
+    """plan_skill_to_workflow_spec uses analyze_skill_dir output internally."""
     request = SkillPlanRequest(skill_dir="tests/fixtures/skill_basic")
 
     # This should not raise - it uses analyze_skill_dir internally
     result = plan_skill_to_workflow_spec(request, model_client=FakeSkillModel())
-    assert result.workflow_spec is not None
-    # Static analysis diagnostics should be propagated
-    assert isinstance(result.diagnostics, list)
+    assert result is not None
+    assert isinstance(result, WorkflowSpec)
+    assert result.workflow_id == "skillworkflow"
 
 
 def test_skill_plan_result_with_diagnostics():
