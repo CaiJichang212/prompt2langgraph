@@ -50,7 +50,10 @@ def plan_skill_to_workflow_spec(
 ) -> Any:
     """Public API wrapper for plan_skill_to_workflow_spec.
 
-    Returns SkillPlanResult with workflow_spec, diagnostics, raw_text, plan fields.
+    Converts a Skill directory to a WorkflowSpec via LLM-generated JSON plan.
+    Returns WorkflowSpec directly, consistent with plan_prompt_to_workflow_spec().
+
+    Raises AdapterParseError on parse/adapt failure.
     """
     from prompt2langgraph.prompting.skill_planner import (
         plan_skill_to_workflow_spec as _plan_skill_to_workflow_spec,
