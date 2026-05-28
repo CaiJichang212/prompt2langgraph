@@ -343,11 +343,22 @@ def _node_wrapper(
                         )
                     )
                 return update
+            # Safety net: handler returned an unexpected dict without approval signal.
+            # This should never happen with the current side_effect_handler implementation,
+            # but guards against future regressions where the handler might be modified.
+            if not handler_result.get(SIDE_EFFECT_APPROVED_KEY):
+                from prompt2langgraph.diagnostics.codes import E_SIDE_008
+
+                raise ExecutorError(
+                    E_SIDE_008,
+                    f"side_effect node '{node.id}': handler returned unexpected result; "
+                    "approval signal missing",
+                )
             # Approval granted — extract inputs and params from the signal dict.
             # The handler returns {"__pt2lg_side_effect_approved__": True,
             # "inputs": ..., "params": ...}; we use the embedded values.
             inputs = handler_result.get("inputs", inputs)
-            params = handler_result.get("params", node.params)
+            params = handler_result.get("params", params)
 
         try:
             raw_outputs = _invoke_executor(
@@ -383,7 +394,7 @@ def _node_wrapper(
                 exc.executor_ref = executor.ref
             if error_sink is not None:
                 error_sink(exc)
-            if effective_policies.collect_metrics and metrics_sink is not None:
+            if error_sink is None and effective_policies.collect_metrics and metrics_sink is not None:
                 metrics_sink(
                     ExternalCallRecord(
                         node_id=node.id,
