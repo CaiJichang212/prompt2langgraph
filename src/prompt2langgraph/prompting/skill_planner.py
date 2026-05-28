@@ -30,7 +30,6 @@ class SkillPlanResult(BaseModel):
     raw_text: str
     plan: dict[str, Any] | None = None
     diagnostics: list[Diagnostic] = Field(default_factory=list)
-    workflow_spec: WorkflowSpec | None = None
 
 
 _SKILL_MD_MAX_CHARS = 8000
@@ -63,10 +62,15 @@ def build_skill_plan_prompt(
             raw_text = skill_md.read_text(encoding="utf-8")
             if len(raw_text) > _SKILL_MD_MAX_CHARS:
                 truncated = raw_text[:_SKILL_MD_MAX_CHARS]
+                # 回退到最后一个完整行边界，避免在句子中间截断
+                last_newline = truncated.rfind("\n")
+                if last_newline > _SKILL_MD_MAX_CHARS // 2:
+                    truncated = truncated[:last_newline]
                 parts.append(
-                    f"## SKILL.md (truncated to {_SKILL_MD_MAX_CHARS} chars)\n{truncated}\n"
-                    f"<!-- NOTE: SKILL.md was truncated ({len(raw_text) - _SKILL_MD_MAX_CHARS}"
-                    f" chars omitted) -->\n"
+                    f"## SKILL.md (truncated to {len(truncated)} chars)"
+                    f" from {len(raw_text)} chars total)\n{truncated}\n"
+                    f"<!-- NOTE: SKILL.md was truncated"
+                    f" ({len(raw_text) - len(truncated)} chars omitted) -->\n"
                 )
             else:
                 parts.append(f"## SKILL.md (original)\n{raw_text}\n")
@@ -363,7 +367,7 @@ def plan_skill_to_workflow_spec(
     *,
     model_client: object | None = None,
     analysis: SkillDirectoryAnalysis | None = None,
-) -> SkillPlanResult:
+) -> WorkflowSpec:
     """Convert a Skill directory to a WorkflowSpec via LLM-generated JSON plan.
 
     Reads SKILL.md, analyzes the skill directory, sends context to LLM,
@@ -375,11 +379,8 @@ def plan_skill_to_workflow_spec(
         analysis: Optional precomputed SkillDirectoryAnalysis (avoids double analysis
             when the caller has already run analyze_skill_dir(), e.g. CLI).
 
-    Returns a SkillPlanResult containing:
-    - workflow_spec: the generated WorkflowSpec (None on failure)
-    - diagnostics: static analysis diagnostics from analyze_skill_dir()
-    - raw_text: the LLM's raw output
-    - plan: the parsed JSON plan dict
+    Returns:
+        The generated WorkflowSpec.
 
     Raises:
         AdapterParseError: If SKILL.md is missing, LLM output cannot be parsed,
@@ -421,6 +422,5 @@ def plan_skill_to_workflow_spec(
             source="skill",
         ) from exc
 
-    # Convert to WorkflowSpec
-    result.workflow_spec = JSONPlanAdapter().parse(result.plan, source="skill")
-    return result
+    # Convert to WorkflowSpec and return directly
+    return JSONPlanAdapter().parse(result.plan, source="skill")
