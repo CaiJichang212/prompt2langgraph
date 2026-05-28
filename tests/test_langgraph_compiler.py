@@ -474,7 +474,12 @@ def test_dynamic_tool_node_raises_executor_error_when_no_tool_registry() -> None
 
 
 def test_collect_metrics_error_sink_and_metrics_sink_both_called_on_error() -> None:
-    """When error_sink and metrics_sink both exist, both are called for failed ExecutorError."""
+    """When error_sink and metrics_sink both exist, only error_sink is called for failed ExecutorError.
+
+    metrics_sink is skipped when error_sink is present to avoid double-counting:
+    the runner's _error_sink wrapper already converts the error to an ExternalCallRecord.
+    metrics_sink is only used as a standalone fallback when error_sink is None.
+    """
     from prompt2langgraph.registry.executors import ExecutorError
 
     failed_calls: list = []
@@ -520,8 +525,8 @@ def test_collect_metrics_error_sink_and_metrics_sink_both_called_on_error() -> N
 
     # error_sink received the error
     assert len(error_calls) == 1
-    # metrics_sink also received a failed record
-    assert len(failed_calls) == 1
+    # metrics_sink should NOT be called when error_sink is present (avoid double-counting)
+    assert len(failed_calls) == 0
 
 
 def test_collect_metrics_success_record_emitted() -> None:
