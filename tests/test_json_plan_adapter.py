@@ -207,6 +207,73 @@ def test_json_plan_fanout_edge_preserves_map_but_validation_requires_workflow_ir
     )
 
 
+def test_json_plan_preserves_policies_reducers_and_join_sources() -> None:
+    plan = {
+        "workflow_id": "join_plan",
+        "name": "Join Plan",
+        "entrypoint": "split",
+        "inputs": {
+            "items": {"type": "array", "item_type": {"type": "string"}},
+            "item": "string",
+        },
+        "outputs": {
+            "results": {"type": "array", "item_type": {"type": "string"}},
+            "answer": "string",
+        },
+        "nodes": [
+            {
+                "id": "split",
+                "kind": "transform",
+                "executor": "builtin.identity_transform",
+                "inputs": {"value": "items"},
+                "outputs": {"value": "items"},
+            },
+            {
+                "id": "process",
+                "kind": "transform",
+                "executor": "builtin.identity_transform",
+                "inputs": {"value": "item"},
+                "outputs": {"value": "results"},
+            },
+            {
+                "id": "finish",
+                "kind": "llm",
+                "executor": "llm.qwen-plus",
+                "inputs": {"question": "item"},
+                "outputs": {"answer": "answer"},
+            },
+        ],
+        "edges": [
+            {
+                "from": "split",
+                "to": "process",
+                "kind": "fanout",
+                "map": {
+                    "items_state_key": "items",
+                    "item_state_key": "item",
+                    "result_state_key": "results",
+                },
+            },
+            {
+                "from": "process",
+                "to": "finish",
+                "kind": "join",
+                "join_sources": ["process", "split"],
+            },
+        ],
+        "state_schema": {"reducers": {"results": "append"}},
+        "policies": {"external_call": True, "allowed_models": ["qwen-plus"]},
+    }
+
+    workflow = json_plan_to_workflow_spec(plan)
+
+    assert workflow.state_schema.reducers["results"].value == "append"
+    assert workflow.policies.external_call is True
+    assert workflow.policies.allowed_models == ["qwen-plus"]
+    join_edge = next(edge for edge in workflow.edges if edge.kind.value == "join")
+    assert join_edge.join_sources == ["process", "split"]
+
+
 def test_json_plan_adapter_rejects_empty_nodes_with_clear_error() -> None:
     plan = {
         "name": "Empty Workflow",
@@ -312,6 +379,30 @@ def test_json_plan_adapter_reports_parent_path_for_nested_edge_validation() -> N
 
     assert exc_info.value.source == "bad_condition.json"
     assert exc_info.value.path == "edges[0].condition.expr"
+
+
+def test_json_plan_adapter_reports_path_for_invalid_join_sources() -> None:
+    plan = {
+        "name": "Bad Join Sources",
+        "nodes": [
+            {"id": "first", "kind": "llm", "executor": "builtin.echo_llm"},
+            {"id": "second", "kind": "llm", "executor": "builtin.echo_llm"},
+        ],
+        "edges": [
+            {
+                "from": "first",
+                "to": "second",
+                "kind": "join",
+                "join_sources": "first",
+            }
+        ],
+    }
+
+    with pytest.raises(AdapterParseError) as exc_info:
+        JSONPlanAdapter().parse(plan, source="bad_join_sources.json")
+
+    assert exc_info.value.source == "bad_join_sources.json"
+    assert exc_info.value.path == "edges[0].join_sources"
 
 
 def test_json_plan_adapter_rejects_ambiguous_entrypoint_without_unique_root() -> None:
