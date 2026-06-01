@@ -394,7 +394,11 @@ def _node_wrapper(
                 exc.executor_ref = executor.ref
             if error_sink is not None:
                 error_sink(exc)
-            if error_sink is None and effective_policies.collect_metrics and metrics_sink is not None:
+            if (
+                error_sink is None
+                and effective_policies.collect_metrics
+                and metrics_sink is not None
+            ):
                 metrics_sink(
                     ExternalCallRecord(
                         node_id=node.id,
@@ -540,4 +544,5 @@ def _fanout_router(edge: EdgeSpec) -> Callable[[dict[str, Any]], list[Send]]:
         items = state.get(map_spec.items_state_key, [])
         return [Send(edge.target, {**state, map_spec.item_state_key: item}) for item in items]
 
+    route.__name__ = f"fanout_{edge.id}"
     return route
