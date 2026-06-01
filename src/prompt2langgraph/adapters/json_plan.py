@@ -18,6 +18,8 @@ from prompt2langgraph.ir.models import (
     LoopGuard,
     MapSpec,
     NodeSpec,
+    PolicySpec,
+    ReducerName,
     RetryPolicy,
     SecurityPolicy,
     StateSelector,
@@ -81,6 +83,18 @@ def json_plan_to_workflow_spec(
     input_specs = _type_mapping(plan.get("inputs", {}))
     output_specs = _type_mapping(plan.get("outputs", {}))
     channels = _collect_channels(input_specs, output_specs, node_specs, executor_registry)
+    state_schema = plan.get("state_schema", {})
+    if not isinstance(state_schema, Mapping):
+        raise AdapterParseError(
+            "state_schema must be an object", source=source, path="state_schema"
+        )
+    reducers = _reducer_mapping(state_schema.get("reducers", {}), source=source)
+    policies = _validate_nested(
+        PolicySpec,
+        plan.get("policies", {}),
+        source=source,
+        path="policies",
+    )
 
     workflow = WorkflowSpec.model_validate(
         {
@@ -93,11 +107,11 @@ def json_plan_to_workflow_spec(
                 "output": output_specs,
                 "channels": channels,
                 "private": {},
-                "reducers": {},
+                "reducers": reducers,
             },
             "nodes": [node.model_dump(mode="json") for node in node_specs],
             "edges": [edge.model_dump(mode="json") for edge in edge_specs],
-            "policies": {},
+            "policies": policies.model_dump(mode="json"),
             "metadata": {},
         }
     )
@@ -191,6 +205,13 @@ def _edge_spec(edge: Mapping[str, Any], *, index: int, source: str | None) -> Ed
         )
         if "loop_guard" in edge
         else None,
+        join_sources=_join_sources(
+            edge.get("join_sources"),
+            source=source,
+            path=f"edges[{index - 1}].join_sources",
+        )
+        if "join_sources" in edge
+        else None,
     )
 
 
@@ -274,6 +295,29 @@ def _type_mapping(raw: Any) -> dict[str, TypeSpec]:
     if not isinstance(raw, Mapping):
         raise TypeError("plan inputs and outputs must be mappings")
     return {name: _type_spec(value) for name, value in raw.items()}
+
+
+def _reducer_mapping(raw: Any, *, source: str | None) -> dict[str, ReducerName]:
+    if not isinstance(raw, Mapping):
+        raise AdapterParseError(
+            "state_schema.reducers must be a mapping",
+            source=source,
+            path="state_schema.reducers",
+        )
+    try:
+        return {name: ReducerName(value) for name, value in raw.items()}
+    except ValueError as exc:
+        raise AdapterParseError(
+            "state_schema.reducers contains unsupported reducer",
+            source=source,
+            path="state_schema.reducers",
+        ) from exc
+
+
+def _join_sources(raw: Any, *, source: str | None, path: str) -> list[str]:
+    if not isinstance(raw, list) or not all(isinstance(item, str) for item in raw):
+        raise AdapterParseError("join_sources must be a list of strings", source=source, path=path)
+    return raw
 
 
 def _type_spec(value: Any) -> TypeSpec:
