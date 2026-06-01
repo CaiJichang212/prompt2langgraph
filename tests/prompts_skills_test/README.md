@@ -13,9 +13,9 @@ prompts_skills_test/
 │   ├── codex-skills/           # Skills from ComposioHQ/awesome-codex-skills (5 skills)
 │   ├── anthropic-curated/      # Skills from anthropics/skills (2 skills)
 │   └── mattpocock/             # Skills from mattpocock/skills and obra/superpowers (2 skills)
-├── prompts/                    # Test prompts for Prompt→WorkflowSpec (10 prompts)
-│   ├── *.json                  # Structured prompt test cases
-│   └── *.md                    # Raw prompt text from upstream sources
+├── prompts/                    # Prompt fixtures (7 structured + 3 raw upstream snapshots)
+│   ├── *.json                  # Structured prompt test cases used by the corpus tests
+│   └── *.md                    # Raw upstream prompt snapshots used as source references
 ├── json_plans/                 # JSON Plan direct input tests (6 plans)
 │   ├── linear_llm.json
 │   ├── conditional_router.json
@@ -40,15 +40,16 @@ prompts_skills_test/
 
 | Category | Count | Coverage |
 |----------|-------|----------|
-| **Skills** | 16 | Linear, Conditional, Loop, Fanout, Join, Human Gate, Side Effect |
-| **Prompts** | 10 | All workflow patterns + complex multi-pattern |
-| **JSON Plans** | 6 | Direct JSON Plan input pathway |
+| **Skill→Workflow cases** | 16 | Offline fake-model planning pipeline + validation + compile |
+| **Structured Prompt→Workflow cases** | 7 | Offline fake-model planning pipeline + validation + compile |
+| **Inline upstream/source plans** | 5 | Adapter + validation, compiling valid plans |
+| **JSON Plans** | 6 | Direct JSON Plan input pathway + validation + compile |
 | **Negative Cases** | 12 | Security, Parse, Schema, Registry, Skill errors |
-| **Total Test Cases** | 44 | Prompt/Skill corpus coverage |
+| **Executable Corpus Cases** | 46 | Parameterized pytest cases, plus one manifest consistency check |
 
 ## Scope and Limitations
 
-This corpus is useful for test-driven development around prompt and Skill ingestion, simplified JSON plan adaptation, validation diagnostics, and security boundary regressions.
+This corpus is useful for test-driven development around prompt and Skill ingestion, simplified JSON plan adaptation, validation diagnostics, compiler smoke coverage, and security boundary regressions.
 
 It does not by itself cover the entire project. Full coverage still requires the existing tests for canonical IR models, normalization, lockfile/manifest/report generation, LangGraph compilation, artifact cleanup, local run/resume, checkpoint behavior, Mermaid rendering, CLI flows, public API, executor dispatch, and runtime external-call metrics.
 
@@ -71,6 +72,8 @@ It does not by itself cover the entire project. Full coverage still requires the
 ## Usage
 
 ### Skill → WorkflowSpec Tests
+
+The default pytest path uses a deterministic fake model so these cases stay offline. The CLI examples below are manual smoke checks for live Skill planning and require local LLM configuration.
 
 ```bash
 # Linear workflow
@@ -178,8 +181,8 @@ uv run pytest tests/test_prompt_skill_corpus.py -v
 ## Notes
 
 - Skills follow `SKILL.md` format with YAML frontmatter (`name`, `description`) + numbered steps.
-- Prompts are structured for testing `plan_prompt_to_workflow_spec()` JSON plan generation.
+- Structured prompt fixtures test `plan_prompt_to_workflow_spec()` through a deterministic fake model in pytest.
 - JSON Plans test `json_plan_to_workflow_spec()` direct input pathway.
 - Invalid cases test error handling and validation boundaries.
-- Expected patterns are strict for deterministic JSON plan and inline plan cases.
+- Positive corpus cases assert expected node/edge patterns, validation success, and compiler smoke success.
 - Live LLM output may vary by model and should remain outside the default offline test path.
