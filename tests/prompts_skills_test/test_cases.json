@@ -90,7 +90,7 @@
       "registry": 1,
       "skill": 2
     },
-    "total_test_cases": 44
+    "total_test_cases": 41
   },
   "notes": [
     "Tests must not fetch the network - all fixtures are offline snapshots",
