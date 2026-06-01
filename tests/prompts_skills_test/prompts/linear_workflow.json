@@ -1,0 +1,9 @@
+{
+  "name": "linear_workflow_prompt",
+  "description": "A simple linear workflow with sequential steps. Tests basic linear flow generation.",
+  "prompt": "Build a workflow that processes a user question: first retrieves relevant documents, then generates an answer using those documents, and finally formats the response.",
+  "expected_workflow_type": "linear",
+  "expected_node_count": 3,
+  "expected_node_types": ["retriever", "llm", "transform"],
+  "test_category": "linear"
+}

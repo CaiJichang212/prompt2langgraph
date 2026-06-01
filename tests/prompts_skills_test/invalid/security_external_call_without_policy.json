@@ -1,0 +1,25 @@
+{
+  "name": "security_external_call_without_policy",
+  "description": "A workflow using real LLM executor without external_call policy. Should fail validation.",
+  "json_plan": {
+    "name": "real-llm-no-policy",
+    "nodes": [
+      {
+        "id": "answer",
+        "kind": "llm",
+        "executor": "llm.qwen-plus",
+        "inputs": {"question": {"state_key": "question"}},
+        "outputs": {"answer": {"state_key": "answer"}}
+      }
+    ],
+    "edges": [],
+    "inputs": {"question": {"type": "string"}},
+    "outputs": {"answer": {"type": "string"}},
+    "policies": {
+      "external_call": false
+    }
+  },
+  "expected_validation_error": "E_SEC_013",
+  "expected_error_message": "external_call must be true for ExecutorType.LLM",
+  "test_category": "security_negative"
+}

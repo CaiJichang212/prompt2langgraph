@@ -1,0 +1,25 @@
+{
+  "name": "security_tool_not_registered",
+  "description": "A workflow using tool executor not registered in ToolCallableRegistry. Should fail validation.",
+  "json_plan": {
+    "name": "tool-not-registered",
+    "nodes": [
+      {
+        "id": "execute",
+        "kind": "tool",
+        "executor": "tool.unregistered_tool",
+        "inputs": {"value": {"state_key": "command"}},
+        "outputs": {"value": {"state_key": "result"}}
+      }
+    ],
+    "edges": [],
+    "inputs": {"command": {"type": "string"}},
+    "outputs": {"result": {"type": "string"}},
+    "policies": {
+      "allowed_tool_refs": ["registered_tool"]
+    }
+  },
+  "expected_validation_error": "E_SEC_015",
+  "expected_error_message": "tool ref not in allowed_tool_refs or not registered",
+  "test_category": "security_negative"
+}

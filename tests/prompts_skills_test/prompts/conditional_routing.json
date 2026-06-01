@@ -1,0 +1,9 @@
+{
+  "name": "conditional_routing_prompt",
+  "description": "A workflow with conditional branching based on input. Tests conditional edge generation.",
+  "prompt": "Build a support ticket routing workflow: analyze the ticket severity, if severity is 'critical' route to emergency team, if severity is 'high' route to priority team, otherwise route to standard team.",
+  "expected_workflow_type": "conditional",
+  "expected_node_count": 4,
+  "expected_node_types": ["transform", "router"],
+  "test_category": "conditional"
+}

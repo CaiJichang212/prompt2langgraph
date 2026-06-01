@@ -1,0 +1,9 @@
+{
+  "name": "human_approval_prompt",
+  "description": "A workflow requiring human approval before proceeding. Tests human_gate node generation.",
+  "prompt": "Build a deployment workflow: prepare the deployment package, run pre-deployment checks, then pause for human approval, if approved execute deployment and verify success.",
+  "expected_workflow_type": "linear_with_human_gate",
+  "expected_node_count": 4,
+  "expected_node_types": ["transform", "human_gate", "side_effect"],
+  "test_category": "human_gate"
+}

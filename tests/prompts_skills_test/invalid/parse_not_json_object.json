@@ -1,0 +1,8 @@
+{
+  "name": "invalid_json_not_object",
+  "description": "LLM output is a string instead of JSON object. Should fail parsing with AdapterParseError.",
+  "llm_output": "This is a plain text response, not a JSON object.",
+  "expected_parse_error": "AdapterParseError",
+  "expected_error_message": "must be a JSON object",
+  "test_category": "parse_negative"
+}

@@ -1,0 +1,25 @@
+{
+  "name": "invalid_loop_without_guard",
+  "description": "A workflow with loop edge but no loop_guard.max_iterations. Should fail validation.",
+  "json_plan": {
+    "name": "loop-no-guard",
+    "entrypoint": "process",
+    "nodes": [
+      {
+        "id": "process",
+        "kind": "transform",
+        "executor": "builtin.identity_transform",
+        "inputs": {"value": {"state_key": "data"}},
+        "outputs": {"value": {"state_key": "result"}}
+      }
+    ],
+    "edges": [
+      {"from": "process", "to": "process", "kind": "loop"}
+    ],
+    "inputs": {"data": {"type": "string"}},
+    "outputs": {"result": {"type": "string"}}
+  },
+  "expected_validation_error": "E_SCHEMA_002",
+  "expected_error_message": "loop edge must have loop_guard.max_iterations",
+  "test_category": "schema_negative"
+}

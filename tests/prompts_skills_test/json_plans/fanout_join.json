@@ -1,0 +1,85 @@
+{
+  "name": "json_plan_fanout_join",
+  "description": "A workflow with parallel execution and result aggregation. Tests fanout and join edges in JSON Plan.",
+  "json_plan": {
+    "name": "parallel-search",
+    "nodes": [
+      {
+        "id": "prepare_queries",
+        "kind": "transform",
+        "executor": "builtin.identity_transform",
+        "inputs": {"value": {"state_key": "queries"}},
+        "outputs": {"value": {"state_key": "queries"}}
+      },
+      {
+        "id": "search_web",
+        "kind": "tool",
+        "executor": "builtin.identity_transform",
+        "inputs": {"value": {"state_key": "query"}},
+        "outputs": {"value": {"state_key": "web_results"}}
+      },
+      {
+        "id": "search_academic",
+        "kind": "tool",
+        "executor": "builtin.identity_transform",
+        "inputs": {"value": {"state_key": "query"}},
+        "outputs": {"value": {"state_key": "academic_results"}}
+      },
+      {
+        "id": "search_news",
+        "kind": "tool",
+        "executor": "builtin.identity_transform",
+        "inputs": {"value": {"state_key": "query"}},
+        "outputs": {"value": {"state_key": "news_results"}}
+      },
+      {
+        "id": "aggregate",
+        "kind": "join",
+        "executor": "builtin.identity_transform",
+        "inputs": {"value": {"state_key": "web_results"}},
+        "outputs": {"value": {"state_key": "combined"}}
+      },
+      {
+        "id": "synthesize",
+        "kind": "llm",
+        "executor": "builtin.echo_llm",
+        "inputs": {"question": {"state_key": "topic"}},
+        "outputs": {"answer": {"state_key": "report"}}
+      }
+    ],
+    "edges": [
+      {"from": "prepare_queries", "to": "search_web", "kind": "fanout", "map": {"items_state_key": "queries", "item_state_key": "query", "result_state_key": "web_results"}},
+      {"from": "prepare_queries", "to": "search_academic", "kind": "fanout", "map": {"items_state_key": "queries", "item_state_key": "query", "result_state_key": "academic_results"}},
+      {"from": "prepare_queries", "to": "search_news", "kind": "fanout", "map": {"items_state_key": "queries", "item_state_key": "query", "result_state_key": "news_results"}},
+      {
+        "from": "search_web",
+        "to": "aggregate",
+        "kind": "join",
+        "join_sources": ["search_web", "search_academic", "search_news"]
+      },
+      {"from": "aggregate", "to": "synthesize", "kind": "linear"}
+    ],
+    "inputs": {
+      "topic": {"type": "string"},
+      "queries": {"type": "array", "item_type": {"type": "string"}},
+      "query": {"type": "string"}
+    },
+    "outputs": {
+      "report": {"type": "string"},
+      "web_results": {"type": "array", "item_type": {"type": "string"}},
+      "academic_results": {"type": "array", "item_type": {"type": "string"}},
+      "news_results": {"type": "array", "item_type": {"type": "string"}}
+    },
+    "state_schema": {
+      "reducers": {
+        "web_results": "append",
+        "academic_results": "append",
+        "news_results": "append"
+      }
+    }
+  },
+  "expected_patterns": ["fanout", "join"],
+  "expected_node_types": ["transform", "tool", "join", "llm"],
+  "expected_join_sources": ["search_web", "search_academic", "search_news"],
+  "test_category": "json_plan"
+}

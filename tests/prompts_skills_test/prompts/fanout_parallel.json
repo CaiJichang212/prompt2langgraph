@@ -1,0 +1,10 @@
+{
+  "name": "fanout_parallel_prompt",
+  "description": "A workflow with parallel execution and result aggregation. Tests fanout/join generation.",
+  "prompt": "Build a multi-source research workflow: search the topic on web, academic papers, and news sources simultaneously, then combine all results into a unified summary report.",
+  "expected_workflow_type": "fanout",
+  "expected_node_count": 5,
+  "expected_node_types": ["tool", "llm", "join"],
+  "expected_join_sources": ["web_search", "academic_search", "news_search"],
+  "test_category": "fanout"
+}

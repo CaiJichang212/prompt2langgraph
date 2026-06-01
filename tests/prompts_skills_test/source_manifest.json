@@ -1,0 +1,61 @@
+{
+  "retrieved_at": "2026-06-01",
+  "sources": [
+    {
+      "id": "useful-ai-prompts-test-strategy-architect",
+      "kind": "prompt",
+      "local_path": "prompts/upstream-test-strategy-architect.md",
+      "source_url": "https://raw.githubusercontent.com/aj-geddes/useful-ai-prompts/main/prompts/development/test-strategy-architect.md",
+      "repo_url": "https://github.com/aj-geddes/useful-ai-prompts",
+      "why_selected": "Testing strategy prompt with explicit TDD, unit, integration, and E2E vocabulary."
+    },
+    {
+      "id": "useful-ai-prompts-code-review-expert",
+      "kind": "prompt",
+      "local_path": "prompts/upstream-code-review-expert.md",
+      "source_url": "https://raw.githubusercontent.com/aj-geddes/useful-ai-prompts/main/prompts/development/code-review-expert.md",
+      "repo_url": "https://github.com/aj-geddes/useful-ai-prompts",
+      "why_selected": "Structured code-review prompt suitable for linear LLM workflow planning."
+    },
+    {
+      "id": "useful-ai-prompts-requirements-engineering-expert",
+      "kind": "prompt",
+      "local_path": "prompts/upstream-requirements-engineering-expert.md",
+      "source_url": "https://raw.githubusercontent.com/aj-geddes/useful-ai-prompts/main/prompts/business/business-analysis/requirements-engineering-expert.md",
+      "repo_url": "https://github.com/aj-geddes/useful-ai-prompts",
+      "why_selected": "Requirements prompt with elicitation and validation stages, useful for multi-node planning."
+    },
+    {
+      "id": "anthropic-webapp-testing",
+      "kind": "skill",
+      "local_path": "skills/anthropic-curated/anthropic-webapp-testing/SKILL.md",
+      "source_url": "https://raw.githubusercontent.com/anthropics/skills/main/skills/webapp-testing/SKILL.md",
+      "repo_url": "https://github.com/anthropics/skills",
+      "why_selected": "Playwright testing Skill with scripts, shell command, local server, and browser automation risk signals."
+    },
+    {
+      "id": "anthropic-skill-creator",
+      "kind": "skill",
+      "local_path": "skills/anthropic-curated/anthropic-skill-creator/SKILL.md",
+      "source_url": "https://raw.githubusercontent.com/anthropics/skills/main/skills/skill-creator/SKILL.md",
+      "repo_url": "https://github.com/anthropics/skills",
+      "why_selected": "Large Skill with eval workflow and referenced scripts; useful for truncation and resource-aware planning tests."
+    },
+    {
+      "id": "mattpocock-tdd",
+      "kind": "skill",
+      "local_path": "skills/mattpocock/mattpocock-tdd/SKILL.md",
+      "source_url": "https://raw.githubusercontent.com/mattpocock/skills/main/skills/engineering/tdd/SKILL.md",
+      "repo_url": "https://github.com/mattpocock/skills",
+      "why_selected": "Engineering TDD Skill with red-green-refactor workflow."
+    },
+    {
+      "id": "obra-superpowers-tdd",
+      "kind": "skill",
+      "local_path": "skills/mattpocock/obra-superpowers-tdd/SKILL.md",
+      "source_url": "https://raw.githubusercontent.com/obra/superpowers/main/skills/test-driven-development/SKILL.md",
+      "repo_url": "https://github.com/obra/superpowers",
+      "why_selected": "Strict TDD Skill with explicit numbered red-green-refactor process and verification gates."
+    }
+  ]
+}

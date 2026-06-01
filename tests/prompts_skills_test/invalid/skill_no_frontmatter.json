@@ -1,0 +1,8 @@
+{
+  "name": "invalid_skill_no_frontmatter",
+  "description": "A SKILL.md without YAML frontmatter. Should produce E_SCHEMA_002 error.",
+  "skill_content": "# My Skill\n\nThis is a skill without frontmatter.\n\n1. Step one\n2. Step two\n3. Step three",
+  "expected_analysis_error": "E_SCHEMA_002",
+  "expected_error_message": "frontmatter missing name or description",
+  "test_category": "skill_negative"
+}

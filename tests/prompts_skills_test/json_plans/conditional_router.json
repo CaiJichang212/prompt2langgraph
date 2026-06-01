@@ -1,0 +1,55 @@
+{
+  "name": "json_plan_conditional_router",
+  "description": "A workflow with conditional routing based on confidence score. Tests conditional edge in JSON Plan.",
+  "json_plan": {
+    "name": "confidence-router",
+    "entrypoint": "analyze",
+    "nodes": [
+      {
+        "id": "analyze",
+        "kind": "transform",
+        "executor": "builtin.identity_transform",
+        "inputs": {"value": {"state_key": "question"}},
+        "outputs": {"value": {"state_key": "analysis"}}
+      },
+      {
+        "id": "route",
+        "kind": "router",
+        "executor": "builtin.route",
+        "inputs": {}
+      },
+      {
+        "id": "auto_answer",
+        "kind": "llm",
+        "executor": "builtin.echo_llm",
+        "inputs": {"question": {"state_key": "question"}},
+        "outputs": {"answer": {"state_key": "answer"}}
+      },
+      {
+        "id": "human_review",
+        "kind": "human_gate",
+        "executor": "builtin.human_gate",
+        "inputs": {},
+        "outputs": {"approval": {"state_key": "human_decision"}}
+      }
+    ],
+    "edges": [
+      {"from": "analyze", "to": "route", "kind": "linear"},
+      {
+        "from": "route",
+        "to": "auto_answer",
+        "kind": "conditional",
+        "condition": {
+          "expr": "confidence > 0.8",
+          "routes": {"true": "auto_answer", "false": "human_review"}
+        }
+      },
+      {"from": "human_review", "to": "auto_answer", "kind": "linear"}
+    ],
+    "inputs": {"question": {"type": "string"}, "confidence": {"type": "number"}},
+    "outputs": {"answer": {"type": "string"}}
+  },
+  "expected_patterns": ["conditional"],
+  "expected_node_types": ["transform", "router", "llm", "human_gate"],
+  "test_category": "json_plan"
+}

@@ -1,0 +1,31 @@
+{
+  "name": "json_plan_linear_llm",
+  "description": "A simple linear workflow with retriever and llm nodes. Tests JSON Plan direct input.",
+  "json_plan": {
+    "name": "simple-rag-workflow",
+    "nodes": [
+      {
+        "id": "retrieve",
+        "kind": "retriever",
+        "executor": "builtin.mock_retriever",
+        "inputs": {"question": {"state_key": "question"}},
+        "outputs": {"docs_ref": {"state_key": "docs_ref"}}
+      },
+      {
+        "id": "answer",
+        "kind": "llm",
+        "executor": "builtin.echo_llm",
+        "inputs": {"question": {"state_key": "question"}},
+        "outputs": {"answer": {"state_key": "answer"}}
+      }
+    ],
+    "edges": [
+      {"from": "retrieve", "to": "answer", "kind": "linear"}
+    ],
+    "inputs": {"question": {"type": "string"}},
+    "outputs": {"answer": {"type": "string"}}
+  },
+  "expected_patterns": ["linear"],
+  "expected_node_types": ["retriever", "llm"],
+  "test_category": "json_plan"
+}

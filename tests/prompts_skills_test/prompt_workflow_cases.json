@@ -1,0 +1,250 @@
+[
+  {
+    "id": "code_review_linear_llm",
+    "prompt_source": "prompts/upstream-code-review-expert.md",
+    "expected_valid": true,
+    "plan": {
+      "name": "Code Review Linear LLM",
+      "inputs": {
+        "question": "string"
+      },
+      "outputs": {
+        "answer": "string"
+      },
+      "nodes": [
+        {
+          "id": "review_code",
+          "kind": "llm",
+          "executor": "builtin.echo_llm",
+          "params": {
+            "template": "Review this code and return prioritized findings: {question}"
+          }
+        }
+      ],
+      "edges": []
+    }
+  },
+  {
+    "id": "test_strategy_retriever_then_llm",
+    "prompt_source": "prompts/upstream-test-strategy-architect.md",
+    "expected_valid": true,
+    "plan": {
+      "name": "Test Strategy Retriever LLM",
+      "inputs": {
+        "question": "string"
+      },
+      "outputs": {
+        "answer": "string"
+      },
+      "nodes": [
+        {
+          "id": "collect_context",
+          "kind": "retriever",
+          "executor": "builtin.mock_retriever",
+          "inputs": {
+            "question": "question"
+          },
+          "outputs": {
+            "docs_ref": "docs_ref"
+          }
+        },
+        {
+          "id": "draft_strategy",
+          "kind": "llm",
+          "executor": "builtin.echo_llm",
+          "inputs": {
+            "question": "question"
+          },
+          "outputs": {
+            "answer": "answer"
+          },
+          "params": {
+            "template": "Draft a test strategy for: {question}"
+          }
+        }
+      ],
+      "edges": [
+        {
+          "from": "collect_context",
+          "to": "draft_strategy"
+        }
+      ]
+    }
+  },
+  {
+    "id": "requirements_conditional_human_gate",
+    "prompt_source": "prompts/upstream-requirements-engineering-expert.md",
+    "expected_valid": true,
+    "plan": {
+      "name": "Requirements Conditional Human Gate",
+      "entrypoint": "route_confidence",
+      "inputs": {
+        "question": "string",
+        "confidence": "number"
+      },
+      "outputs": {
+        "answer": "string"
+      },
+      "nodes": [
+        {
+          "id": "route_confidence",
+          "kind": "router",
+          "executor": "builtin.route"
+        },
+        {
+          "id": "approval",
+          "kind": "human_gate",
+          "executor": "builtin.human_gate",
+          "outputs": {
+            "approval": "approval"
+          },
+          "params": {
+            "message": "Approve low-confidence requirements summary?"
+          }
+        },
+        {
+          "id": "write_requirements",
+          "kind": "llm",
+          "executor": "builtin.echo_llm",
+          "inputs": {
+            "question": "question"
+          },
+          "outputs": {
+            "answer": "answer"
+          },
+          "params": {
+            "template": "Write requirements from stakeholder request: {question}"
+          }
+        }
+      ],
+      "edges": [
+        {
+          "from": "route_confidence",
+          "to": "write_requirements",
+          "kind": "conditional",
+          "condition": {
+            "expr": "confidence < 0.75",
+            "routes": {
+              "true": "approval",
+              "false": "write_requirements"
+            }
+          }
+        },
+        {
+          "from": "approval",
+          "to": "write_requirements"
+        }
+      ]
+    }
+  },
+  {
+    "id": "webapp_testing_side_effect_requires_approval",
+    "prompt_source": "skills/anthropic-webapp-testing/SKILL.md",
+    "expected_valid": true,
+    "plan": {
+      "name": "Webapp Testing Approved Side Effect",
+      "inputs": {
+        "value": "string"
+      },
+      "outputs": {
+        "value": "string"
+      },
+      "nodes": [
+        {
+          "id": "approve_browser_test",
+          "kind": "human_gate",
+          "executor": "builtin.human_gate",
+          "outputs": {
+            "approval": "approval"
+          },
+          "params": {
+            "message": "Approve running local browser automation?"
+          }
+        },
+        {
+          "id": "run_browser_test",
+          "kind": "side_effect",
+          "executor": "builtin.side_effect",
+          "inputs": {
+            "value": "value"
+          },
+          "outputs": {
+            "value": "value"
+          },
+          "security": {
+            "requires_approval": true
+          }
+        }
+      ],
+      "edges": [
+        {
+          "from": "approve_browser_test",
+          "to": "run_browser_test"
+        }
+      ]
+    }
+  },
+  {
+    "id": "fanout_without_reducer_is_rejected",
+    "prompt_source": "prompts/upstream-test-strategy-architect.md",
+    "expected_valid": false,
+    "expected_error_codes": [
+      "E_REDUCER_012"
+    ],
+    "plan": {
+      "name": "Fanout Without Reducer",
+      "inputs": {
+        "items": {
+          "type": "array",
+          "item_type": {
+            "type": "string"
+          }
+        }
+      },
+      "outputs": {
+        "results": {
+          "type": "array",
+          "item_type": {
+            "type": "string"
+          }
+        }
+      },
+      "nodes": [
+        {
+          "id": "dispatch",
+          "kind": "transform",
+          "executor": "builtin.identity_transform",
+          "inputs": {
+            "value": "items"
+          },
+          "outputs": {
+            "value": "items"
+          }
+        },
+        {
+          "id": "process_item",
+          "kind": "transform",
+          "executor": "builtin.identity_transform",
+          "inputs": {
+            "value": "item"
+          },
+          "outputs": {
+            "value": "results"
+          }
+        }
+      ],
+      "edges": [
+        {
+          "from": "dispatch",
+          "to": "process_item",
+          "kind": "fanout",
+          "map": {
+            "items_state_key": "items",
+            "item_state_key": "item",
+            "result_state_key": "results"
+          }
+        }
+      ]
+    }
+  }
+]

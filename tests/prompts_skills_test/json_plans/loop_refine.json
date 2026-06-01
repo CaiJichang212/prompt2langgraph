@@ -1,0 +1,54 @@
+{
+  "name": "json_plan_loop_refine",
+  "description": "A workflow with iterative refinement loop. Tests loop edge with guard in JSON Plan.",
+  "json_plan": {
+    "name": "refine-loop",
+    "nodes": [
+      {
+        "id": "generate",
+        "kind": "llm",
+        "executor": "builtin.echo_llm",
+        "inputs": {"question": {"state_key": "topic"}},
+        "outputs": {"answer": {"state_key": "draft"}}
+      },
+      {
+        "id": "evaluate",
+        "kind": "transform",
+        "executor": "builtin.identity_transform",
+        "inputs": {"value": {"state_key": "draft"}},
+        "outputs": {"value": {"state_key": "score"}}
+      },
+      {
+        "id": "improve",
+        "kind": "llm",
+        "executor": "builtin.echo_llm",
+        "inputs": {"question": {"state_key": "draft"}},
+        "outputs": {"answer": {"state_key": "draft"}}
+      },
+      {
+        "id": "finalize",
+        "kind": "transform",
+        "executor": "builtin.identity_transform",
+        "inputs": {"value": {"state_key": "draft"}},
+        "outputs": {"value": {"state_key": "final_content"}}
+      }
+    ],
+    "edges": [
+      {"from": "generate", "to": "evaluate", "kind": "linear"},
+      {
+        "from": "evaluate",
+        "to": "improve",
+        "kind": "loop",
+        "loop_guard": {"max_iterations": 5, "counter_key": "_loop_count"}
+      },
+      {"from": "evaluate", "to": "finalize", "kind": "linear"},
+      {"from": "improve", "to": "evaluate", "kind": "linear"}
+    ],
+    "inputs": {"topic": {"type": "string"}},
+    "outputs": {"final_content": {"type": "string"}}
+  },
+  "expected_patterns": ["loop"],
+  "expected_node_types": ["llm", "transform"],
+  "expected_loop_guard": {"max_iterations": 5},
+  "test_category": "json_plan"
+}

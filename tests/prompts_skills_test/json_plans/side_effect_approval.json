@@ -1,0 +1,44 @@
+{
+  "name": "json_plan_side_effect_approval",
+  "description": "A workflow with side effect requiring approval. Tests side_effect node with security policy.",
+  "json_plan": {
+    "name": "deployment-with-approval",
+    "nodes": [
+      {
+        "id": "prepare",
+        "kind": "transform",
+        "executor": "builtin.identity_transform",
+        "inputs": {"value": {"state_key": "changes"}},
+        "outputs": {"value": {"state_key": "package"}}
+      },
+      {
+        "id": "deploy",
+        "kind": "side_effect",
+        "executor": "builtin.side_effect",
+        "inputs": {"value": {"state_key": "package"}},
+        "outputs": {"value": {"state_key": "deployment_result"}},
+        "security": {"requires_approval": true, "idempotency_key": "deploy_${timestamp}"}
+      },
+      {
+        "id": "verify",
+        "kind": "transform",
+        "executor": "builtin.identity_transform",
+        "inputs": {"value": {"state_key": "deployment_result"}},
+        "outputs": {"value": {"state_key": "verification"}}
+      }
+    ],
+    "edges": [
+      {"from": "prepare", "to": "deploy", "kind": "linear"},
+      {"from": "deploy", "to": "verify", "kind": "linear"}
+    ],
+    "inputs": {"changes": {"type": "string"}},
+    "outputs": {"verification": {"type": "string"}},
+    "policies": {
+      "allow_side_effects": false
+    }
+  },
+  "expected_patterns": ["side_effect"],
+  "expected_node_types": ["transform", "side_effect"],
+  "expected_security_policy": {"requires_approval": true},
+  "test_category": "json_plan"
+}

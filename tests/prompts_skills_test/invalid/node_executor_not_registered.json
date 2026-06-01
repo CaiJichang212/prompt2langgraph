@@ -1,0 +1,22 @@
+{
+  "name": "invalid_node_executor_not_registered",
+  "description": "A workflow using executor not in registry. Should fail validation.",
+  "json_plan": {
+    "name": "executor-not-registered",
+    "nodes": [
+      {
+        "id": "process",
+        "kind": "llm",
+        "executor": "nonexistent.executor",
+        "inputs": {"input": {"state_key": "data"}},
+        "outputs": {"output": {"state_key": "result"}}
+      }
+    ],
+    "edges": [],
+    "inputs": {"data": {"type": "string"}},
+    "outputs": {"result": {"type": "string"}}
+  },
+  "expected_validation_error": "E_BIND_006",
+  "expected_error_message": "executor ref not found in registry",
+  "test_category": "registry_negative"
+}

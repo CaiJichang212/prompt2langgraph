@@ -1,0 +1,26 @@
+{
+  "name": "security_side_effect_without_approval",
+  "description": "A workflow with side_effect node without requires_approval or idempotency_key. Should fail validation.",
+  "json_plan": {
+    "name": "side-effect-no-approval",
+    "nodes": [
+      {
+        "id": "deploy",
+        "kind": "side_effect",
+        "executor": "builtin.side_effect",
+        "inputs": {"value": {"state_key": "changes"}},
+        "outputs": {"value": {"state_key": "result"}},
+        "security": {}
+      }
+    ],
+    "edges": [],
+    "inputs": {"changes": {"type": "string"}},
+    "outputs": {"result": {"type": "string"}},
+    "policies": {
+      "allow_side_effects": false
+    }
+  },
+  "expected_validation_error": "E_SIDE_008",
+  "expected_error_message": "side_effect node must have requires_approval or idempotency_key",
+  "test_category": "security_negative"
+}

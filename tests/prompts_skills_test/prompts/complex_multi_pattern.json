@@ -1,0 +1,10 @@
+{
+  "name": "complex_multi_pattern_prompt",
+  "description": "A complex workflow combining multiple patterns. Tests comprehensive workflow generation.",
+  "prompt": "Build a comprehensive data processing workflow: fetch data from API, validate schema, if validation fails route to error handler, if passes process in parallel by chunking data, join processed chunks, then require human review before storing to database, finally send notification.",
+  "expected_workflow_type": "complex",
+  "expected_node_count": 8,
+  "expected_node_types": ["tool", "transform", "router", "join", "human_gate", "side_effect"],
+  "expected_patterns": ["conditional", "fanout", "join", "human_gate"],
+  "test_category": "complex"
+}

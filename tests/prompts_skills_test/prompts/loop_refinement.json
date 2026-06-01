@@ -1,0 +1,12 @@
+{
+  "name": "loop_refinement_prompt",
+  "description": "A workflow with iterative refinement loop. Tests loop edge with guard generation.",
+  "prompt": "Build a content refinement workflow: generate initial draft, evaluate quality score, if score below 80 improve the content and re-evaluate, stop when score reaches 80 or after 5 iterations maximum.",
+  "expected_workflow_type": "loop",
+  "expected_node_count": 3,
+  "expected_node_types": ["llm", "transform"],
+  "expected_loop_guard": {
+    "max_iterations": 5
+  },
+  "test_category": "loop"
+}

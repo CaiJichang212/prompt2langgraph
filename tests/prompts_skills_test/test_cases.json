@@ -1,0 +1,101 @@
+{
+  "test_suite_name": "prompt2langgraph_comprehensive",
+  "description": "Comprehensive test fixtures for prompt2langgraph covering all workflow patterns, security policies, and edge cases.",
+  "created_at": "2026-06-01",
+  "merged_from": ["prompts_skills_test_codex", "prompts_skills_test_glm5"],
+  "sources": {
+    "skills": {
+      "openai-curated": "https://github.com/openai/skills",
+      "codex-skills": "https://github.com/ComposioHQ/awesome-codex-skills",
+      "anthropic-curated": "https://github.com/anthropics/skills",
+      "mattpocock": "https://github.com/mattpocock/skills, https://github.com/obra/superpowers"
+    },
+    "prompts": "Derived from f/awesome-chatgpt-prompts patterns and aj-geddes/useful-ai-prompts"
+  },
+  "test_cases": {
+    "skill_to_workflow_tests": [
+      {"id": "skill_linear_01", "skill_dir": "skills/openai-curated/linear-data-pipeline", "expected_patterns": ["linear"], "expected_node_types": ["transform"], "cli_command": "uv run pt2lg plan --skill-dir tests/prompts_skills_test/skills/openai-curated/linear-data-pipeline --json"},
+      {"id": "skill_linear_02", "skill_dir": "skills/openai-curated/yeet", "expected_patterns": ["linear"], "expected_node_types": ["tool"], "cli_command": "uv run pt2lg plan --skill-dir tests/prompts_skills_test/skills/openai-curated/yeet --json"},
+      {"id": "skill_linear_03", "skill_dir": "skills/codex-skills/gh-fix-ci", "expected_patterns": ["linear"], "expected_node_types": ["tool", "transform"], "cli_command": "uv run pt2lg plan --skill-dir tests/prompts_skills_test/skills/codex-skills/gh-fix-ci --json"},
+      {"id": "skill_conditional_01", "skill_dir": "skills/openai-curated/conditional-support-triage", "expected_patterns": ["conditional"], "expected_node_types": ["transform", "router"], "cli_command": "uv run pt2lg plan --skill-dir tests/prompts_skills_test/skills/openai-curated/conditional-support-triage --json"},
+      {"id": "skill_conditional_02", "skill_dir": "skills/codex-skills/security-threat-model", "expected_patterns": ["conditional"], "expected_node_types": ["transform", "router"], "cli_command": "uv run pt2lg plan --skill-dir tests/prompts_skills_test/skills/codex-skills/security-threat-model --json"},
+      {"id": "skill_loop_01", "skill_dir": "skills/openai-curated/loop-refine-content", "expected_patterns": ["loop"], "expected_node_types": ["llm", "transform"], "expected_loop_guard": {"max_iterations": 5}, "cli_command": "uv run pt2lg plan --skill-dir tests/prompts_skills_test/skills/openai-curated/loop-refine-content --json"},
+      {"id": "skill_loop_02", "skill_dir": "skills/codex-skills/mcp-builder", "expected_patterns": ["loop"], "expected_node_types": ["transform", "tool"], "cli_command": "uv run pt2lg plan --skill-dir tests/prompts_skills_test/skills/codex-skills/mcp-builder --json"},
+      {"id": "skill_fanout_01", "skill_dir": "skills/openai-curated/fanout-multi-source-research", "expected_patterns": ["fanout", "join"], "expected_node_types": ["tool", "llm", "join"], "cli_command": "uv run pt2lg plan --skill-dir tests/prompts_skills_test/skills/openai-curated/fanout-multi-source-research --json"},
+      {"id": "skill_human_gate_01", "skill_dir": "skills/openai-curated/human-gate-deployment", "expected_patterns": ["human_gate"], "expected_node_types": ["transform", "human_gate", "side_effect"], "cli_command": "uv run pt2lg plan --skill-dir tests/prompts_skills_test/skills/openai-curated/human-gate-deployment --json"},
+      {"id": "skill_side_effect_01", "skill_dir": "skills/openai-curated/side-effect-file-organizer", "expected_patterns": ["side_effect"], "expected_node_types": ["transform", "side_effect"], "expected_security_policy": {"requires_approval": true}, "cli_command": "uv run pt2lg plan --skill-dir tests/prompts_skills_test/skills/openai-curated/side-effect-file-organizer --json"},
+      {"id": "skill_webapp_testing_01", "skill_dir": "skills/codex-skills/webapp-testing", "expected_patterns": ["linear", "conditional"], "expected_node_types": ["tool", "transform"], "cli_command": "uv run pt2lg plan --skill-dir tests/prompts_skills_test/skills/codex-skills/webapp-testing --json"},
+      {"id": "skill_gh_address_comments_01", "skill_dir": "skills/codex-skills/gh-address-comments", "expected_patterns": ["linear"], "expected_node_types": ["tool"], "cli_command": "uv run pt2lg plan --skill-dir tests/prompts_skills_test/skills/codex-skills/gh-address-comments --json"},
+      {"id": "skill_anthropic_skill_creator", "skill_dir": "skills/anthropic-curated/anthropic-skill-creator", "expected_patterns": ["linear"], "expected_node_types": ["transform"], "cli_command": "uv run pt2lg plan --skill-dir tests/prompts_skills_test/skills/anthropic-curated/anthropic-skill-creator --json"},
+      {"id": "skill_anthropic_webapp_testing", "skill_dir": "skills/anthropic-curated/anthropic-webapp-testing", "expected_patterns": ["linear", "conditional"], "expected_node_types": ["tool", "transform"], "cli_command": "uv run pt2lg plan --skill-dir tests/prompts_skills_test/skills/anthropic-curated/anthropic-webapp-testing --json"},
+      {"id": "skill_mattpocock_tdd", "skill_dir": "skills/mattpocock/mattpocock-tdd", "expected_patterns": ["loop"], "expected_node_types": ["transform", "tool"], "cli_command": "uv run pt2lg plan --skill-dir tests/prompts_skills_test/skills/mattpocock/mattpocock-tdd --json"},
+      {"id": "skill_obra_tdd", "skill_dir": "skills/mattpocock/obra-superpowers-tdd", "expected_patterns": ["loop"], "expected_node_types": ["transform", "tool"], "cli_command": "uv run pt2lg plan --skill-dir tests/prompts_skills_test/skills/mattpocock/obra-superpowers-tdd --json"}
+    ],
+    "prompt_to_workflow_tests": [
+      {"id": "prompt_linear_01", "prompt_file": "prompts/linear_workflow.json", "expected_patterns": ["linear"], "expected_node_types": ["retriever", "llm", "transform"], "cli_command": "uv run pt2lg plan --prompt 'Build a workflow that processes a user question: first retrieves relevant documents, then generates an answer using those documents, and finally formats the response.' --json"},
+      {"id": "prompt_conditional_01", "prompt_file": "prompts/conditional_routing.json", "expected_patterns": ["conditional"], "expected_node_types": ["transform", "router"], "cli_command": "uv run pt2lg plan --prompt 'Build a support ticket routing workflow: analyze the ticket severity, if severity is critical route to emergency team, if severity is high route to priority team, otherwise route to standard team.' --json"},
+      {"id": "prompt_loop_01", "prompt_file": "prompts/loop_refinement.json", "expected_patterns": ["loop"], "expected_node_types": ["llm", "transform"], "cli_command": "uv run pt2lg plan --prompt 'Build a content refinement workflow: generate initial draft, evaluate quality score, if score below 80 improve the content and re-evaluate, stop when score reaches 80 or after 5 iterations maximum.' --json"},
+      {"id": "prompt_fanout_01", "prompt_file": "prompts/fanout_parallel.json", "expected_patterns": ["fanout", "join"], "expected_node_types": ["tool", "llm", "join"], "cli_command": "uv run pt2lg plan --prompt 'Build a multi-source research workflow: search the topic on web, academic papers, and news sources simultaneously, then combine all results into a unified summary report.' --json"},
+      {"id": "prompt_human_gate_01", "prompt_file": "prompts/human_approval.json", "expected_patterns": ["human_gate"], "expected_node_types": ["transform", "human_gate", "side_effect"], "cli_command": "uv run pt2lg plan --prompt 'Build a deployment workflow: prepare the deployment package, run pre-deployment checks, then pause for human approval, if approved execute deployment and verify success.' --json"},
+      {"id": "prompt_side_effect_01", "prompt_file": "prompts/side_effect_operations.json", "expected_patterns": ["side_effect"], "expected_node_types": ["transform", "side_effect"], "cli_command": "uv run pt2lg plan --prompt 'Build a file organizer workflow: scan the directory for files, classify by type, move files to appropriate folders, rename to follow naming convention, and log all changes.' --json"},
+      {"id": "prompt_complex_01", "prompt_file": "prompts/complex_multi_pattern.json", "expected_patterns": ["conditional", "fanout", "join", "human_gate"], "expected_node_types": ["tool", "transform", "router", "join", "human_gate", "side_effect"], "cli_command": "uv run pt2lg plan --prompt 'Build a comprehensive data processing workflow: fetch data from API, validate schema, if validation fails route to error handler, if passes process in parallel by chunking data, join processed chunks, then require human review before storing to database, finally send notification.' --json"}
+    ],
+    "json_plan_tests": [
+      {"id": "json_plan_linear_01", "json_plan_file": "json_plans/linear_llm.json", "expected_patterns": ["linear"], "expected_node_types": ["retriever", "llm"], "test_function": "json_plan_to_workflow_spec"},
+      {"id": "json_plan_conditional_01", "json_plan_file": "json_plans/conditional_router.json", "expected_patterns": ["conditional"], "expected_node_types": ["transform", "router", "llm", "human_gate"], "test_function": "json_plan_to_workflow_spec"},
+      {"id": "json_plan_loop_01", "json_plan_file": "json_plans/loop_refine.json", "expected_patterns": ["loop"], "expected_node_types": ["llm", "transform"], "expected_loop_guard": {"max_iterations": 5}, "test_function": "json_plan_to_workflow_spec"},
+      {"id": "json_plan_fanout_01", "json_plan_file": "json_plans/fanout_join.json", "expected_patterns": ["fanout", "join"], "expected_node_types": ["transform", "tool", "join", "llm"], "expected_join_sources": ["search_web", "search_academic", "search_news"], "test_function": "json_plan_to_workflow_spec"},
+      {"id": "json_plan_side_effect_01", "json_plan_file": "json_plans/side_effect_approval.json", "expected_patterns": ["side_effect"], "expected_node_types": ["transform", "side_effect"], "expected_security_policy": {"requires_approval": true}, "test_function": "json_plan_to_workflow_spec"},
+      {"id": "json_plan_reducer_01", "json_plan_file": "json_plans/reducer_append.json", "expected_patterns": ["fanout"], "expected_node_types": ["transform", "llm"], "expected_reducers": {"results": "append"}, "test_function": "json_plan_to_workflow_spec"}
+    ],
+    "negative_tests": [
+      {"id": "neg_security_external_call", "test_file": "invalid/security_external_call_without_policy.json", "expected_error": "E_SEC_013", "expected_error_message": "external_call must be true for ExecutorType.LLM", "test_category": "security_negative"},
+      {"id": "neg_security_model_whitelist", "test_file": "invalid/security_model_not_in_whitelist.json", "expected_error": "E_SEC_014", "expected_error_message": "model not in allowed_models whitelist", "test_category": "security_negative"},
+      {"id": "neg_security_tool_registered", "test_file": "invalid/security_tool_not_registered.json", "expected_error": "E_SEC_015", "expected_error_message": "tool ref not in allowed_tool_refs or not registered", "test_category": "security_negative"},
+      {"id": "neg_security_side_effect_approval", "test_file": "invalid/security_side_effect_without_approval.json", "expected_error": "E_SIDE_008", "expected_error_message": "side_effect node must have requires_approval or idempotency_key", "test_category": "security_negative"},
+      {"id": "neg_parse_not_object", "test_file": "invalid/parse_not_json_object.json", "expected_error": "AdapterParseError", "expected_error_message": "must be a JSON object", "test_category": "parse_negative"},
+      {"id": "neg_parse_syntax", "test_file": "invalid/parse_json_syntax_error.json", "expected_error": "AdapterParseError", "expected_error_code": "E_PARSE_001", "test_category": "parse_negative"},
+      {"id": "neg_schema_fanout_reducer", "test_file": "invalid/fanout_without_reducer.json", "expected_error": "E_REDUCER_012", "expected_error_message": "fanout requires reducer for result state key", "test_category": "schema_negative"},
+      {"id": "neg_schema_join_sources", "test_file": "invalid/join_without_sources.json", "expected_error": "E_JOIN_001", "expected_error_message": "join edge must declare join_sources", "test_category": "schema_negative"},
+      {"id": "neg_schema_loop_guard", "test_file": "invalid/loop_without_guard.json", "expected_error": "E_LOOP_005", "expected_error_message": "loop edge must have loop_guard.max_iterations", "test_category": "schema_negative"},
+      {"id": "neg_registry_executor", "test_file": "invalid/node_executor_not_registered.json", "expected_error": "E_BIND_006", "expected_error_message": "executor ref not found in registry", "test_category": "registry_negative"},
+      {"id": "neg_skill_frontmatter_json", "test_file": "invalid/skill_no_frontmatter.json", "expected_error": "E_SCHEMA_002", "expected_error_message": "frontmatter missing name or description", "test_category": "skill_negative"},
+      {"id": "neg_skill_frontmatter_md", "skill_dir": "invalid/skill_no_frontmatter", "expected_error": "E_SCHEMA_002", "expected_error_message": "frontmatter missing name or description", "test_category": "skill_negative", "test_function": "analyze_skill_dir"}
+    ]
+  },
+  "validation_steps": [
+    "1. Run each skill_to_workflow test with pt2lg plan --skill-dir",
+    "2. Verify generated WorkflowSpec contains expected node types",
+    "3. Verify edge patterns match expectations",
+    "4. Run validate_workflow() on generated spec",
+    "5. Run compile_workflow_to_graph() and verify no errors",
+    "6. For prompt tests, run pt2lg plan --prompt and verify JSON plan structure",
+    "7. For json_plan tests, run json_plan_to_workflow_spec() and validate",
+    "8. For negative tests, verify expected error codes and messages"
+  ],
+  "coverage_summary": {
+    "workflow_patterns": {
+      "linear": {"skills": 5, "prompts": 2, "json_plans": 1, "negative": 0},
+      "conditional": {"skills": 3, "prompts": 1, "json_plans": 1, "negative": 0},
+      "loop": {"skills": 2, "prompts": 1, "json_plans": 1, "negative": 1},
+      "fanout_join": {"skills": 1, "prompts": 1, "json_plans": 1, "negative": 2},
+      "human_gate": {"skills": 1, "prompts": 1, "json_plans": 0, "negative": 0},
+      "side_effect": {"skills": 1, "prompts": 1, "json_plans": 1, "negative": 1},
+      "reducer": {"skills": 0, "prompts": 0, "json_plans": 1, "negative": 0}
+    },
+    "error_categories": {
+      "security": 4,
+      "parse": 2,
+      "schema": 3,
+      "registry": 1,
+      "skill": 2
+    },
+    "total_test_cases": 44
+  },
+  "notes": [
+    "Tests must not fetch the network - all fixtures are offline snapshots",
+    "Sources are recorded in source_manifest.json with fixed commits",
+    "Expected patterns are guidelines - actual output may vary by model",
+    "Negative tests verify error handling and validation boundaries"
+  ]
+}

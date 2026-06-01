@@ -1,0 +1,47 @@
+{
+  "name": "invalid_join_without_sources",
+  "description": "A workflow with join edge but no join_sources declared. Should fail validation.",
+  "json_plan": {
+    "name": "join-no-sources",
+    "nodes": [
+      {
+        "id": "start",
+        "kind": "transform",
+        "executor": "builtin.identity_transform",
+        "inputs": {"value": {"state_key": "data"}},
+        "outputs": {"value": {"state_key": "data"}}
+      },
+      {
+        "id": "process_a",
+        "kind": "transform",
+        "executor": "builtin.identity_transform",
+        "inputs": {"value": {"state_key": "data"}},
+        "outputs": {"value": {"state_key": "result_a"}}
+      },
+      {
+        "id": "process_b",
+        "kind": "transform",
+        "executor": "builtin.identity_transform",
+        "inputs": {"value": {"state_key": "data"}},
+        "outputs": {"value": {"state_key": "result_b"}}
+      },
+      {
+        "id": "merge",
+        "kind": "join",
+        "executor": "builtin.identity_transform",
+        "inputs": {"value": {"state_key": "result_a"}},
+        "outputs": {"value": {"state_key": "merged"}}
+      }
+    ],
+    "edges": [
+      {"from": "start", "to": "process_a", "kind": "linear"},
+      {"from": "start", "to": "process_b", "kind": "linear"},
+      {"from": "process_a", "to": "merge", "kind": "join"}
+    ],
+    "inputs": {"data": {"type": "string"}},
+    "outputs": {"merged": {"type": "string"}}
+  },
+  "expected_validation_error": "E_SCHEMA_002",
+  "expected_error_message": "join edge must declare join_sources",
+  "test_category": "schema_negative"
+}

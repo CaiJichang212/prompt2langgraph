@@ -1,0 +1,26 @@
+{
+  "name": "security_model_not_in_whitelist",
+  "description": "A workflow using LLM model not in allowed_models whitelist. Should fail validation.",
+  "json_plan": {
+    "name": "model-not-whitelisted",
+    "nodes": [
+      {
+        "id": "answer",
+        "kind": "llm",
+        "executor": "llm.gpt-4",
+        "inputs": {"question": {"state_key": "question"}},
+        "outputs": {"answer": {"state_key": "answer"}}
+      }
+    ],
+    "edges": [],
+    "inputs": {"question": {"type": "string"}},
+    "outputs": {"answer": {"type": "string"}},
+    "policies": {
+      "external_call": true,
+      "allowed_models": ["qwen-plus", "qwen-turbo"]
+    }
+  },
+  "expected_validation_error": "E_SEC_014",
+  "expected_error_message": "model gpt-4 not in allowed_models whitelist",
+  "test_category": "security_negative"
+}

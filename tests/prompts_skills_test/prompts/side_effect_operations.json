@@ -1,0 +1,12 @@
+{
+  "name": "side_effect_operations_prompt",
+  "description": "A workflow with file system modifications. Tests side_effect node with security policy.",
+  "prompt": "Build a file organizer workflow: scan the directory for files, classify by type, move files to appropriate folders, rename to follow naming convention, and log all changes.",
+  "expected_workflow_type": "linear_with_side_effect",
+  "expected_node_count": 5,
+  "expected_node_types": ["transform", "side_effect"],
+  "expected_security_policy": {
+    "requires_approval": true
+  },
+  "test_category": "side_effect"
+}

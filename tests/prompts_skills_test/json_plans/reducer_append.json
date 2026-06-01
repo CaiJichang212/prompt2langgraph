@@ -1,0 +1,52 @@
+{
+  "name": "json_plan_reducer_append",
+  "description": "A workflow testing APPEND reducer for collecting results from parallel execution.",
+  "json_plan": {
+    "name": "result-collector",
+    "nodes": [
+      {
+      "id": "dispatch",
+      "kind": "transform",
+      "executor": "builtin.identity_transform",
+      "inputs": {"value": {"state_key": "items"}},
+      "outputs": {"value": {"state_key": "items"}}
+    },
+    {
+      "id": "process_item",
+      "kind": "transform",
+      "executor": "builtin.identity_transform",
+      "inputs": {"value": {"state_key": "item"}},
+      "outputs": {"value": {"state_key": "results"}}
+    },
+      {
+        "id": "summarize",
+        "kind": "llm",
+        "executor": "builtin.echo_llm",
+      "inputs": {"question": {"state_key": "summary_prompt"}},
+      "outputs": {"answer": {"state_key": "summary"}}
+      }
+    ],
+    "edges": [
+      {"from": "dispatch", "to": "process_item", "kind": "fanout", "map": {"items_state_key": "items", "item_state_key": "item", "result_state_key": "results"}},
+      {"from": "process_item", "to": "summarize", "kind": "linear"}
+    ],
+    "inputs": {
+      "items": {"type": "array", "item_type": {"type": "string"}},
+      "item": {"type": "string"},
+      "summary_prompt": {"type": "string"}
+    },
+    "outputs": {
+      "summary": {"type": "string"},
+      "results": {"type": "array", "item_type": {"type": "string"}}
+    },
+    "state_schema": {
+      "reducers": {
+        "results": "append"
+      }
+    }
+  },
+  "expected_patterns": ["fanout"],
+  "expected_node_types": ["transform", "llm"],
+  "expected_reducers": {"results": "append"},
+  "test_category": "json_plan"
+}

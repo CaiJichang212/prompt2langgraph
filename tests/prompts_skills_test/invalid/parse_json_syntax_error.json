@@ -1,0 +1,8 @@
+{
+  "name": "invalid_json_syntax_error",
+  "description": "LLM output has JSON syntax error (missing closing brace). Should fail parsing.",
+  "llm_output": "{\"name\": \"test\", \"nodes\": [{\"id\": \"n1\"",
+  "expected_parse_error": "AdapterParseError",
+  "expected_error_code": "E_PARSE_001",
+  "test_category": "parse_negative"
+}

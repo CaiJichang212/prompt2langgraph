@@ -1,0 +1,37 @@
+{
+  "name": "invalid_fanout_without_reducer",
+  "description": "A workflow with fanout edge but no reducer declared. Should fail validation.",
+  "json_plan": {
+    "name": "fanout-no-reducer",
+    "nodes": [
+      {
+        "id": "dispatch",
+        "kind": "transform",
+        "executor": "builtin.identity_transform",
+        "inputs": {"value": {"state_key": "items"}},
+        "outputs": {"value": {"state_key": "items"}}
+      },
+      {
+        "id": "process_item",
+        "kind": "transform",
+        "executor": "builtin.identity_transform",
+        "inputs": {"value": {"state_key": "item"}},
+        "outputs": {"value": {"state_key": "results"}}
+      }
+    ],
+    "edges": [
+      {"from": "dispatch", "to": "process_item", "kind": "fanout", "map": {"items_state_key": "items", "item_state_key": "item", "result_state_key": "results"}}
+    ],
+    "inputs": {
+      "items": {"type": "array", "item_type": {"type": "string"}},
+      "item": {"type": "string"}
+    },
+    "outputs": {"results": {"type": "array", "item_type": {"type": "string"}}},
+    "state_schema": {
+      "reducers": {}
+    }
+  },
+  "expected_validation_error": "E_REDUCER_012",
+  "expected_error_message": "fanout requires reducer for result state key",
+  "test_category": "schema_negative"
+}
