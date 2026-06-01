@@ -1,4 +1,5 @@
 """Fake LLM provider for testing."""
+
 from langchain_core.language_models import BaseChatModel
 from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
 

@@ -78,7 +78,7 @@ def compile_workflow_to_graph(
             if (edge.source, edge.target) in added_edges:
                 warnings.warn(
                     f'duplicate edge "{edge.id}" ({edge.source}'
-                    f' -> {edge.target}) already added, skipping',
+                    f" -> {edge.target}) already added, skipping",
                     stacklevel=2,
                 )
             else:

@@ -294,7 +294,12 @@ def _make_mixed_workflow() -> WorkflowSpec:
                 },
             ],
             "edges": [
-                {"id": "transform_to_ask", "source": "transform", "target": "ask", "kind": "linear"},
+                {
+                    "id": "transform_to_ask",
+                    "source": "transform",
+                    "target": "ask",
+                    "kind": "linear",
+                },
             ],
             "policies": {},
             "metadata": {},
@@ -474,7 +479,7 @@ def test_dynamic_tool_node_raises_executor_error_when_no_tool_registry() -> None
 
 
 def test_collect_metrics_error_sink_and_metrics_sink_both_called_on_error() -> None:
-    """When error_sink and metrics_sink both exist, only error_sink is called for failed ExecutorError.
+    """Only error_sink is called for failed ExecutorError when both sinks exist.
 
     metrics_sink is skipped when error_sink is present to avoid double-counting:
     the runner's _error_sink wrapper already converts the error to an ExternalCallRecord.
@@ -509,7 +514,10 @@ def test_collect_metrics_error_sink_and_metrics_sink_both_called_on_error() -> N
 
     tool_reg = ToolCallableRegistry()
     # Register a tool that fails
-    tool_reg.register("tool.my_tool", lambda inputs, params: (_ for _ in ()).throw(RuntimeError("boom")))
+    tool_reg.register(
+        "tool.my_tool",
+        lambda inputs, params: (_ for _ in ()).throw(RuntimeError("boom")),
+    )
 
     graph = compile_workflow_to_graph(
         workflow,

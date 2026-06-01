@@ -751,7 +751,7 @@ def test_resume_command_calls_build_runtime_clients(tmp_path: Path) -> None:
     with patch("prompt2langgraph.cli._build_runtime_clients") as mock_build:
         mock_build.return_value = (None, None)
         # 即使 workflow 没有 LLM 节点，_build_runtime_clients 也应被调用
-        result = CliRunner().invoke(
+        CliRunner().invoke(
             app,
             [
                 "resume",

@@ -158,6 +158,7 @@ def test_invalid_join_edge_example_is_rejected_by_compile_target(
     # The join_edge.json example has a JOIN edge without join_sources,
     # which fails validation with E_JOIN_001
     import json as json_module
+
     data = json_module.loads((EXAMPLES / "invalid" / "join_edge.json").read_text(encoding="utf-8"))
 
     workflow = pt2lg.WorkflowSpec.model_validate(data)

@@ -483,9 +483,7 @@ def _run_skill_plan(
 
     # Include static analysis diagnostics in output
     if analysis.report.diagnostics:
-        payload["diagnostics"] = [
-            d.model_dump(mode="json") for d in analysis.report.diagnostics
-        ]
+        payload["diagnostics"] = [d.model_dump(mode="json") for d in analysis.report.diagnostics]
 
     if validate_output:
         try:
@@ -494,9 +492,7 @@ def _run_skill_plan(
             validation_report = ValidationReport(
                 diagnostics=[
                     Diagnostic(
-                        code=E_PARSE_001
-                        if isinstance(exc, AdapterParseError)
-                        else E_SCHEMA_002,
+                        code=E_PARSE_001 if isinstance(exc, AdapterParseError) else E_SCHEMA_002,
                         severity="error",
                         message="skill plan failed adapter validation",
                         location=DiagnosticLocation(source="skill"),

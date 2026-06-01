@@ -1,8 +1,6 @@
-"""Tests for security policy validation: check_external_policy, check_model_whitelist, check_tool_refs."""
+"""Tests for security policy validation."""
 
 from prompt2langgraph.ir.models import (
-    EdgeKind,
-    EdgeSpec,
     ExecutorRef,
     ExecutorType,
     NodeSpec,

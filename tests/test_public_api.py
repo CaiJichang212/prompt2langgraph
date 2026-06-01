@@ -1,8 +1,6 @@
 import json
 from pathlib import Path
 
-import pytest
-
 import prompt2langgraph as pt2lg
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -120,4 +118,5 @@ def test_public_skill_plan_workflow_can_be_validated() -> None:
 def test_public_api_exports_generate_skill_plan_text() -> None:
     """generate_skill_plan_text should be exported from prompting module."""
     from prompt2langgraph.prompting import generate_skill_plan_text
+
     assert callable(generate_skill_plan_text)

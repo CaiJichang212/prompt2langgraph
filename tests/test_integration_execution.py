@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import pytest
-
+from fake_provider import fake_chat_model
+from fake_tools import FAKE_TOOLS
 from prompt2langgraph.ir.models import (
     ConditionSpec,
     EdgeKind,
@@ -21,9 +21,6 @@ from prompt2langgraph.registry.builtins import builtin_executor_registry
 from prompt2langgraph.registry.executors import ExecutorDefinition
 from prompt2langgraph.registry.tool_executor import ToolCallableRegistry
 from prompt2langgraph.runtime.runner import run_workflow
-
-from fake_provider import fake_chat_model
-from fake_tools import FAKE_TOOLS, fake_tool_echo, fake_tool_fail, fake_tool_upper
 
 STRING = TypeSpec(type=TypeName.STRING)
 
@@ -195,9 +192,7 @@ def _llm_metrics_workflow() -> WorkflowSpec:
             ),
         ],
         edges=[],
-        policies=PolicySpec(
-            external_call=True, allowed_models=["qwen-plus"], collect_metrics=True
-        ),
+        policies=PolicySpec(external_call=True, allowed_models=["qwen-plus"], collect_metrics=True),
     )
 
 
@@ -206,10 +201,10 @@ def _llm_metrics_workflow() -> WorkflowSpec:
 # ---------------------------------------------------------------------------
 
 
-def _executor_registry_with_tools() -> "ExecutorDefinition":
+def _executor_registry_with_tools() -> ExecutorDefinition:
     """Return a copy of the builtin registry plus dynamic tool executor definitions."""
     base = builtin_executor_registry()
-    for ref, handler in FAKE_TOOLS.items():
+    for ref in FAKE_TOOLS:
         base.register(
             ExecutorDefinition(
                 ref=ref,

@@ -1,4 +1,5 @@
 """Pre-registered fake tool callables for testing."""
+
 from typing import Any
 
 from prompt2langgraph.registry.executors import ExecutorHandler

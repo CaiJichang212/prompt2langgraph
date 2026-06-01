@@ -165,14 +165,16 @@ def test_run_workflow_rejects_unsupported_edge_kind_as_target_diagnostic() -> No
     workflow_data["edges"].append(
         {"id": "unsupported", "source": "compose", "target": "archive", "kind": "unsupported_kind"}
     )
-    workflow_data["nodes"].append({
-        "id": "archive",
-        "kind": "transform",
-        "executor": {"ref": "builtin.identity_transform", "type": "builtin"},
-        "inputs": {},
-        "outputs": {},
-        "params": {},
-    })
+    workflow_data["nodes"].append(
+        {
+            "id": "archive",
+            "kind": "transform",
+            "executor": {"ref": "builtin.identity_transform", "type": "builtin"},
+            "inputs": {},
+            "outputs": {},
+            "params": {},
+        }
+    )
     workflow_data["state_schema"]["channels"]["archive"] = {"type": "string"}
     workflow_data["state_schema"]["input"]["archive"] = {"type": "string"}
     workflow_data["state_schema"]["output"]["archive"] = {"type": "string"}

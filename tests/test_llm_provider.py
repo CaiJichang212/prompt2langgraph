@@ -1,4 +1,5 @@
 """Tests for the llm provider lightweight abstraction module."""
+
 from __future__ import annotations
 
 import os
@@ -38,7 +39,10 @@ def test_api_key_is_secret_str():
 # ---------------------------------------------------------------------------
 # load_llm_config reads from env vars
 # ---------------------------------------------------------------------------
-@patch.dict(os.environ, {"MODEL": "gpt-4o", "BASE_URL": "https://api.example.com", "API_KEY": "sk-123"})
+@patch.dict(
+    os.environ,
+    {"MODEL": "gpt-4o", "BASE_URL": "https://api.example.com", "API_KEY": "sk-123"},
+)
 def test_load_llm_config_from_env():
     from prompt2langgraph.llm.config import load_llm_config
 
@@ -83,7 +87,11 @@ def test_build_llm_client_returns_chat_openai(mock_dotenv):
 # ---------------------------------------------------------------------------
 # Explicit params override env defaults
 # ---------------------------------------------------------------------------
-@patch.dict(os.environ, {"MODEL": "gpt-4o", "BASE_URL": "https://env-url", "API_KEY": "sk-env"}, clear=True)
+@patch.dict(
+    os.environ,
+    {"MODEL": "gpt-4o", "BASE_URL": "https://env-url", "API_KEY": "sk-env"},
+    clear=True,
+)
 def test_build_llm_client_explicit_override():
     from prompt2langgraph.llm.provider import build_llm_client
 

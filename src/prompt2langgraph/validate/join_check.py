@@ -23,7 +23,7 @@ def check_join_edges(workflow: WorkflowSpec) -> list[Diagnostic]:
     - E_JOIN_001: join_sources is missing/empty, or target appears in join_sources
     - E_JOIN_002: join_sources has fewer than 2 elements
     - E_JOIN_003: join_sources references non-existent nodes
-    - E_JOIN_004: join_sources node already has a LINEAR/CONDITIONAL/FANOUT/LOOP edge to the same target
+    - E_JOIN_004: join source already has a direct edge to the same target
     - E_JOIN_005: same target is referenced by multiple JOIN edges
     - E_JOIN_006: join_sources contains duplicate node ids
     - W_JOIN_001: source field not in join_sources (warning, non-blocking)
@@ -75,17 +75,12 @@ def check_join_edges(workflow: WorkflowSpec) -> list[Diagnostic]:
         # E_JOIN_002: check join_sources has at least 2 elements
         # Do dedup check first (E_JOIN_006) so counts are accurate
         if len(set(edge.join_sources)) != len(edge.join_sources):
-            duplicates = [
-                src for src, cnt in Counter(edge.join_sources).items() if cnt > 1
-            ]
+            duplicates = [src for src, cnt in Counter(edge.join_sources).items() if cnt > 1]
             diagnostics.append(
                 Diagnostic(
                     code=E_JOIN_006,
                     severity="error",
-                    message=(
-                        f"join_sources contains duplicate entries: "
-                        f'{", ".join(duplicates)}'
-                    ),
+                    message=(f"join_sources contains duplicate entries: {', '.join(duplicates)}"),
                     location=DiagnosticLocation(edge_id=edge.id),
                 )
             )
@@ -146,7 +141,8 @@ def check_join_edges(workflow: WorkflowSpec) -> list[Diagnostic]:
     for target, count in Counter(join_targets).items():
         if count > 1:
             conflicting_ids = [
-                edge.id for edge in workflow.edges
+                edge.id
+                for edge in workflow.edges
                 if edge.kind is EdgeKind.JOIN and edge.target == target
             ]
             diagnostics.append(
@@ -155,7 +151,7 @@ def check_join_edges(workflow: WorkflowSpec) -> list[Diagnostic]:
                     severity="error",
                     message=(
                         f'join target "{target}" is referenced by multiple JOIN edges: '
-                        f'{", ".join(conflicting_ids)}'
+                        f"{', '.join(conflicting_ids)}"
                     ),
                     location=DiagnosticLocation(edge_id=conflicting_ids[0], node_id=target),
                 )
@@ -167,9 +163,7 @@ def check_join_edges(workflow: WorkflowSpec) -> list[Diagnostic]:
     return diagnostics
 
 
-def _check_join_reducer_warnings(
-    workflow: WorkflowSpec, diagnostics: list[Diagnostic]
-) -> None:
+def _check_join_reducer_warnings(workflow: WorkflowSpec, diagnostics: list[Diagnostic]) -> None:
     """Warn when multiple JOIN source nodes write the same state key without a reducer."""
     reducers = workflow.state_schema.reducers
     for edge in workflow.edges:
@@ -179,9 +173,7 @@ def _check_join_reducer_warnings(
         source_outputs: dict[str, set[str]] = {}
         for node in workflow.nodes:
             if node.id in edge.join_sources:
-                source_outputs[node.id] = {
-                    selector.state_key for selector in node.outputs.values()
-                }
+                source_outputs[node.id] = {selector.state_key for selector in node.outputs.values()}
         # Find keys written by multiple sources
         key_sources: dict[str, list[str]] = {}
         for src, keys in source_outputs.items():
@@ -198,7 +190,7 @@ def _check_join_reducer_warnings(
                     severity="warning",
                     message=(
                         f'state key "{key}" is written by multiple join_sources '
-                        f'({", ".join(sorted(sources))}) without a reducer; '
+                        f"({', '.join(sorted(sources))}) without a reducer; "
                         f"parallel writes may be overwritten non-deterministically"
                     ),
                     location=DiagnosticLocation(edge_id=edge.id, state_key=key),

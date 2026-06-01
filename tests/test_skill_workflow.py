@@ -90,9 +90,7 @@ def test_plan_skill_to_workflow_spec_no_edges_raises():
     """Plan without edges raises AdapterParseError (edges required)."""
     request = SkillPlanRequest(skill_dir="tests/fixtures/skill_basic")
     with pytest.raises(AdapterParseError):
-        plan_skill_to_workflow_spec(
-            request, model_client=FakeSkillModelNoEdges()
-        )
+        plan_skill_to_workflow_spec(request, model_client=FakeSkillModelNoEdges())
 
 
 def test_plan_skill_to_workflow_spec_invalid_json_raises():

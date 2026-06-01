@@ -266,10 +266,7 @@ def _offline_plan_for_case(case: dict[str, Any]) -> dict[str, Any]:
         )
         nodes = [
             _node("prepare_items", "transform", output_key="items"),
-            *[
-                _node(source, "tool", output_key=f"{source}_results")
-                for source in join_sources
-            ],
+            *[_node(source, "tool", output_key=f"{source}_results") for source in join_sources],
         ]
         if "join" in patterns or "join" in node_types:
             nodes.append(_node("aggregate", "join", output_key="combined"))

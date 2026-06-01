@@ -59,9 +59,7 @@ def plan_skill_to_workflow_spec(
         plan_skill_to_workflow_spec as _plan_skill_to_workflow_spec,
     )
 
-    return _plan_skill_to_workflow_spec(
-        request, model_client=model_client, analysis=analysis
-    )
+    return _plan_skill_to_workflow_spec(request, model_client=model_client, analysis=analysis)
 
 
 def __getattr__(name: str) -> Any:

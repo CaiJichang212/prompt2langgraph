@@ -232,7 +232,13 @@ def test_mermaid_labels_special_edge_kinds() -> None:
         }
     )
     join_data["edges"] = [
-        {"id": "join_finish", "source": "compose", "target": "finish", "kind": "join", "join_sources": ["compose", "archive"]},
+        {
+            "id": "join_finish",
+            "source": "compose",
+            "target": "finish",
+            "kind": "join",
+            "join_sources": ["compose", "archive"],
+        },
     ]
     join_data["state_schema"]["channels"]["question"] = {"type": "string"}
     join_data["state_schema"]["input"]["question"] = {"type": "string"}

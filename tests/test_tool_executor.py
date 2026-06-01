@@ -10,10 +10,10 @@ from prompt2langgraph.diagnostics.codes import E_SEC_015
 from prompt2langgraph.registry.executors import ExecutorError
 from prompt2langgraph.registry.tool_executor import ToolCallableRegistry, ToolExecutor
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 def _echo_tool(inputs: dict, params: dict) -> dict:
     return {"echo": inputs.get("msg", ""), "params": params}
@@ -41,6 +41,7 @@ def registry() -> ToolCallableRegistry:
 # ToolExecutor: registered tool returns correct result
 # ---------------------------------------------------------------------------
 
+
 class TestToolExecutorRegistered:
     def test_returns_correct_result(self, registry: ToolCallableRegistry) -> None:
         executor = ToolExecutor(registry, "echo")
@@ -51,6 +52,7 @@ class TestToolExecutorRegistered:
 # ---------------------------------------------------------------------------
 # ToolExecutor: unregistered ref raises ExecutorError E_SEC_015
 # ---------------------------------------------------------------------------
+
 
 class TestToolExecutorUnregistered:
     def test_raises_executor_error(self, registry: ToolCallableRegistry) -> None:
@@ -65,6 +67,7 @@ class TestToolExecutorUnregistered:
 # ToolExecutor: callable exception propagates as ExecutorError E_SEC_015
 # ---------------------------------------------------------------------------
 
+
 class TestToolExecutorCallableError:
     def test_propagates_as_executor_error(self, registry: ToolCallableRegistry) -> None:
         executor = ToolExecutor(registry, "fail")
@@ -77,6 +80,7 @@ class TestToolExecutorCallableError:
 # ---------------------------------------------------------------------------
 # ToolCallableRegistry: has / get / refs
 # ---------------------------------------------------------------------------
+
 
 class TestToolCallableRegistry:
     def test_has_registered(self, registry: ToolCallableRegistry) -> None:
@@ -105,6 +109,7 @@ class TestToolCallableRegistry:
 # ToolExecutor: timeout raises ExecutorError E_SEC_015
 # ---------------------------------------------------------------------------
 
+
 class TestToolExecutorTimeout:
     def test_timeout_raises_executor_error(self, registry: ToolCallableRegistry) -> None:
         executor = ToolExecutor(registry, "slow", timeout_s=1)
@@ -117,6 +122,7 @@ class TestToolExecutorTimeout:
 # ---------------------------------------------------------------------------
 # ExecutorError.to_diagnostic()
 # ---------------------------------------------------------------------------
+
 
 class TestExecutorErrorDiagnostic:
     def test_to_diagnostic_without_node_id(self) -> None:

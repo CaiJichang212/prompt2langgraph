@@ -244,7 +244,7 @@ def test_normalize_workflow_sorts_join_sources() -> None:
 
 
 def test_normalize_join_sources_produces_stable_hash() -> None:
-    """Workflows with different join_sources order should produce same lockfile hash after normalize."""
+    """Workflows with reordered join_sources should produce the same lockfile hash."""
     from prompt2langgraph.ir.lockfile import build_workflow_lock
 
     data_a = json.loads((FIXTURES / "fanout_with_join.json").read_text(encoding="utf-8"))
@@ -267,6 +267,7 @@ def test_normalize_join_sources_produces_stable_hash() -> None:
 def test_non_join_edge_with_join_sources_raises_validation_error() -> None:
     """Non-JOIN edge with join_sources should fail Pydantic validation."""
     from pydantic import ValidationError
+
     from prompt2langgraph.ir.models import EdgeSpec
 
     with pytest.raises(ValidationError, match="join_sources is only valid for JOIN edges"):

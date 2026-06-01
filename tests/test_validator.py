@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-from prompt2langgraph.ir.models import ExecutorType, TypeName, TypeSpec, WorkflowSpec
+from prompt2langgraph.ir.models import ExecutorType, TypeName, TypeSpec
 from prompt2langgraph.registry.builtins import (
     builtin_executor_registry,
     builtin_node_registry,
@@ -538,13 +538,15 @@ def test_validator_rejects_duplicate_join_target() -> None:
             join_target = edge["target"]
             break
     if join_target is not None:
-        workflow_data["edges"].append({
-            "id": "duplicate_join",
-            "source": workflow_data["nodes"][0]["id"],
-            "target": join_target,
-            "kind": "join",
-            "join_sources": [workflow_data["nodes"][0]["id"], workflow_data["nodes"][-1]["id"]],
-        })
+        workflow_data["edges"].append(
+            {
+                "id": "duplicate_join",
+                "source": workflow_data["nodes"][0]["id"],
+                "target": join_target,
+                "kind": "join",
+                "join_sources": [workflow_data["nodes"][0]["id"], workflow_data["nodes"][-1]["id"]],
+            }
+        )
 
     report = validate_workflow(workflow_data)
     assert report.ok is False

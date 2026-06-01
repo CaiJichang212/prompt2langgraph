@@ -31,13 +31,15 @@ class TestJoinEdgeValidation:
         """E_JOIN_003: join_sources references unknown node."""
         workflow_data = load_workflow("fanout_with_join.json")
         # Add a JOIN edge with invalid join_sources
-        workflow_data["edges"].append({
-            "id": "bad_join",
-            "source": "unknown_node",
-            "target": "join_aggregate",
-            "kind": "join",
-            "join_sources": ["unknown_node", "fake_node"],
-        })
+        workflow_data["edges"].append(
+            {
+                "id": "bad_join",
+                "source": "unknown_node",
+                "target": "join_aggregate",
+                "kind": "join",
+                "join_sources": ["unknown_node", "fake_node"],
+            }
+        )
 
         workflow = WorkflowSpec.model_validate(workflow_data)
         diagnostics = check_join_edges(workflow)
@@ -65,13 +67,15 @@ class TestJoinEdgeValidation:
         """E_JOIN_005: same target referenced by multiple JOIN edges."""
         workflow_data = load_workflow("fanout_with_join.json")
         # Add another JOIN edge targeting the same node
-        workflow_data["edges"].append({
-            "id": "bad_join2",
-            "source": "split",
-            "target": "join_aggregate",
-            "kind": "join",
-            "join_sources": ["split"],
-        })
+        workflow_data["edges"].append(
+            {
+                "id": "bad_join2",
+                "source": "split",
+                "target": "join_aggregate",
+                "kind": "join",
+                "join_sources": ["split"],
+            }
+        )
 
         workflow = WorkflowSpec.model_validate(workflow_data)
         diagnostics = check_join_edges(workflow)
@@ -84,12 +88,14 @@ class TestJoinEdgeValidation:
         """E_JOIN_004: join_sources node already has LINEAR edge to same target."""
         workflow_data = load_workflow("fanout_with_join.json")
         # Add a linear edge from process to join_aggregate (same as join target)
-        workflow_data["edges"].append({
-            "id": "linear_to_join",
-            "source": "process",
-            "target": "join_aggregate",
-            "kind": "linear",
-        })
+        workflow_data["edges"].append(
+            {
+                "id": "linear_to_join",
+                "source": "process",
+                "target": "join_aggregate",
+                "kind": "linear",
+            }
+        )
 
         workflow = WorkflowSpec.model_validate(workflow_data)
         diagnostics = check_join_edges(workflow)
@@ -143,8 +149,22 @@ class TestJoinEdgeSchema:
                 "reducers": {},
             },
             "nodes": [
-                {"id": "a", "kind": "transform", "executor": {"ref": "builtin.identity_transform", "type": "builtin"}, "inputs": {}, "outputs": {}, "params": {}},
-                {"id": "c", "kind": "transform", "executor": {"ref": "builtin.identity_transform", "type": "builtin"}, "inputs": {}, "outputs": {}, "params": {}},
+                {
+                    "id": "a",
+                    "kind": "transform",
+                    "executor": {"ref": "builtin.identity_transform", "type": "builtin"},
+                    "inputs": {},
+                    "outputs": {},
+                    "params": {},
+                },
+                {
+                    "id": "c",
+                    "kind": "transform",
+                    "executor": {"ref": "builtin.identity_transform", "type": "builtin"},
+                    "inputs": {},
+                    "outputs": {},
+                    "params": {},
+                },
             ],
             "edges": [edge_data],
             "policies": {},
@@ -180,8 +200,22 @@ class TestJoinEdgeSchema:
                 "reducers": {},
             },
             "nodes": [
-                {"id": "a", "kind": "transform", "executor": {"ref": "builtin.identity_transform", "type": "builtin"}, "inputs": {}, "outputs": {}, "params": {}},
-                {"id": "c", "kind": "transform", "executor": {"ref": "builtin.identity_transform", "type": "builtin"}, "inputs": {}, "outputs": {}, "params": {}},
+                {
+                    "id": "a",
+                    "kind": "transform",
+                    "executor": {"ref": "builtin.identity_transform", "type": "builtin"},
+                    "inputs": {},
+                    "outputs": {},
+                    "params": {},
+                },
+                {
+                    "id": "c",
+                    "kind": "transform",
+                    "executor": {"ref": "builtin.identity_transform", "type": "builtin"},
+                    "inputs": {},
+                    "outputs": {},
+                    "params": {},
+                },
             ],
             "edges": [edge_data],
             "policies": {},
@@ -235,12 +269,14 @@ class TestJoinEdgeCompilation:
         """JOIN with source that already has linear edge to target should warn."""
         workflow_data = load_workflow("fanout_with_join.json")
         # Add a linear edge from process to join_aggregate (same as join target)
-        workflow_data["edges"].append({
-            "id": "linear_to_join_dup",
-            "source": "process",
-            "target": "join_aggregate",
-            "kind": "linear",
-        })
+        workflow_data["edges"].append(
+            {
+                "id": "linear_to_join_dup",
+                "source": "process",
+                "target": "join_aggregate",
+                "kind": "linear",
+            }
+        )
         workflow = WorkflowSpec.model_validate(workflow_data)
         executors = builtin_executor_registry()
         # Should compile but warn about duplicate edge
@@ -301,7 +337,6 @@ class TestJoinEdgeMermaidDetailed:
 
     def test_join_edge_empty_join_sources_falls_back_to_source(self) -> None:
         """JOIN edge with no join_sources should fallback to edge.source in mermaid."""
-        from prompt2langgraph.ir.models import EdgeKind as EK
 
         # Build a minimal workflow with a JOIN edge that has no join_sources
         # (edge.source will be used as fallback in mermaid)
