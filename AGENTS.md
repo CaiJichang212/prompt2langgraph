@@ -97,6 +97,7 @@ COMMAND 2>&1 | head -c 4000
 
 ```bash
 uv sync
+git config core.hooksPath .githooks
 uv run pt2lg validate tests/fixtures/linear_llm.json --json
 uv run pt2lg run tests/fixtures/linear_llm.json --input '{"question":"hello"}' --json
 uv run pt2lg graph tests/fixtures/linear_llm.json --format mermaid

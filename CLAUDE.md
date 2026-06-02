@@ -29,6 +29,7 @@ Prompt 计划生成基于 `langchain_openai`，默认从 `.env` 读取 `MODEL`�
 ```bash
 # 安装
 uv sync
+git config core.hooksPath .githooks
 
 # 测试
 uv run pytest
