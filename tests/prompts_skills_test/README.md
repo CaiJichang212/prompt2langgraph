@@ -46,7 +46,7 @@ prompts_skills_test/
 | **Inline upstream/source plans** | 5 | Adapter + validation, compiling valid plans |
 | **JSON Plans** | 7 | Direct JSON Plan input pathway + validation + compile |
 | **Negative Cases** | 12 | Security, Parse, Schema, Registry, Skill errors |
-| **Executable Corpus Cases** | 47 | 47 parameterized corpus cases, plus 2 guard/manifest checks |
+| **Executable Corpus Cases** | 50 | 47 parameterized corpus cases, plus fake-model guard, manifest, and pipeline metric checks |
 
 ## Scope and Limitations
 
@@ -94,6 +94,10 @@ uv run pt2lg plan --skill-dir tests/prompts_skills_test/skills/openai-curated/hu
 
 # Side Effect workflow
 uv run pt2lg plan --skill-dir tests/prompts_skills_test/skills/openai-curated/side-effect-file-organizer --json
+
+# Optional structured checks
+uv run pt2lg plan --skill-dir tests/prompts_skills_test/skills/openai-curated/linear-data-pipeline --compile-smoke --json
+uv run pt2lg plan --skill-dir tests/prompts_skills_test/skills/openai-curated/linear-data-pipeline --repair-attempts 1 --json
 ```
 
 ### Prompt → WorkflowSpec Tests
@@ -107,6 +111,10 @@ uv run pt2lg plan --prompt "Build a support ticket routing workflow: analyze the
 
 # Loop workflow prompt
 uv run pt2lg plan --prompt "Build a content refinement workflow: generate initial draft, evaluate quality score, if score below 80 improve the content and re-evaluate, stop when score reaches 80 or after 5 iterations maximum." --json
+
+# Optional structured checks
+uv run pt2lg plan --prompt "Build a workflow that answers a question with one llm node" --compile-smoke --json
+uv run pt2lg plan --prompt "Build a workflow that answers a question with one llm node" --repair-attempts 1 --json
 ```
 
 ### JSON Plan Direct Input Tests
@@ -186,4 +194,5 @@ uv run pytest tests/test_prompt_skill_corpus.py -v
 - JSON Plans test `json_plan_to_workflow_spec()` direct input pathway.
 - Invalid cases test error handling and validation boundaries.
 - Positive corpus cases assert expected node/edge patterns, validation success, and compiler smoke success.
+- Pipeline metric coverage records offline parse, validation, and compile smoke success for prompt, Skill, and JSON plan positives, plus parse/validation failure stages for negatives.
 - Live LLM output may vary by model and should remain outside the default offline test path.
