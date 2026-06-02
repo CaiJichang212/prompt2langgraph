@@ -67,6 +67,16 @@ def __getattr__(name: str) -> Any:
         from prompt2langgraph.runtime.artifacts import CompileResult
 
         return CompileResult
+    if name in {
+        "PlanningPipelineResult",
+        "PlanningStageStatus",
+        "RepairAttemptRecord",
+        "plan_prompt",
+        "plan_skill",
+    }:
+        from prompt2langgraph.prompting import pipeline
+
+        return getattr(pipeline, name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
@@ -74,14 +84,19 @@ __all__ = [
     "CompileResult",
     "Diagnostic",
     "DiagnosticLocation",
+    "PlanningPipelineResult",
+    "PlanningStageStatus",
     "PromptPlanRequest",
     "PromptPlanResult",
+    "RepairAttemptRecord",
     "SkillPlanRequest",
     "SkillPlanResult",
     "ValidationReport",
     "WorkflowSpec",
     "compile_workflow",
+    "plan_prompt",
     "plan_prompt_to_workflow_spec",
+    "plan_skill",
     "plan_skill_to_workflow_spec",
     "run_workflow",
     "validate_workflow",
