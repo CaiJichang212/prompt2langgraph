@@ -207,6 +207,8 @@ def plan(
     api_key: str | None = typer.Option(None, "--api-key"),  # noqa: B008
     temperature: float = typer.Option(0.0, "--temperature"),  # noqa: B008
     validate_output: bool = typer.Option(False, "--validate"),  # noqa: B008
+    compile_smoke: bool = typer.Option(False, "--compile-smoke"),  # noqa: B008
+    repair_attempts: int = typer.Option(0, "--repair-attempts"),  # noqa: B008
     json_output: bool = typer.Option(False, "--json", help="Emit a machine-readable plan."),  # noqa: B008
     param: list[str] = typer.Option([], "--param"),  # noqa: B008
 ) -> None:
@@ -247,6 +249,21 @@ def plan(
 
     # Parse param list
     params = _parse_plan_params(param, json_output)
+    if repair_attempts < 0 or repair_attempts > 3:
+        _emit_validation_report(
+            ValidationReport(
+                diagnostics=[
+                    Diagnostic(
+                        code=E_PARSE_001,
+                        severity="error",
+                        message="--repair-attempts must be between 0 and 3",
+                        location=DiagnosticLocation(source="plan"),
+                    )
+                ]
+            ),
+            json_output,
+        )
+        raise typer.Exit(1) from None
 
     if skill_dir is not None:
         _run_skill_plan(
@@ -257,6 +274,8 @@ def plan(
             api_key,
             temperature,
             validate_output,
+            compile_smoke,
+            repair_attempts,
             json_output,
         )
     else:
@@ -267,6 +286,8 @@ def plan(
             api_key,
             temperature,
             validate_output,
+            compile_smoke,
+            repair_attempts,
             json_output,
         )
 
@@ -316,12 +337,12 @@ def _run_prompt_plan(
     api_key: str | None,
     temperature: float,
     validate_output: bool,
+    compile_smoke: bool,
+    repair_attempts: int,
     json_output: bool,
 ) -> None:
     """Execute the prompt plan generation path."""
-    from prompt2langgraph.prompting import PromptPlanRequest
-    from prompt2langgraph.prompting.parser import parse_prompt_plan_text
-    from prompt2langgraph.prompting.planner import generate_plan_text
+    from prompt2langgraph.prompting import PromptPlanRequest, plan_prompt
 
     request = PromptPlanRequest(
         prompt=prompt,
@@ -329,74 +350,21 @@ def _run_prompt_plan(
         base_url=base_url,
         api_key=api_key,
         temperature=temperature,
+        repair_attempts=repair_attempts,
     )
-    try:
-        result = generate_plan_text(request)
-        plan_data = parse_prompt_plan_text(result.raw_text)
-    except AdapterParseError as exc:
-        report = ValidationReport(
-            diagnostics=[
-                Diagnostic(
-                    code=E_PARSE_001,
-                    severity="error",
-                    message="failed to parse generated prompt plan",
-                    location=DiagnosticLocation(
-                        source=exc.source or "prompt",
-                        path=exc.path,
-                        line=exc.line,
-                        column=exc.column,
-                    ),
-                    hint=str(exc),
-                )
-            ]
-        )
-        _emit_validation_report(report, json_output)
+    result = plan_prompt(request, compile_smoke=compile_smoke)
+    _emit_planning_result(
+        result,
+        json_output=json_output,
+        include_validation=validate_output or compile_smoke,
+        include_compile_smoke=compile_smoke,
+    )
+    if not _planning_cli_success(
+        result,
+        include_validation=validate_output or compile_smoke,
+        include_compile_smoke=compile_smoke,
+    ):
         raise typer.Exit(1) from None
-    except Exception as exc:
-        report = ValidationReport(
-            diagnostics=[
-                Diagnostic(
-                    code=E_RUNTIME_010,
-                    severity="error",
-                    message="LLM call failed during prompt plan generation",
-                    location=DiagnosticLocation(source="prompt"),
-                    hint=str(exc),
-                )
-            ]
-        )
-        _emit_validation_report(report, json_output)
-        raise typer.Exit(1) from None
-
-    payload: dict[str, Any] = {"ok": True, "plan": plan_data}
-
-    if validate_output:
-        try:
-            workflow = JSONPlanAdapter().parse(plan_data, source="prompt")
-        except (AdapterParseError, ValidationError) as exc:
-            validation_report = ValidationReport(
-                diagnostics=[
-                    Diagnostic(
-                        code=E_PARSE_001 if isinstance(exc, AdapterParseError) else E_SCHEMA_002,
-                        severity="error",
-                        message="generated plan failed adapter validation",
-                        location=DiagnosticLocation(source="prompt"),
-                        hint=str(exc),
-                    )
-                ]
-            )
-            payload["validation"] = validation_report.model_dump(mode="json")
-            payload["validation"]["ok"] = False
-            _emit(payload, json_output, _json_dumps(plan_data))
-            raise typer.Exit(1) from None
-
-        validation_report = validate_workflow(workflow)
-        payload["validation"] = validation_report.model_dump(mode="json")
-        payload["validation"]["ok"] = validation_report.ok
-        if not validation_report.ok:
-            _emit(payload, json_output, _json_dumps(plan_data))
-            raise typer.Exit(1) from None
-
-    _emit(payload, json_output, _json_dumps(plan_data))
 
 
 def _run_skill_plan(
@@ -407,6 +375,8 @@ def _run_skill_plan(
     api_key: str | None,
     temperature: float,
     validate_output: bool,
+    compile_smoke: bool,
+    repair_attempts: int,
     json_output: bool,
 ) -> None:
     """Execute the skill plan generation path.
@@ -415,12 +385,8 @@ def _run_skill_plan(
     JSONPlanAdapter().parse() pipeline, consistent with _run_prompt_plan().
     Pre-checks static analysis for fatal errors before the LLM call.
     """
-    from prompt2langgraph.adapters.base import AdapterParseError
-    from prompt2langgraph.adapters.json_plan import JSONPlanAdapter
     from prompt2langgraph.adapters.skill_dir import analyze_skill_dir
-    from prompt2langgraph.prompting import SkillPlanRequest
-    from prompt2langgraph.prompting.parser import parse_prompt_plan_text
-    from prompt2langgraph.prompting.skill_planner import generate_skill_plan_text
+    from prompt2langgraph.prompting import SkillPlanRequest, plan_skill
 
     request = SkillPlanRequest(
         skill_dir=str(skill_dir),
@@ -429,90 +395,94 @@ def _run_skill_plan(
         base_url=base_url,
         api_key=api_key,
         temperature=temperature,
+        repair_attempts=repair_attempts,
     )
 
-    # Step 1: Static analysis — check for fatal errors before LLM call
     analysis = analyze_skill_dir(str(skill_dir))
-    fatal_diagnostics = [d for d in analysis.report.diagnostics if d.severity == "error"]
-    if fatal_diagnostics:
-        report = ValidationReport(diagnostics=fatal_diagnostics)
-        _emit_validation_report(report, json_output)
+    result = plan_skill(request, compile_smoke=compile_smoke, analysis=analysis)
+    _emit_planning_result(
+        result,
+        json_output=json_output,
+        include_validation=validate_output or compile_smoke,
+        include_compile_smoke=compile_smoke,
+    )
+    if not _planning_cli_success(
+        result,
+        include_validation=validate_output or compile_smoke,
+        include_compile_smoke=compile_smoke,
+    ):
         raise typer.Exit(1) from None
 
-    # Step 2: LLM generate → parse (lower-level pipeline, same as _run_prompt_plan)
-    try:
-        result = generate_skill_plan_text(request, analysis=analysis)
-        plan_data = parse_prompt_plan_text(result.raw_text)
-    except AdapterParseError as exc:
-        report = ValidationReport(
-            diagnostics=[
-                Diagnostic(
-                    code=E_PARSE_001,
-                    severity="error",
-                    message="failed to parse generated skill plan",
-                    location=DiagnosticLocation(
-                        source=exc.source or "skill",
-                        path=exc.path,
-                        line=exc.line,
-                        column=exc.column,
-                    ),
-                    hint=str(exc),
-                )
-            ]
-        )
-        _emit_validation_report(report, json_output)
-        raise typer.Exit(1) from None
-    except Exception as exc:
-        report = ValidationReport(
-            diagnostics=[
-                Diagnostic(
-                    code=E_RUNTIME_010,
-                    severity="error",
-                    message="LLM call failed during skill plan generation",
-                    location=DiagnosticLocation(source="skill"),
-                    hint=str(exc),
-                )
-            ]
-        )
-        _emit_validation_report(report, json_output)
-        raise typer.Exit(1) from None
 
-    # Output the original simplified JSON plan (not the IR dump)
-    # to stay consistent with the --prompt path output format
-    payload: dict[str, Any] = {"ok": True, "plan": plan_data}
+def _emit_planning_result(
+    result: Any,
+    *,
+    json_output: bool,
+    include_validation: bool,
+    include_compile_smoke: bool,
+) -> None:
+    cli_ok = _planning_cli_success(
+        result,
+        include_validation=include_validation,
+        include_compile_smoke=include_compile_smoke,
+    )
+    payload: dict[str, Any] = {"ok": cli_ok}
+    if result.plan is not None:
+        payload["plan"] = result.plan
+    diagnostics = _planning_cli_diagnostics(result, cli_ok=cli_ok)
+    if diagnostics:
+        payload["diagnostics"] = [
+            diagnostic.model_dump(mode="json") for diagnostic in diagnostics
+        ]
+    if result.repair_attempts:
+        payload["repair_attempts"] = [
+            attempt.model_dump(mode="json") for attempt in result.repair_attempts
+        ]
+    if include_validation:
+        payload["validation"] = _planning_validation_payload(result)
+    if include_compile_smoke:
+        payload["compile_smoke"] = _planning_stage_payload(result, "compile_smoke")
 
-    # Include static analysis diagnostics in output
-    if analysis.report.diagnostics:
-        payload["diagnostics"] = [d.model_dump(mode="json") for d in analysis.report.diagnostics]
+    text_payload = result.plan if result.plan is not None else payload
+    _emit(payload, json_output, _json_dumps(text_payload))
 
-    if validate_output:
-        try:
-            workflow = JSONPlanAdapter().parse(plan_data, source="skill")
-        except (AdapterParseError, ValidationError) as exc:
-            validation_report = ValidationReport(
-                diagnostics=[
-                    Diagnostic(
-                        code=E_PARSE_001 if isinstance(exc, AdapterParseError) else E_SCHEMA_002,
-                        severity="error",
-                        message="skill plan failed adapter validation",
-                        location=DiagnosticLocation(source="skill"),
-                        hint=str(exc),
-                    )
-                ]
-            )
-            payload["validation"] = validation_report.model_dump(mode="json")
-            payload["validation"]["ok"] = False
-            _emit(payload, json_output, _json_dumps(plan_data))
-            raise typer.Exit(1) from None
 
-        validation_report = validate_workflow(workflow)
-        payload["validation"] = validation_report.model_dump(mode="json")
-        payload["validation"]["ok"] = validation_report.ok
-        if not validation_report.ok:
-            _emit(payload, json_output, _json_dumps(plan_data))
-            raise typer.Exit(1) from None
+def _planning_cli_success(
+    result: Any,
+    *,
+    include_validation: bool,
+    include_compile_smoke: bool,
+) -> bool:
+    if include_validation or include_compile_smoke:
+        return bool(result.ok)
+    return result.plan is not None
 
-    _emit(payload, json_output, _json_dumps(plan_data))
+
+def _planning_cli_diagnostics(result: Any, *, cli_ok: bool) -> list[Any]:
+    if not cli_ok:
+        return list(result.diagnostics)
+    return [diagnostic for diagnostic in result.diagnostics if diagnostic.severity != "error"]
+
+
+def _planning_validation_payload(result: Any) -> dict[str, Any]:
+    if result.validation_report is not None:
+        payload = result.validation_report.model_dump(mode="json")
+        payload["ok"] = result.validation_report.ok
+        return payload
+    adapter_stage = result.stages.get("adapter")
+    if adapter_stage is not None and adapter_stage.ran and not adapter_stage.ok:
+        return _planning_stage_payload(result, "adapter")
+    validation_stage = result.stages.get("validation")
+    if validation_stage is not None:
+        return validation_stage.model_dump(mode="json")
+    return {"ok": False, "diagnostics": []}
+
+
+def _planning_stage_payload(result: Any, stage_name: str) -> dict[str, Any]:
+    stage = result.stages.get(stage_name)
+    if stage is None:
+        return {"ok": False, "diagnostics": []}
+    return stage.model_dump(mode="json")
 
 
 @app.command()
