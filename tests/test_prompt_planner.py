@@ -15,7 +15,14 @@ def test_prompting_module_exports_request_and_result_types() -> None:
     )
 
     assert request.prompt == "build a simple answer workflow"
+    assert request.repair_attempts == 0
     assert result.raw_text.startswith("{")
+
+
+def test_prompt_plan_request_accepts_explicit_repair_attempts() -> None:
+    request = PromptPlanRequest(prompt="repair workflow", repair_attempts=2)
+
+    assert request.repair_attempts == 2
 
 
 def test_system_prompt_documents_v04_phase1_json_plan_fields() -> None:
