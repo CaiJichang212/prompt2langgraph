@@ -33,11 +33,13 @@
 
 Prompt 计划生成能力已落地：通过 `plan_prompt_to_workflow_spec()` 或 CLI `pt2lg plan` 命令，可由自然语言 Prompt 经 LLM 生成简化 JSON plan，再经 `JSONPlanAdapter` 转为 `WorkflowSpec`。Prompt 计划生成基于 `langchain_openai`，默认从 `.env` 读取 `MODEL`、`BASE_URL`、`API_KEY`，优先兼容 Qwen、vLLM 暴露的 OpenAI-style API 及其他第三方兼容接口。Prompt 只生成简化 JSON plan；运行时 `llm` 节点的真实执行需 `external_call=True` + `allowed_models`。
 
+结构化 Prompt/Skill planning 已落地：`plan_prompt()` 和 `plan_skill()` 返回 generation、parse、adapter、validation、compile smoke 阶段状态、diagnostics、validation report 和 repair attempts 摘要。兼容入口 `plan_prompt_to_workflow_spec()` / `plan_skill_to_workflow_spec()` 仍保持旧链路语义，成功时直接返回 `WorkflowSpec`，不默认执行 compile smoke。结构化 planning 默认保持 `tool_registry=None` 的校验兼容语义；需要严格检查 Tool callable 注册时可显式注入空或已注册的 `ToolCallableRegistry`。
+
 ## 当前能力边界
 
 - 输入：规范 Workflow IR，或通过 `json_plan_to_workflow_spec()` 适配的简化 JSON plan，或通过 `plan_prompt_to_workflow_spec()` 由 Prompt 经 LLM 生成简化 JSON plan。
 - JSON plan 适配保留显式 `workflow_id`、顶层 `metadata`、`policies`、`state_schema.reducers`、兼容顶层 `reducers` 和 edge 级 `join_sources`。
-- Prompt 计划生成：`prompting/planner.py` 封装 LLM 调用（`build_model_client()` 委托给 `llm.provider.build_llm_client()`），`prompting/parser.py` 解析 JSON 输出并产出 `AdapterParseError` 诊断，`prompting/config.py` 从 `.env` 加载 `MODEL`、`BASE_URL`、`API_KEY`（已标记 deprecated，委托给 `llm.config`）。
+- Prompt 计划生成：`prompting/planner.py` 封装 LLM 调用（`build_model_client()` 委托给 `llm.provider.build_llm_client()`），`prompting/parser.py` 支持纯 JSON、fenced JSON、包裹文本中唯一 JSON object 并产出 `AdapterParseError` 诊断，`prompting/pipeline.py` 提供结构化 planning、repair、validation、compile smoke，`prompting/config.py` 从 `.env` 加载 `MODEL`、`BASE_URL`、`API_KEY`（已标记 deprecated，委托给 `llm.config`）。
 - LLM 执行：`llm` 节点可通过 `ExecutorType.LLM`（ref 格式 `llm.<model_id>`）调用真实模型，需 `external_call=True` + `allowed_models` 白名单。`LLMExecutor` 在 `registry/llm_executor.py`。
 - Tool 执行：`tool` 节点可通过 `ExecutorType.PYTHON_CALLABLE` 执行受控 callable，需 `allowed_tool_refs` 白名单 + `ToolCallableRegistry` 注册。`ToolExecutor` 在 `registry/tool_executor.py`。
 - Prompt 只生成简化 JSON plan；运行时 `llm` 节点的真实执行需 `external_call=True` + `allowed_models`。
@@ -102,6 +104,8 @@ uv run pt2lg validate tests/fixtures/linear_llm.json --json
 uv run pt2lg run tests/fixtures/linear_llm.json --input '{"question":"hello"}' --json
 uv run pt2lg graph tests/fixtures/linear_llm.json --format mermaid
 uv run pt2lg plan --prompt "Build a workflow that answers a question with one llm node" --json
+uv run pt2lg plan --prompt "Build a workflow that answers a question with one llm node" --compile-smoke --json
+uv run pt2lg plan --prompt "Build a workflow that answers a question with one llm node" --repair-attempts 1 --json
 uv run pt2lg plan --skill-dir path/to/skill --param key=value --json
 ```
 

@@ -17,6 +17,8 @@ git config core.hooksPath .githooks
 - Prompt 计划生成基于 `langchain_openai`，优先兼容 Qwen、vLLM 暴露的 OpenAI-style API 及其他第三方兼容接口
 - Prompt 配置默认从 `.env` 读取 `MODEL`、`BASE_URL`、`API_KEY`，CLI 参数可覆盖
 - 对 `SKILL.md` 技能目录做 Skill → `WorkflowSpec` 的 LLM 驱动 alpha 转换（可诊断、可人工修正，不保证任意 Skill 一次成功），不执行脚本，不自动注册 tool callable
+- Prompt/Skill planning 提供结构化 pipeline，可返回 generation、parse、adapter、validation、compile smoke 阶段状态，并支持可配置 repair attempts
+- 结构化 planning 默认保持 `tool_registry=None` 的校验兼容语义；需要严格检查 Tool callable 注册时可显式注入空或已注册的 `ToolCallableRegistry`
 - 校验工作流的 schema、registry 绑定、图结构、类型绑定和安全约束
 - 编译为 `langgraph-py` 目标，并输出 lockfile、IR、manifest、compile report、Mermaid 与生成代码骨架
 - 本地运行工作流，输出结构化事件、诊断、metrics、thread id 和 interrupt 信息
@@ -127,6 +129,18 @@ uv run pt2lg plan --skill-dir path/to/skill --param key=value --json
 
 生成的简化 JSON plan 可继续进入 `validate`、`compile`、`run` 等现有链路。
 
+`plan` 命令支持规划链路增强：
+
+```bash
+uv run pt2lg plan --prompt "Build a workflow" --validate --json
+uv run pt2lg plan --prompt "Build a workflow" --compile-smoke --json
+uv run pt2lg plan --prompt "Build a workflow" --repair-attempts 1 --json
+```
+
+- `--validate` 输出 adapter + validation 结果，不写 bundle。
+- `--compile-smoke` 输出 validation 与内存编译检查结果，不写 bundle、不执行 workflow。
+- `--repair-attempts` 默认 `0`，可在 parse/adapter/validation/compile smoke 失败后请求模型修复并重新进入 pipeline。
+
 说明：Prompt 只生成简化 JSON plan。`builtin.echo_llm` 仍是确定性 mock executor。如需运行时 `llm` 节点调用真实模型，需在 workflow policies 中设置 `external_call=True` 和 `allowed_models`。
 
 ### 6. 渲染 Mermaid 图
@@ -209,10 +223,16 @@ result = pt2lg.run_workflow(workflow, {"question": "hello"})
 - `DiagnosticLocation`
 - `PromptPlanRequest`
 - `PromptPlanResult`
+- `PlanningPipelineResult`
+- `SkillPlanRequest`
+- `SkillPlanResult`
 - `validate_workflow`
 - `run_workflow`
 - `compile_workflow`
+- `plan_prompt`
 - `plan_prompt_to_workflow_spec`
+- `plan_skill`
+- `plan_skill_to_workflow_spec`
 - `CompileResult`
 
 编译产物也可以通过 public API 生成：
@@ -267,6 +287,20 @@ request = pt2lg.PromptPlanRequest(
     api_key="your-key",
 )
 ```
+
+结构化 planning API 可用于获取阶段诊断、validation report、compile smoke 和 repair 摘要：
+
+```python
+result = pt2lg.plan_prompt(
+    pt2lg.PromptPlanRequest(prompt="Build a workflow", repair_attempts=1),
+    compile_smoke=True,
+)
+
+assert result.stages["parse"].ran is True
+assert result.validation_report is not None
+```
+
+Skill 目录可使用 `pt2lg.plan_skill(pt2lg.SkillPlanRequest(skill_dir="path/to/skill"))` 获取同样的结构化结果；`plan_prompt_to_workflow_spec()` 和 `plan_skill_to_workflow_spec()` 仍保持旧兼容语义，成功时直接返回 `WorkflowSpec`。
 
 ## 输入格式
 
@@ -404,7 +438,7 @@ request = pt2lg.PromptPlanRequest(
 - Prompt 计划生成依赖外部 LLM，基于 `langchain_openai`
 - 优先兼容 Qwen 模型、vLLM 部署暴露的 OpenAI-style API 及其他第三方兼容接口
 - 默认从 `.env` 读取 `MODEL`、`BASE_URL`、`API_KEY`，CLI 参数或 `PromptPlanRequest` 字段可覆盖
-- LLM 输出必须是合法 JSON 对象，否则会返回 `AdapterParseError` 诊断
+- LLM 输出可以是纯 JSON object、Markdown fenced JSON block，或解释文本中唯一的 JSON object；多个 JSON object 候选会被拒绝并返回诊断
 - Prompt 生成的简化 JSON plan 与手动编写的简化 JSON plan 走完全相同的适配与校验链路
 - 当前 Prompt 只生成简化 JSON plan，不代表 runtime `llm` 节点具备真实执行能力
 
@@ -490,6 +524,7 @@ CLI 的 `validate`、`compile`、`run`、`graph`、`resume` 都支持 `--json` �
 - CLI resume 的 `.pt2lg-runtime/` 状态文件是本地开发用的短期持久化格式（安装 `checkpoint-sqlite` 可选依赖后使用 SQLite checkpointer，路径为 `.db` 文件）。旧 `.json` 文件与新的 `.db` checkpoint 不互相迁移。
 - `json_plan` 和 Workflow IR 是当前可执行输入；Prompt 输入通过 LLM 生成简化 JSON plan，再经 `JSONPlanAdapter` 转为 `WorkflowSpec`
 - Prompt 计划生成依赖外部 LLM，默认从 `.env` 读取 `MODEL`、`BASE_URL`、`API_KEY`
+- `plan_prompt()` / `plan_skill()` 提供结构化 planning result；CLI `plan --compile-smoke` 只做内存编译检查，不生成 bundle、不运行 workflow
 - Prompt 只生成简化 JSON plan；运行时 `llm` 节点的真实执行需 `external_call=True` + `allowed_models`
 - `skill_dir` 支持 Skill → `WorkflowSpec` 的 LLM 驱动 alpha 转换（`plan --skill-dir`），也保留静态分析能力（`analyze_skill_dir()`）
 - `llm/` 顶层模块为 LLM 客户端构造共享入口，`.env` 配置同时服务于 Prompt 计划生成和运行时 LLM 执行

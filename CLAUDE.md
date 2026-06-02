@@ -24,6 +24,8 @@ Prompt 计划生成基于 `langchain_openai`，默认从 `.env` 读取 `MODEL`�
 
 `analyze_skill_dir()` 保留静态分析能力。Skill → `WorkflowSpec` 的 LLM 驱动 alpha 转换已实现（`plan --skill-dir`），可诊断、可人工修正，不保证任意 Skill 一次成功；不执行 skill 脚本，不自动注册 tool callable。
 
+结构化 Prompt/Skill planning 已落地：`plan_prompt()` / `plan_skill()` 返回 generation、parse、adapter、validation、compile smoke 阶段状态、diagnostics、validation report 和 repair attempts 摘要。兼容入口 `plan_prompt_to_workflow_spec()` / `plan_skill_to_workflow_spec()` 仍保持旧语义，成功时直接返回 `WorkflowSpec`，不默认执行 compile smoke。结构化 planning 默认保持 `tool_registry=None` 的校验兼容语义；需要严格检查 Tool callable 注册时可显式注入空或已注册的 `ToolCallableRegistry`。
+
 ## 常用命令
 
 ```bash
@@ -48,6 +50,8 @@ uv run pt2lg graph tests/fixtures/linear_llm.json --format mermaid
 
 # Prompt 计划生成
 uv run pt2lg plan --prompt "Build a workflow that answers a question with one llm node" --json
+uv run pt2lg plan --prompt "Build a workflow that answers a question with one llm node" --compile-smoke --json
+uv run pt2lg plan --prompt "Build a workflow that answers a question with one llm node" --repair-attempts 1 --json
 
 # Skill → WorkflowSpec 转换
 uv run pt2lg plan --skill-dir path/to/skill --param key=value --json
@@ -67,8 +71,8 @@ uv run pt2lg run tests/fixtures/fanout_map_reduce.json --input '{"items":["alpha
 ## 架构速览
 
 核心流水线：
-1. `cli.py` 读取 JSON，按 IR 或简化 JSON plan 分流；`plan` 命令通过 Prompt 生成简化 JSON plan。
-2. `prompting/planner.py` 调用 LLM 生成 JSON plan 文本；`prompting/parser.py` 解析并产出诊断；`prompting/config.py` 从 `.env` 加载配置。
+1. `cli.py` 读取 JSON，按 IR 或简化 JSON plan 分流；`plan` 命令通过 Prompt/Skill 生成简化 JSON plan。
+2. `prompting/planner.py` 调用 LLM 生成 JSON plan 文本；`prompting/parser.py` 支持纯 JSON、fenced JSON、包裹文本中唯一 JSON object 并产出诊断；`prompting/pipeline.py` 负责结构化 planning、repair、validation、compile smoke；`prompting/config.py` 从 `.env` 加载配置。
 3. `adapters/` 转成规范 `WorkflowSpec`。
 4. `ir/normalize.py` 规范化。
 5. `validate/validator.py` 组合 schema / registry / graph / type / security 校验。
@@ -83,6 +87,7 @@ uv run pt2lg run tests/fixtures/fanout_map_reduce.json --input '{"items":["alpha
 - `llm/`：LLM 客户端构造共享入口（`LLMConfig`、`build_llm_client()`、`dict_messages_to_langchain()`）。
 - `prompting/planner.py`：Prompt → LLM → JSON plan 文本生成，`plan_prompt_to_workflow_spec()` 串联生成与适配。`build_model_client()` 委托给 `llm.provider.build_llm_client()`。
 - `prompting/parser.py`：LLM 输出 JSON 解析与 `AdapterParseError` 诊断。
+- `prompting/pipeline.py`：结构化 Prompt/Skill planning API，串联 generation、parse、adapter、validation、compile smoke 和 repair attempts。
 - `prompting/config.py`：从 `.env` 加载 `MODEL`、`BASE_URL`、`API_KEY`（已标记 deprecated，委托给 `llm.config`）。
 - `adapters/skill_dir.py`：skill 目录静态预分析。
 - `registry/`：节点类型与 executor 注册表，builtins 在 `registry/builtins.py`。`LLMExecutor` 在 `registry/llm_executor.py`，`ToolExecutor` + `ToolCallableRegistry` 在 `registry/tool_executor.py`。`ExecutorError` 在 `registry/executors.py`。
@@ -92,7 +97,7 @@ uv run pt2lg run tests/fixtures/fanout_map_reduce.json --input '{"items":["alpha
 - `runtime/events.py`：`RunMetrics`（含 `call_count`、`total_latency_ms`）、`ExternalCallRecord`、`RunResult.external_calls`。
 - `validate/security.py`：`check_external_policy()`、`check_model_whitelist()`、`check_tool_refs()` 策略校验。
 - `visualization/mermaid.py`：Mermaid 渲染。
-- `__init__.py`：稳定 public API：`WorkflowSpec`、`validate_workflow`、`run_workflow`、`compile_workflow`、`PromptPlanRequest`、`PromptPlanResult`、`plan_prompt_to_workflow_spec`。
+- `__init__.py`：稳定 public API：`WorkflowSpec`、`validate_workflow`、`run_workflow`、`compile_workflow`、`PromptPlanRequest`、`PromptPlanResult`、`SkillPlanRequest`、`SkillPlanResult`、`plan_prompt()`、`plan_skill()`、`plan_prompt_to_workflow_spec()`、`plan_skill_to_workflow_spec()`。
 
 ## 当前执行能力
 
