@@ -174,6 +174,28 @@ def test_build_skill_plan_prompt_contains_state_schema_constraints():
     assert "reducer" in prompt or "state" in prompt.lower()
 
 
+def test_build_skill_plan_prompt_documents_v04_phase1_json_plan_fields() -> None:
+    analysis = analyze_skill_dir("tests/fixtures/skill_basic")
+    prompt = build_skill_plan_prompt(analysis, skill_dir="tests/fixtures/skill_basic")
+
+    required_fragments = [
+        '"workflow_id"',
+        '"metadata"',
+        '"state_schema"',
+        '"reducers"',
+        '"policies"',
+        '"join_sources"',
+        "allowed_models",
+        "allowed_tool_refs",
+        "external_call",
+        "fanout",
+        "join",
+    ]
+
+    for fragment in required_fragments:
+        assert fragment in prompt
+
+
 def test_build_skill_plan_prompt_contains_few_shot_examples():
     """Prompt includes few-shot examples for retrieval, high-risk, and tool workflows."""
     analysis = analyze_skill_dir("tests/fixtures/skill_basic")
