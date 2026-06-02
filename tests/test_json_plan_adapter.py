@@ -1,9 +1,15 @@
+import json
+from pathlib import Path
+
 import pytest
 
 from prompt2langgraph.adapters.base import AdapterParseError
 from prompt2langgraph.adapters.json_plan import JSONPlanAdapter, json_plan_to_workflow_spec
+from prompt2langgraph.compiler.langgraph_py import compile_workflow_to_graph
 from prompt2langgraph.diagnostics.codes import E_REDUCER_012
 from prompt2langgraph.ir.models import TypeName, WorkflowSpec
+from prompt2langgraph.registry.builtins import builtin_executor_registry
+from prompt2langgraph.runtime.runner import run_workflow
 from prompt2langgraph.validate.validator import validate_workflow
 
 
@@ -60,6 +66,185 @@ def test_json_plan_adapter_infers_entrypoint_from_root_node_not_list_order() -> 
     workflow = json_plan_to_workflow_spec(plan)
 
     assert workflow.entrypoint == "retrieve"
+
+
+def test_json_plan_explicit_workflow_id_overrides_name_slug() -> None:
+    plan = {
+        "workflow_id": "explicit_workflow",
+        "name": "Name That Would Slug Differently",
+        "nodes": [{"id": "first", "kind": "llm", "executor": "builtin.echo_llm"}],
+        "edges": [],
+    }
+
+    workflow = json_plan_to_workflow_spec(plan)
+
+    assert workflow.workflow_id == "explicit_workflow"
+
+
+def test_json_plan_without_workflow_id_keeps_name_slug_fallback() -> None:
+    plan = {
+        "name": "Name Slug Fallback",
+        "nodes": [{"id": "first", "kind": "llm", "executor": "builtin.echo_llm"}],
+        "edges": [],
+    }
+
+    workflow = json_plan_to_workflow_spec(plan)
+
+    assert workflow.workflow_id == "name_slug_fallback"
+
+
+@pytest.mark.parametrize("workflow_id", ["", "123bad", "bad-id", "bad id"])
+def test_json_plan_reports_path_for_invalid_explicit_workflow_id(workflow_id: str) -> None:
+    plan = {
+        "workflow_id": workflow_id,
+        "name": "Bad Workflow Id",
+        "nodes": [{"id": "first", "kind": "llm", "executor": "builtin.echo_llm"}],
+        "edges": [],
+    }
+
+    with pytest.raises(AdapterParseError) as exc_info:
+        JSONPlanAdapter().parse(plan, source="bad_workflow_id.json")
+
+    assert exc_info.value.source == "bad_workflow_id.json"
+    assert exc_info.value.path == "workflow_id"
+
+
+def test_json_plan_metadata_is_preserved() -> None:
+    plan = {
+        "workflow_id": "metadata_plan",
+        "name": "Metadata Plan",
+        "metadata": {"owner": "qa", "tags": ["phase1", "json-plan"]},
+        "nodes": [{"id": "first", "kind": "llm", "executor": "builtin.echo_llm"}],
+        "edges": [],
+    }
+
+    workflow = json_plan_to_workflow_spec(plan)
+
+    assert workflow.metadata == {"owner": "qa", "tags": ["phase1", "json-plan"]}
+
+
+def test_json_plan_reports_path_for_invalid_metadata() -> None:
+    plan = {
+        "workflow_id": "bad_metadata",
+        "name": "Bad Metadata",
+        "metadata": ["not", "an", "object"],
+        "nodes": [{"id": "first", "kind": "llm", "executor": "builtin.echo_llm"}],
+        "edges": [],
+    }
+
+    with pytest.raises(AdapterParseError) as exc_info:
+        JSONPlanAdapter().parse(plan, source="bad_metadata.json")
+
+    assert exc_info.value.source == "bad_metadata.json"
+    assert exc_info.value.path == "metadata"
+
+
+def test_json_plan_reports_path_for_null_metadata() -> None:
+    plan = {
+        "workflow_id": "null_metadata",
+        "name": "Null Metadata",
+        "metadata": None,
+        "nodes": [{"id": "first", "kind": "llm", "executor": "builtin.echo_llm"}],
+        "edges": [],
+    }
+
+    with pytest.raises(AdapterParseError) as exc_info:
+        JSONPlanAdapter().parse(plan, source="null_metadata.json")
+
+    assert exc_info.value.source == "null_metadata.json"
+    assert exc_info.value.path == "metadata"
+
+
+def test_json_plan_top_level_reducers_map_to_state_schema_reducers() -> None:
+    plan = {
+        "workflow_id": "top_level_reducers",
+        "name": "Top Level Reducers",
+        "inputs": {"items": {"type": "array", "item_type": {"type": "string"}}},
+        "outputs": {"results": {"type": "array", "item_type": {"type": "string"}}},
+        "nodes": [
+            {
+                "id": "split",
+                "kind": "transform",
+                "executor": "builtin.identity_transform",
+                "inputs": {"value": "items"},
+                "outputs": {"value": "items"},
+            },
+            {
+                "id": "process",
+                "kind": "transform",
+                "executor": "builtin.identity_transform",
+                "inputs": {"value": "item"},
+                "outputs": {"value": "results"},
+            },
+        ],
+        "edges": [
+            {
+                "from": "split",
+                "to": "process",
+                "kind": "fanout",
+                "map": {
+                    "items_state_key": "items",
+                    "item_state_key": "item",
+                    "result_state_key": "results",
+                },
+            }
+        ],
+        "reducers": {"results": "append"},
+    }
+
+    workflow = json_plan_to_workflow_spec(plan)
+    report = validate_workflow(workflow)
+
+    assert workflow.state_schema.reducers["results"].value == "append"
+    assert report.ok, f"validation failed: {report.diagnostics}"
+
+
+def test_json_plan_accepts_matching_top_level_and_state_schema_reducers() -> None:
+    plan = {
+        "workflow_id": "matching_reducers",
+        "name": "Matching Reducers",
+        "nodes": [{"id": "first", "kind": "llm", "executor": "builtin.echo_llm"}],
+        "edges": [],
+        "state_schema": {"reducers": {"results": "append"}},
+        "reducers": {"results": "append"},
+    }
+
+    workflow = json_plan_to_workflow_spec(plan)
+
+    assert workflow.state_schema.reducers["results"].value == "append"
+
+
+def test_json_plan_rejects_conflicting_reducer_locations() -> None:
+    plan = {
+        "workflow_id": "conflicting_reducers",
+        "name": "Conflicting Reducers",
+        "nodes": [{"id": "first", "kind": "llm", "executor": "builtin.echo_llm"}],
+        "edges": [],
+        "state_schema": {"reducers": {"results": "append"}},
+        "reducers": {"results": "sum"},
+    }
+
+    with pytest.raises(AdapterParseError) as exc_info:
+        JSONPlanAdapter().parse(plan, source="bad_reducers.json")
+
+    assert exc_info.value.source == "bad_reducers.json"
+    assert exc_info.value.path == "reducers"
+
+
+def test_json_plan_reports_path_for_invalid_top_level_reducer_name() -> None:
+    plan = {
+        "workflow_id": "bad_top_level_reducer",
+        "name": "Bad Top Level Reducer",
+        "nodes": [{"id": "first", "kind": "llm", "executor": "builtin.echo_llm"}],
+        "edges": [],
+        "reducers": {"results": "unsupported"},
+    }
+
+    with pytest.raises(AdapterParseError) as exc_info:
+        JSONPlanAdapter().parse(plan, source="bad_top_level_reducer.json")
+
+    assert exc_info.value.source == "bad_top_level_reducer.json"
+    assert exc_info.value.path == "reducers"
 
 
 def test_json_plan_accepts_source_target_edge_aliases() -> None:
@@ -272,6 +457,21 @@ def test_json_plan_preserves_policies_reducers_and_join_sources() -> None:
     assert workflow.policies.allowed_models == ["qwen-plus"]
     join_edge = next(edge for edge in workflow.edges if edge.kind.value == "join")
     assert join_edge.join_sources == ["process", "split"]
+
+
+def test_json_plan_fanout_fixture_validates_compiles_and_runs() -> None:
+    fixture = Path("tests/fixtures/json_plan_fanout_run.json")
+    plan = json.loads(fixture.read_text(encoding="utf-8"))
+
+    workflow = json_plan_to_workflow_spec(plan)
+    report = validate_workflow(workflow)
+    graph = compile_workflow_to_graph(workflow, builtin_executor_registry())
+    result = run_workflow(workflow, {"items": ["alpha", "beta"]})
+
+    assert report.ok, f"validation failed: {report.diagnostics}"
+    assert graph is not None
+    assert result.status == "succeeded"
+    assert result.output["results"] == ["alpha", "beta"]
 
 
 def test_json_plan_adapter_rejects_empty_nodes_with_clear_error() -> None:
