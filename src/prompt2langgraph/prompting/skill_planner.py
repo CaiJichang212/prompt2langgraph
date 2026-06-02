@@ -221,7 +221,11 @@ Do NOT include markdown fences or explanations.
   "outputs": object (optional),
   "state_schema": object (optional, e.g. {"reducers": {"results": "append"}}),
   "reducers": object (optional compatibility alias for state_schema.reducers),
-  "policies": object (optional, e.g. {"external_call": true, "allowed_models": ["qwen-plus"], "allowed_tool_refs": ["tool.echo"]})
+  "policies": object (optional, e.g. {
+    "external_call": true,
+    "allowed_models": ["qwen-plus"],
+    "allowed_tool_refs": ["tool.echo"]
+  })
 }
 """
     parts.append(output_format)
@@ -239,7 +243,10 @@ For workflows that retrieve information then process it in multiple llm stages:
   "workflow_id": "research_workflow",
   "metadata": {"source": "skill-planner-example"},
   "inputs": {"topic": "string"},
-  "outputs": {"final_summary": "string", "results": {"type": "array", "item_type": {"type": "string"}}},
+  "outputs": {
+    "final_summary": "string",
+    "results": {"type": "array", "item_type": {"type": "string"}}
+  },
   "state_schema": {"reducers": {"results": "append"}},
   "nodes": [
     {
