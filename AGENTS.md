@@ -36,6 +36,7 @@ Prompt 计划生成能力已落地：通过 `plan_prompt_to_workflow_spec()` 或
 ## 当前能力边界
 
 - 输入：规范 Workflow IR，或通过 `json_plan_to_workflow_spec()` 适配的简化 JSON plan，或通过 `plan_prompt_to_workflow_spec()` 由 Prompt 经 LLM 生成简化 JSON plan。
+- JSON plan 适配保留显式 `workflow_id`、顶层 `metadata`、`policies`、`state_schema.reducers`、兼容顶层 `reducers` 和 edge 级 `join_sources`。
 - Prompt 计划生成：`prompting/planner.py` 封装 LLM 调用（`build_model_client()` 委托给 `llm.provider.build_llm_client()`），`prompting/parser.py` 解析 JSON 输出并产出 `AdapterParseError` 诊断，`prompting/config.py` 从 `.env` 加载 `MODEL`、`BASE_URL`、`API_KEY`（已标记 deprecated，委托给 `llm.config`）。
 - LLM 执行：`llm` 节点可通过 `ExecutorType.LLM`（ref 格式 `llm.<model_id>`）调用真实模型，需 `external_call=True` + `allowed_models` 白名单。`LLMExecutor` 在 `registry/llm_executor.py`。
 - Tool 执行：`tool` 节点可通过 `ExecutorType.PYTHON_CALLABLE` 执行受控 callable，需 `allowed_tool_refs` 白名单 + `ToolCallableRegistry` 注册。`ToolExecutor` 在 `registry/tool_executor.py`。
@@ -54,6 +55,7 @@ Prompt 计划生成能力已落地：通过 `plan_prompt_to_workflow_spec()` 或
 - `run_workflow()` 支持 `checkpointer` 注入以实现状态持久化和恢复。
 - `side_effect` 节点默认需要审批，通过 `pt2lg resume --resume '{"decision":"approved"}'` 恢复执行。
 - 策略约束在 `validate_workflow()` 阶段即被检查：`external_call` 开关、`allowed_models` 白名单、`allowed_tool_refs` 白名单。
+- `LANGCHAIN_TOOL` 在 v0.4 第一期仍为 reserved/experimental，不作为默认可执行能力。
 
 ## Do & Don't
 

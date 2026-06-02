@@ -30,8 +30,7 @@ uv sync
 - `conditional`
 - `loop`
 - `fanout`
-
-`join` 是 IR 和 Mermaid 可识别的 edge kind，但当前 LangGraph compiler / runner 不支持执行 `join` edge。
+- `join`（需声明 `join_sources`；fanout/reduce 场景还需 reducer）
 
 ### 内置节点 / executor
 
@@ -51,6 +50,7 @@ uv sync
 - `builtin.mock_retriever` 返回 `mock://...` artifact reference，不访问网络
 - `human_gate` 通过 LangGraph interrupt 触发等待态，需要后续 `resume`
 - `side_effect` 节点类型已在 registry 中定义，但是否可通过校验取决于工作流安全策略
+- `LANGCHAIN_TOOL` 在 v0.4 第一期仍为 reserved/experimental，不作为默认可执行能力
 
 ## 快速开始
 
@@ -344,11 +344,14 @@ request = pt2lg.PromptPlanRequest(
 
 简化 JSON plan 会在加载时被转换为标准 `WorkflowSpec`。其特点是：
 
-- 用 `name` 自动派生 `workflow_id`
+- 可显式声明 `workflow_id`；未声明时用 `name` 自动派生
+- 可携带顶层 `metadata`，用于非 secret 描述信息
 - `entrypoint` 可省略，若图中只有一个根节点会自动推断
 - 节点中的 `executor` 直接写字符串引用
-- 边使用 `from` / `to` 字段，可选 `kind`
+- 边使用 `from` / `to` 字段，可选 `kind`、`join_sources`、`condition`、`loop_guard`、`map`
 - `inputs` / `outputs` 可写简单类型或完整 `TypeSpec`
+- 支持 `state_schema.reducers`，并兼容顶层 `reducers` 别名；推荐使用 `state_schema.reducers`
+- 支持顶层 `policies`
 
 示例：
 
@@ -377,17 +380,21 @@ request = pt2lg.PromptPlanRequest(
 
 简化 plan 的适配规则：
 
-- `name` 会被 slug 化为 `workflow_id`
+- `workflow_id` 显式提供时优先生效；缺省时 `name` 会被 slug 化为 `workflow_id`
+- `metadata` 必须是 object，会原样进入 `WorkflowSpec.metadata`
 - 未提供 `entrypoint` 时，会从唯一根节点推断
 - `executor` 字段写 executor ref 字符串，例如 `builtin.echo_llm`
 - 边使用 `from` / `to` 字段，或 `source` / `target` 别名，默认 `kind` 为 `linear`
 - `conditional` 边可以携带 `condition.expr` 和 `condition.routes`
 - `loop` 边可以携带 `loop_guard.max_iterations`
 - `fanout` 边可以携带 `map.items_state_key`、`map.item_state_key` 和 `map.result_state_key`
+- `join` 边必须携带 `join_sources`
 - `inputs` / `outputs` 可写简单类型字符串或完整 `TypeSpec`
+- `state_schema.reducers` 可声明 reducer；顶层 `reducers` 仅作为兼容别名
+- `policies` 可声明 `external_call`、`allowed_models`、`allowed_tool_refs` 等策略
 - 已注册 executor 会用于推断节点输入输出 selector 和 state channel 类型
 
-简化 JSON plan 只覆盖常用适配边界，不是完整 Workflow IR 语义的替代表达。尤其是 fanout map-reduce 的可执行形态需要在 `state_schema.reducers` 中声明 reducer；简化 plan 当前不提供 reducers 表达，因此完整 fanout map-reduce 应直接使用 Workflow IR。
+简化 JSON plan 支持 `workflow_id`、`metadata`、`inputs`、`outputs`、`state_schema.reducers`、兼容顶层 `reducers`、`policies` 和 edge 级 `join_sources`。`join` 已支持编译与运行，但 join edge 必须声明 `join_sources`；fanout/reduce 场景还必须为 `map.result_state_key` 声明 reducer。
 
 ### Prompt 输入
 
