@@ -68,7 +68,7 @@ def json_plan_to_workflow_spec(
     ]
     if not node_specs:
         raise AdapterParseError("nodes must contain at least one node", source=source, path="nodes")
-    workflow_id = _slugify_identifier(plan_name, source=source, path="name")
+    workflow_id = _workflow_id(plan, plan_name, source=source)
     edge_specs = [
         _edge_spec(edge, index=index, source=source)
         for index, edge in enumerate(
@@ -88,7 +88,8 @@ def json_plan_to_workflow_spec(
         raise AdapterParseError(
             "state_schema must be an object", source=source, path="state_schema"
         )
-    reducers = _reducer_mapping(state_schema.get("reducers", {}), source=source)
+    reducers = _reducers_from_plan(plan, state_schema, source=source)
+    metadata = _metadata_mapping(plan["metadata"], source=source) if "metadata" in plan else {}
     policies = _validate_nested(
         PolicySpec,
         plan.get("policies", {}),
@@ -112,7 +113,7 @@ def json_plan_to_workflow_spec(
             "nodes": [node.model_dump(mode="json") for node in node_specs],
             "edges": [edge.model_dump(mode="json") for edge in edge_specs],
             "policies": policies.model_dump(mode="json"),
-            "metadata": {},
+            "metadata": metadata,
         }
     )
     return workflow
@@ -297,20 +298,73 @@ def _type_mapping(raw: Any) -> dict[str, TypeSpec]:
     return {name: _type_spec(value) for name, value in raw.items()}
 
 
-def _reducer_mapping(raw: Any, *, source: str | None) -> dict[str, ReducerName]:
+def _workflow_id(plan: Mapping[str, Any], plan_name: str, *, source: str | None) -> str:
+    if "workflow_id" not in plan:
+        return _slugify_identifier(plan_name, source=source, path="name")
+    value = _require_str(plan, "workflow_id", source=source, path="workflow_id")
+    if not re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", value):
+        raise AdapterParseError(
+            "workflow_id must be a valid identifier",
+            source=source,
+            path="workflow_id",
+        )
+    return value
+
+
+def _metadata_mapping(raw: Any, *, source: str | None) -> dict[str, Any]:
+    if not isinstance(raw, Mapping):
+        raise AdapterParseError("metadata must be an object", source=source, path="metadata")
+    return dict(raw)
+
+
+def _reducers_from_plan(
+    plan: Mapping[str, Any],
+    state_schema: Mapping[str, Any],
+    *,
+    source: str | None,
+) -> dict[str, ReducerName]:
+    has_state_reducers = "reducers" in state_schema
+    has_top_level_reducers = "reducers" in plan
+    state_reducers = _reducer_mapping(
+        state_schema.get("reducers", {}),
+        source=source,
+        path="state_schema.reducers",
+    )
+    if not has_top_level_reducers:
+        return state_reducers
+    top_level_reducers = _reducer_mapping(
+        plan.get("reducers", {}),
+        source=source,
+        path="reducers",
+    )
+    if has_state_reducers and state_reducers != top_level_reducers:
+        raise AdapterParseError(
+            "reducers conflicts with state_schema.reducers",
+            source=source,
+            path="reducers",
+        )
+    return top_level_reducers
+
+
+def _reducer_mapping(
+    raw: Any,
+    *,
+    source: str | None,
+    path: str = "state_schema.reducers",
+) -> dict[str, ReducerName]:
     if not isinstance(raw, Mapping):
         raise AdapterParseError(
-            "state_schema.reducers must be a mapping",
+            f"{path} must be a mapping",
             source=source,
-            path="state_schema.reducers",
+            path=path,
         )
     try:
         return {name: ReducerName(value) for name, value in raw.items()}
     except ValueError as exc:
         raise AdapterParseError(
-            "state_schema.reducers contains unsupported reducer",
+            f"{path} contains unsupported reducer",
             source=source,
-            path="state_schema.reducers",
+            path=path,
         ) from exc
 
 
