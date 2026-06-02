@@ -59,10 +59,20 @@ def test_skill_plan_request_and_result_types():
     assert request.skill_dir == "tests/fixtures/skill_basic"
     assert request.params == {}
     assert request.temperature == 0.0
+    assert request.repair_attempts == 0
 
     result = SkillPlanResult(raw_text='{"name":"test"}', plan=None, diagnostics=[])
     assert result.raw_text == '{"name":"test"}'
     assert result.diagnostics == []
+
+
+def test_skill_plan_request_accepts_explicit_repair_attempts():
+    request = SkillPlanRequest(
+        skill_dir="tests/fixtures/skill_basic",
+        repair_attempts=2,
+    )
+
+    assert request.repair_attempts == 2
 
 
 def test_plan_skill_to_workflow_spec_with_fake_model():
