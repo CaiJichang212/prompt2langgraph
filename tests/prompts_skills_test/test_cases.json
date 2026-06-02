@@ -46,7 +46,8 @@
       {"id": "json_plan_loop_01", "json_plan_file": "json_plans/loop_refine.json", "expected_patterns": ["loop"], "expected_node_types": ["llm", "transform"], "expected_loop_guard": {"max_iterations": 5}, "test_function": "json_plan_to_workflow_spec"},
       {"id": "json_plan_fanout_01", "json_plan_file": "json_plans/fanout_join.json", "expected_patterns": ["fanout", "join"], "expected_node_types": ["transform", "tool", "join", "llm"], "expected_join_sources": ["search_web", "search_academic", "search_news"], "test_function": "json_plan_to_workflow_spec"},
       {"id": "json_plan_side_effect_01", "json_plan_file": "json_plans/side_effect_approval.json", "expected_patterns": ["side_effect"], "expected_node_types": ["transform", "side_effect"], "expected_security_policy": {"requires_approval": true}, "test_function": "json_plan_to_workflow_spec"},
-      {"id": "json_plan_reducer_01", "json_plan_file": "json_plans/reducer_append.json", "expected_patterns": ["fanout"], "expected_node_types": ["transform", "llm"], "expected_reducers": {"results": "append"}, "test_function": "json_plan_to_workflow_spec"}
+      {"id": "json_plan_reducer_01", "json_plan_file": "json_plans/reducer_append.json", "expected_patterns": ["fanout"], "expected_node_types": ["transform", "llm"], "expected_reducers": {"results": "append"}, "test_function": "json_plan_to_workflow_spec"},
+      {"id": "json_plan_top_level_reducers", "json_plan_file": "json_plans/top_level_reducers.json", "expected_patterns": ["fanout"], "expected_node_types": ["transform"], "expected_reducers": {"results": "append"}, "test_function": "json_plan_to_workflow_spec"}
     ],
     "negative_tests": [
       {"id": "neg_security_external_call", "test_file": "invalid/security_external_call_without_policy.json", "expected_error": "E_SEC_013", "expected_error_message": "external_call must be true for ExecutorType.LLM", "test_category": "security_negative"},
@@ -81,7 +82,7 @@
       "fanout_join": {"skills": 1, "prompts": 1, "json_plans": 1, "negative": 2},
       "human_gate": {"skills": 1, "prompts": 1, "json_plans": 0, "negative": 0},
       "side_effect": {"skills": 1, "prompts": 1, "json_plans": 1, "negative": 1},
-      "reducer": {"skills": 0, "prompts": 0, "json_plans": 1, "negative": 0}
+      "reducer": {"skills": 0, "prompts": 0, "json_plans": 2, "negative": 0}
     },
     "error_categories": {
       "security": 4,
@@ -90,7 +91,7 @@
       "registry": 1,
       "skill": 2
     },
-    "total_test_cases": 41
+    "total_test_cases": 42
   },
   "notes": [
     "Tests must not fetch the network - all fixtures are offline snapshots",

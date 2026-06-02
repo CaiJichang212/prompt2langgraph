@@ -16,13 +16,14 @@ prompts_skills_test/
 ├── prompts/                    # Prompt fixtures (7 structured + 3 raw upstream snapshots)
 │   ├── *.json                  # Structured prompt test cases used by the corpus tests
 │   └── *.md                    # Raw upstream prompt snapshots used as source references
-├── json_plans/                 # JSON Plan direct input tests (6 plans)
+├── json_plans/                 # JSON Plan direct input tests (7 plans)
 │   ├── linear_llm.json
 │   ├── conditional_router.json
 │   ├── loop_refine.json
 │   ├── fanout_join.json
 │   ├── side_effect_approval.json
-│   └── reducer_append.json
+│   ├── reducer_append.json
+│   └── top_level_reducers.json
 ├── invalid/                    # Negative test cases (12 cases)
 │   ├── security_*.json         # Security policy violations
 │   ├── parse_*.json            # Parse error cases
@@ -43,13 +44,13 @@ prompts_skills_test/
 | **Skill→Workflow cases** | 16 | Offline fake-model planning pipeline + validation + compile |
 | **Structured Prompt→Workflow cases** | 7 | Offline fake-model planning pipeline + validation + compile |
 | **Inline upstream/source plans** | 5 | Adapter + validation, compiling valid plans |
-| **JSON Plans** | 6 | Direct JSON Plan input pathway + validation + compile |
+| **JSON Plans** | 7 | Direct JSON Plan input pathway + validation + compile |
 | **Negative Cases** | 12 | Security, Parse, Schema, Registry, Skill errors |
-| **Executable Corpus Cases** | 46 | Parameterized pytest cases, plus one manifest consistency check |
+| **Executable Corpus Cases** | 47 | 47 parameterized corpus cases, plus 2 guard/manifest checks |
 
 ## Scope and Limitations
 
-This corpus is useful for test-driven development around prompt and Skill ingestion, simplified JSON plan adaptation, validation diagnostics, compiler smoke coverage, and security boundary regressions.
+This corpus is useful for test-driven development around prompt and Skill ingestion, simplified JSON plan adaptation, validation diagnostics, compiler smoke coverage, and security boundary regressions. 语料覆盖简化 JSON plan 的 linear、conditional、loop、fanout、join、side_effect、security、`state_schema.reducers`、兼容顶层 `reducers`、`policies` 和 `join_sources`。语料测试默认离线执行，不访问网络。
 
 It does not by itself cover the entire project. Full coverage still requires the existing tests for canonical IR models, normalization, lockfile/manifest/report generation, LangGraph compilation, artifact cleanup, local run/resume, checkpoint behavior, Mermaid rendering, CLI flows, public API, executor dispatch, and runtime external-call metrics.
 
@@ -63,7 +64,7 @@ It does not by itself cover the entire project. Full coverage still requires the
 | `fanout`+`join` | 1 | 1 | 1 | 2 (no reducer, no sources) |
 | `human_gate` | 1 | 1 | - | - |
 | `side_effect` | 1 | 1 | 1 | 1 (no approval) |
-| `reducer` | - | - | 1 | - |
+| `reducer` | - | - | 2 | - |
 | `security` | - | - | - | 4 |
 | `parse` | - | - | - | 2 |
 | `registry` | - | - | - | 1 |

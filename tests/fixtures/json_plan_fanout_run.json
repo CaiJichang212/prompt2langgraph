@@ -1,0 +1,63 @@
+{
+  "workflow_id": "json_plan_fanout_run",
+  "name": "JSON Plan Fanout Run",
+  "entrypoint": "split",
+  "metadata": {
+    "source": "v0.4-phase1-smoke"
+  },
+  "inputs": {
+    "items": {
+      "type": "array",
+      "item_type": {
+        "type": "string"
+      }
+    }
+  },
+  "outputs": {
+    "results": {
+      "type": "array",
+      "item_type": {
+        "type": "string"
+      }
+    }
+  },
+  "nodes": [
+    {
+      "id": "split",
+      "kind": "transform",
+      "executor": "builtin.identity_transform",
+      "inputs": {
+        "value": "items"
+      },
+      "outputs": {
+        "value": "items"
+      }
+    },
+    {
+      "id": "process",
+      "kind": "transform",
+      "executor": "builtin.identity_transform",
+      "inputs": {
+        "value": "item"
+      },
+      "outputs": {
+        "value": "results"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "split",
+      "to": "process",
+      "kind": "fanout",
+      "map": {
+        "items_state_key": "items",
+        "item_state_key": "item",
+        "result_state_key": "results"
+      }
+    }
+  ],
+  "reducers": {
+    "results": "append"
+  }
+}
