@@ -112,3 +112,30 @@ def test_benchmark_linear_workflow_generator_has_stable_ids() -> None:
         "edge_node_1_node_2",
         "edge_node_2_node_3",
     ]
+
+
+def test_phase1_docs_do_not_reintroduce_stale_plan_semantics() -> None:
+    docs = [
+        ROOT / "README.md",
+        ROOT / "AGENTS.md",
+        ROOT / "CLAUDE.md",
+        ROOT / "tests" / "prompts_skills_test" / "README.md",
+    ]
+    stale_fragments = [
+        "join 不支持",
+        "join 不可",
+        "JOIN 不可",
+        "reducers 无法",
+        "无法表达 reducers",
+        "简化 plan 当前不提供 reducers 表达",
+    ]
+
+    for path in docs:
+        text = path.read_text(encoding="utf-8")
+        for fragment in stale_fragments:
+            assert fragment not in text
+
+    corpus_readme = (ROOT / "tests" / "prompts_skills_test" / "README.md").read_text(
+        encoding="utf-8"
+    )
+    assert "47 parameterized corpus cases, plus 2 guard/manifest checks" in corpus_readme
