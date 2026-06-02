@@ -34,6 +34,8 @@ Do not include markdown fences or explanations.
 The JSON object must conform to this schema:
 {
   "name": string (required, workflow name),
+  "workflow_id": string (optional, valid identifier; if omitted, derived from name),
+  "metadata": object (optional, non-secret descriptive metadata),
   "nodes": [
     {
       "id": string (required, unique node identifier),
@@ -48,15 +50,19 @@ The JSON object must conform to this schema:
     {
       "from": string (required, source node id),
       "to": string (required, target node id),
-      "kind": string (optional, one of: "linear", "conditional", "loop", "fanout"; defaults to "linear"),
+      "kind": string (optional, one of: "linear", "conditional", "loop", "fanout", "join"; defaults to "linear"),
       "condition": object (optional, required when kind="conditional", e.g. {"expr": "confidence < 0.75", "routes": {"true": "node_a", "false": "node_b"}}),
       "loop_guard": object (optional, required when kind="loop", e.g. {"max_iterations": 3}),
-      "map": object (optional, required when kind="fanout", e.g. {"items_state_key": "items", "item_state_key": "item", "result_state_key": "results"})
+      "map": object (optional, required when kind="fanout", e.g. {"items_state_key": "items", "item_state_key": "item", "result_state_key": "results"}),
+      "join_sources": array of string (optional, required when kind="join")
     }
   ],
   "entrypoint": string (optional, id of the first node; if omitted, inferred as the node with no incoming edges),
-  "inputs": object (optional, mapping of input names to type strings, e.g. {"question": "string"}),
-  "outputs": object (optional, mapping of output names to type strings, e.g. {"answer": "string"})
+  "inputs": object (optional, mapping of input names to type strings or type objects, e.g. {"question": "string"}),
+  "outputs": object (optional, mapping of output names to type strings or type objects, e.g. {"answer": "string"}),
+  "state_schema": object (optional, e.g. {"reducers": {"results": "append"}}),
+  "reducers": object (optional compatibility alias for state_schema.reducers),
+  "policies": object (optional, e.g. {"external_call": true, "allowed_models": ["qwen-plus"], "allowed_tool_refs": ["tool.echo"]})
 }
 
 Rules:
@@ -65,7 +71,12 @@ Rules:
 - Use "builtin.echo_llm" for llm nodes, "builtin.identity_transform" for transform nodes, "builtin.route" for router nodes, "builtin.human_gate" for human_gate nodes.
 - For conditional edges, "routes" must map "true" and "false" to valid node ids.
 - For loop edges, "loop_guard.max_iterations" must be a positive integer.
-- For fanout edges, the workflow must define a reducer (e.g. "append") for the result state key.
+- Prefer "state_schema": {"reducers": {...}} for reducers; top-level "reducers" is accepted as a compatibility alias.
+- For fanout edges, the workflow must define a reducer such as "append" for "map.result_state_key".
+- For join edges, "join_sources" must list the upstream source node ids that must complete before the join target runs.
+- For real LLM executor refs such as "llm.qwen-plus", set "policies.external_call" to true and include the model id in "policies.allowed_models".
+- For Python callable tool executor refs, include the tool ref in "policies.allowed_tool_refs".
+- Do not include secrets in "metadata", "params", or "policies".
 """  # noqa: E501
 
 
