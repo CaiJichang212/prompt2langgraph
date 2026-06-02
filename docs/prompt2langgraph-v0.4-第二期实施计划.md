@@ -105,7 +105,7 @@ pipeline 结果必须包含：
 - 阶段失败 diagnostics。
 - 未运行阶段的原因，例如前序 parse 失败。
 
-`compile_smoke` 只检查图可编译，不写 bundle，不执行 workflow，不调用外部 LLM 或 tool。pipeline 默认使用 `builtin_executor_registry()` 和空 `ToolCallableRegistry()`；测试或 corpus 评估可显式注入 `executor_registry` / `tool_registry`，以复用 `tests/test_prompt_skill_corpus.py` 里的 corpus registry。
+`compile_smoke` 只检查图可编译，不写 bundle，不执行 workflow，不调用外部 LLM 或 tool。pipeline 默认使用 `builtin_executor_registry()`，并保持 `tool_registry=None` 的现有校验兼容语义；需要严格检查 Tool callable 注册时，测试、corpus 评估或调用方可显式注入空或已注册的 `tool_registry`，并可注入 `executor_registry` 以复用 `tests/test_prompt_skill_corpus.py` 里的 corpus registry。
 
 ### 3.3 Repair 行为
 

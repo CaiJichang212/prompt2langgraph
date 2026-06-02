@@ -211,6 +211,8 @@ uv run pytest
 
 ## 9. 第二期：Prompt/Skill 生成可靠性闭环
 
+当前实现状态：第二期规划链路已落地到 `prompting/pipeline.py`、CLI `pt2lg plan` 和离线 corpus 测试。兼容入口仍保持旧语义；结构化入口和 CLI 可显式返回 validation、compile smoke 与 repair attempts 摘要。
+
 ### 9.1 阶段目标
 
 第二期目标是：
@@ -232,6 +234,8 @@ uv run pytest
 - 可明确诊断的非 JSON、非对象、截断 JSON、多个候选 JSON。
 
 parser 不应静默猜测复杂冲突输出。无法确定唯一 plan 时，应返回结构化 diagnostic。
+
+实现状态：`parse_prompt_plan_text()` 已支持纯 JSON object、Markdown fenced JSON block、解释文本中的唯一 JSON object 和 JSON 后缀文本；多个 JSON object 候选、非对象、截断 JSON 和非法 JSON 会稳定抛出 `AdapterParseError`。
 
 #### 9.2.2 统一 planning pipeline
 
@@ -257,6 +261,8 @@ prompt / skill
 - diagnostics 列表。
 - repair attempts 摘要。
 
+实现状态：`plan_prompt()` / `plan_skill()` 返回 `PlanningPipelineResult`，包含 `raw_text`、`plan`、`workflow`、`validation_report`、`diagnostics`、`stages` 和 `repair_attempts`。`compile_smoke` 只做内存编译检查，不写 bundle、不执行 workflow。
+
 #### 9.2.3 Repair attempts
 
 引入可配置 repair attempts：
@@ -266,6 +272,8 @@ prompt / skill
 - repair prompt 只能包含必要的 parse/adapter/validation diagnostics、原始 plan 摘要和目标 schema 约束。
 - repair 结果仍必须重新进入 parse/adapt/validate/compile 链路。
 - repair 失败时返回最后一次诊断，不隐式降级为执行。
+
+实现状态：`PromptPlanRequest` 和 `SkillPlanRequest` 已提供 `repair_attempts: int = 0`（范围 `0..3`）；CLI 提供 `--repair-attempts`，默认关闭。repair 会重新进入 parse、adapter、validation、compile smoke 链路。
 
 #### 9.2.4 Prompt/Skill corpus 评估
 
@@ -281,6 +289,8 @@ prompt / skill
 
 v0.4 发布门禁以离线指标为准。live 指标不进入默认单测，不依赖网络调用；只作为手动或显式启用的评估报告。live 评估必须记录模型、`BASE_URL` 类型、样本集版本、执行命令、成功率和失败诊断摘要，避免把不可重复的外部模型波动作为默认质量门禁。
 
+实现状态：`tests/test_prompt_skill_corpus.py` 已用 fake model 覆盖 prompt、Skill、JSON plan 和 negative cases 的离线 pipeline 指标；测试显式注入 corpus executor registry，避免 corpus-only refs 被默认 registry 误判。
+
 #### 9.2.5 Skill 风险诊断接入
 
 Skill planning 应保留静态分析风险信息：
@@ -292,6 +302,8 @@ Skill planning 应保留静态分析风险信息：
 - 外部资源引用。
 
 这些风险不应自动执行，而应进入 diagnostics、metadata、security policy 建议或 required approval 提示。
+
+实现状态：`plan_skill()` 会保留 `analyze_skill_dir()` 的静态 diagnostics；error 级静态诊断会阻止 generation，warning/info 级诊断进入 planning result。
 
 ### 9.3 验收标准
 
