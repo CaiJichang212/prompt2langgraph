@@ -138,4 +138,7 @@ def test_phase1_docs_do_not_reintroduce_stale_plan_semantics() -> None:
     corpus_readme = (ROOT / "tests" / "prompts_skills_test" / "README.md").read_text(
         encoding="utf-8"
     )
-    assert "47 parameterized corpus cases, plus 2 guard/manifest checks" in corpus_readme
+    assert (
+        "47 parameterized corpus cases, plus fake-model guard, manifest, and pipeline metric checks"
+        in corpus_readme
+    )
