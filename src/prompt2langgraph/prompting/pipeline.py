@@ -59,10 +59,7 @@ class PlanningPipelineResult(BaseModel):
 
 
 def _initial_stages() -> dict[PlanningStageName, PlanningStageStatus]:
-    return {
-        name: PlanningStageStatus(skipped=True, reason="not run")
-        for name in STAGE_NAMES
-    }
+    return {name: PlanningStageStatus(skipped=True, reason="not run") for name in STAGE_NAMES}
 
 
 def _ok_stage() -> PlanningStageStatus:
@@ -462,7 +459,10 @@ def _generate_skill_raw_text(
     analysis: SkillDirectoryAnalysis,
     client_ref: dict[str, object | None],
 ) -> str:
-    from prompt2langgraph.prompting.skill_planner import _build_model_client, generate_skill_plan_text
+    from prompt2langgraph.prompting.skill_planner import (
+        _build_model_client,
+        generate_skill_plan_text,
+    )
 
     if client_ref["client"] is None:
         client_ref["client"] = _build_model_client(request)

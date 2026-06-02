@@ -42,7 +42,9 @@ def test_parse_prompt_plan_text_uses_custom_source() -> None:
 
 def test_parse_prompt_plan_text_accepts_fenced_json_object() -> None:
     plan = parse_prompt_plan_text(
-        'Here is the plan:\n```json\n{"name":"Demo","nodes":[{"id":"compose","kind":"llm","executor":"builtin.echo_llm"}],"edges":[]}\n```'
+        "Here is the plan:\n```json\n"
+        '{"name":"Demo","nodes":[{"id":"compose","kind":"llm","executor":"builtin.echo_llm"}],"edges":[]}'
+        "\n```"
     )
 
     assert plan["name"] == "Demo"
@@ -50,7 +52,9 @@ def test_parse_prompt_plan_text_accepts_fenced_json_object() -> None:
 
 def test_parse_prompt_plan_text_accepts_single_object_inside_explanation() -> None:
     plan = parse_prompt_plan_text(
-        'I will return one object: {"name":"Wrapped","nodes":[{"id":"compose","kind":"llm","executor":"builtin.echo_llm"}],"edges":[]} Done.'
+        "I will return one object: "
+        '{"name":"Wrapped","nodes":[{"id":"compose","kind":"llm","executor":"builtin.echo_llm"}],"edges":[]}'
+        " Done."
     )
 
     assert plan["name"] == "Wrapped"
@@ -58,7 +62,8 @@ def test_parse_prompt_plan_text_accepts_single_object_inside_explanation() -> No
 
 def test_parse_prompt_plan_text_accepts_object_then_suffix_text() -> None:
     plan = parse_prompt_plan_text(
-        '{"name":"Suffix","nodes":[{"id":"compose","kind":"llm","executor":"builtin.echo_llm"}],"edges":[]} trailing explanation'
+        '{"name":"Suffix","nodes":[{"id":"compose","kind":"llm","executor":"builtin.echo_llm"}],"edges":[]}'
+        " trailing explanation"
     )
 
     assert plan["name"] == "Suffix"
@@ -90,9 +95,7 @@ def test_parse_prompt_plan_text_rejects_truncated_wrapped_json() -> None:
     with pytest.raises(AdapterParseError) as exc_info:
         parse_prompt_plan_text('prefix {"name":"Broken","nodes":[')
 
-    assert "failed to parse" in str(exc_info.value) or "could not extract" in str(
-        exc_info.value
-    )
+    assert "failed to parse" in str(exc_info.value) or "could not extract" in str(exc_info.value)
     assert exc_info.value.source == "prompt"
 
 

@@ -431,9 +431,7 @@ def _emit_planning_result(
         payload["plan"] = result.plan
     diagnostics = _planning_cli_diagnostics(result, cli_ok=cli_ok)
     if diagnostics:
-        payload["diagnostics"] = [
-            diagnostic.model_dump(mode="json") for diagnostic in diagnostics
-        ]
+        payload["diagnostics"] = [diagnostic.model_dump(mode="json") for diagnostic in diagnostics]
     if result.repair_attempts:
         payload["repair_attempts"] = [
             attempt.model_dump(mode="json") for attempt in result.repair_attempts
