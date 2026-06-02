@@ -19,6 +19,7 @@ class PromptPlanRequest(BaseModel):
     base_url: str | None = None
     api_key: str | None = None
     temperature: float = Field(default=0.0, ge=0.0, le=2.0)
+    repair_attempts: int = Field(default=0, ge=0, le=3)
 
 
 class PromptPlanResult(BaseModel):
