@@ -643,6 +643,40 @@ def test_prompt_plan_command_validate_flag_reports_invalid_plan(monkeypatch) -> 
     assert payload["validation"]["ok"] is False
 
 
+def test_prompt_plan_command_without_validate_keeps_plan_payload_for_invalid_plan(
+    monkeypatch,
+) -> None:
+    class FakeModel:
+        def invoke(self, messages):
+            return type(
+                "Response",
+                (),
+                {
+                    "content": (
+                        '{"name":"Bad",'
+                        '"nodes":[{"id":"n1","kind":"llm",'
+                        '"executor":"builtin.nonexistent"}],"edges":[]}'
+                    )
+                },
+            )()
+
+    monkeypatch.setattr(
+        "prompt2langgraph.prompting.planner.build_model_client",
+        lambda request: FakeModel(),
+    )
+
+    result = CliRunner().invoke(
+        app,
+        ["plan", "--prompt", "build a bad workflow", "--json"],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["ok"] is True
+    assert payload["plan"]["name"] == "Bad"
+    assert "validation" not in payload
+
+
 def test_prompt_plan_command_validate_flag_reports_adapter_parse_error(monkeypatch) -> None:
     class FakeModel:
         def invoke(self, messages):
@@ -676,6 +710,117 @@ def test_prompt_plan_command_validate_flag_reports_adapter_parse_error(monkeypat
     assert "validation" in payload
     assert payload["validation"]["ok"] is False
     assert any(item["code"] == "E_PARSE_001" for item in payload["validation"]["diagnostics"])
+
+
+def test_prompt_plan_command_compile_smoke_includes_stage_result(monkeypatch) -> None:
+    class FakeModel:
+        def invoke(self, messages):
+            return type(
+                "Response",
+                (),
+                {
+                    "content": (
+                        '{"name":"Demo","inputs":{"question":"string"},'
+                        '"outputs":{"answer":"string"},'
+                        '"nodes":[{"id":"compose","kind":"llm","executor":"builtin.echo_llm"}],'
+                        '"edges":[]}'
+                    )
+                },
+            )()
+
+    monkeypatch.setattr(
+        "prompt2langgraph.prompting.planner.build_model_client",
+        lambda request: FakeModel(),
+    )
+
+    result = CliRunner().invoke(
+        app,
+        ["plan", "--prompt", "build a simple workflow", "--compile-smoke", "--json"],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["ok"] is True
+    assert payload["validation"]["ok"] is True
+    assert payload["compile_smoke"]["ok"] is True
+
+
+def test_prompt_plan_command_validate_does_not_include_compile_smoke(monkeypatch) -> None:
+    class FakeModel:
+        def invoke(self, messages):
+            return type(
+                "Response",
+                (),
+                {
+                    "content": (
+                        '{"name":"Demo","nodes":[{"id":"compose","kind":"llm",'
+                        '"executor":"builtin.echo_llm"}],"edges":[]}'
+                    )
+                },
+            )()
+
+    monkeypatch.setattr(
+        "prompt2langgraph.prompting.planner.build_model_client",
+        lambda request: FakeModel(),
+    )
+
+    result = CliRunner().invoke(
+        app,
+        ["plan", "--prompt", "build a simple workflow", "--validate", "--json"],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert "validation" in payload
+    assert "compile_smoke" not in payload
+
+
+def test_prompt_plan_command_repair_attempts_are_reported(monkeypatch) -> None:
+    class FakeModel:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def invoke(self, messages):
+            self.calls += 1
+            if self.calls == 1:
+                return type("Response", (), {"content": "not json"})()
+            return type(
+                "Response",
+                (),
+                {
+                    "content": (
+                        '{"name":"Demo","nodes":[{"id":"compose","kind":"llm",'
+                        '"executor":"builtin.echo_llm"}],"edges":[]}'
+                    )
+                },
+            )()
+
+    model = FakeModel()
+    monkeypatch.setattr(
+        "prompt2langgraph.prompting.planner.build_model_client",
+        lambda request: model,
+    )
+
+    result = CliRunner().invoke(
+        app,
+        ["plan", "--prompt", "repair workflow", "--repair-attempts", "1", "--json"],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["ok"] is True
+    assert len(payload["repair_attempts"]) == 1
+
+
+def test_prompt_plan_command_rejects_repair_attempts_above_limit() -> None:
+    result = CliRunner().invoke(
+        app,
+        ["plan", "--prompt", "repair workflow", "--repair-attempts", "4", "--json"],
+    )
+
+    assert result.exit_code != 0
+    assert result.stdout
+    assert "Traceback" not in result.stdout
 
 
 def test_resume_command_continues_pending_interrupt_across_processes(tmp_path: Path) -> None:
@@ -944,6 +1089,89 @@ def test_skill_plan_command_with_validate_flag(monkeypatch) -> None:
     assert payload["ok"] is True
     assert "validation" in payload
     assert payload["validation"]["ok"] is True
+
+
+def test_skill_plan_command_compile_smoke_includes_stage_result(monkeypatch) -> None:
+    class FakeModel:
+        def invoke(self, messages):
+            return type(
+                "Response",
+                (),
+                {
+                    "content": (
+                        '{"name":"SkillWorkflow",'
+                        '"nodes":[{"id":"compose","kind":"llm",'
+                        '"executor":"builtin.echo_llm"}],"edges":[]}'
+                    )
+                },
+            )()
+
+    monkeypatch.setattr(
+        "prompt2langgraph.llm.provider.build_llm_client",
+        lambda **kwargs: FakeModel(),
+    )
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "plan",
+            "--skill-dir",
+            str(FIXTURES / "skill_basic"),
+            "--compile-smoke",
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["ok"] is True
+    assert payload["validation"]["ok"] is True
+    assert payload["compile_smoke"]["ok"] is True
+
+
+def test_skill_plan_command_repair_attempts_are_reported(monkeypatch) -> None:
+    class FakeModel:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def invoke(self, messages):
+            self.calls += 1
+            if self.calls == 1:
+                return type("Response", (), {"content": "not json"})()
+            return type(
+                "Response",
+                (),
+                {
+                    "content": (
+                        '{"name":"SkillWorkflow",'
+                        '"nodes":[{"id":"compose","kind":"llm",'
+                        '"executor":"builtin.echo_llm"}],"edges":[]}'
+                    )
+                },
+            )()
+
+    model = FakeModel()
+    monkeypatch.setattr(
+        "prompt2langgraph.llm.provider.build_llm_client",
+        lambda **kwargs: model,
+    )
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "plan",
+            "--skill-dir",
+            str(FIXTURES / "skill_basic"),
+            "--repair-attempts",
+            "1",
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["ok"] is True
+    assert len(payload["repair_attempts"]) == 1
 
 
 def test_skill_plan_command_reports_llm_call_failure_as_diagnostic(monkeypatch) -> None:
