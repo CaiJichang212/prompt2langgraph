@@ -151,8 +151,9 @@ When generating the JSON plan, follow these state schema rules:
 1. **State key naming**: Must be valid Python identifiers
    (alphanumeric + underscore, cannot start with digit).
 2. **Reducer declaration**: If a state key is used in a fanout/reduce
-   pattern, you MUST declare a reducer in the workflow's `reducers`
-   field (e.g., `{"results": "append"}`).
+   pattern, you MUST declare a reducer in `state_schema.reducers`,
+   for example `{"state_schema": {"reducers": {"results": "append"}}}`.
+   The top-level `reducers` field is accepted only as a compatibility alias.
 3. **Reserved words** (cannot be used as state keys):
    - `__pt2lg_side_effect_results__`
    - `__pt2lg_side_effect_records__`
@@ -190,6 +191,8 @@ Do NOT include markdown fences or explanations.
 
 {
   "name": string (required, workflow name),
+  "workflow_id": string (optional, valid identifier),
+  "metadata": object (optional, non-secret descriptive metadata),
   "nodes": [
     {
       "id": string (required, unique node identifier),
@@ -216,7 +219,9 @@ Do NOT include markdown fences or explanations.
   "entrypoint": string (optional),
   "inputs": object (optional),
   "outputs": object (optional),
-  "reducers": object (optional, e.g. {"results": "append"})
+  "state_schema": object (optional, e.g. {"reducers": {"results": "append"}}),
+  "reducers": object (optional compatibility alias for state_schema.reducers),
+  "policies": object (optional, e.g. {"external_call": true, "allowed_models": ["qwen-plus"], "allowed_tool_refs": ["tool.echo"]})
 }
 """
     parts.append(output_format)
@@ -231,8 +236,11 @@ For workflows that retrieve information then process it in multiple llm stages:
 
 {
   "name": "ResearchWorkflow",
+  "workflow_id": "research_workflow",
+  "metadata": {"source": "skill-planner-example"},
   "inputs": {"topic": "string"},
-  "outputs": {"final_summary": "string"},
+  "outputs": {"final_summary": "string", "results": {"type": "array", "item_type": {"type": "string"}}},
+  "state_schema": {"reducers": {"results": "append"}},
   "nodes": [
     {
       "id": "search_docs",
@@ -308,6 +316,9 @@ workflow's policies must include the tool ref for execution to succeed:
   "name": "ToolWorkflow",
   "inputs": {"query": "string"},
   "outputs": {"answer": "string"},
+  "policies": {
+    "allowed_tool_refs": ["builtin.identity_transform"]
+  },
   "nodes": [
     {
       "id": "search",
