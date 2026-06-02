@@ -88,6 +88,8 @@ def test_public_api_exports_prompt_planning_entrypoints() -> None:
     assert "PromptPlanRequest" in pt2lg.__all__
     assert "PromptPlanResult" in pt2lg.__all__
     assert "plan_prompt_to_workflow_spec" in pt2lg.__all__
+    assert "plan_prompt" in pt2lg.__all__
+    assert "PlanningPipelineResult" in pt2lg.__all__
 
 
 def test_public_prompt_workflow_can_be_validated() -> None:
@@ -104,6 +106,18 @@ def test_public_api_exports_skill_planning_entrypoints() -> None:
     assert "SkillPlanRequest" in pt2lg.__all__
     assert "SkillPlanResult" in pt2lg.__all__
     assert "plan_skill_to_workflow_spec" in pt2lg.__all__
+    assert "plan_skill" in pt2lg.__all__
+
+
+def test_public_api_structured_prompt_pipeline_returns_result() -> None:
+    result = pt2lg.plan_prompt(
+        pt2lg.PromptPlanRequest(prompt="answer a question"),
+        model_client=_FakeModel(),
+        compile_smoke=True,
+    )
+
+    assert isinstance(result, pt2lg.PlanningPipelineResult)
+    assert result.ok is True
 
 
 def test_public_skill_plan_workflow_can_be_validated() -> None:
@@ -120,3 +134,25 @@ def test_public_api_exports_generate_skill_plan_text() -> None:
     from prompt2langgraph.prompting import generate_skill_plan_text
 
     assert callable(generate_skill_plan_text)
+
+
+def test_public_structured_pipeline_import_does_not_eagerly_import_langgraph() -> None:
+    import subprocess
+    import sys
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "import sys; "
+                "from prompt2langgraph import plan_prompt; "
+                "print(any(name.startswith('langgraph') for name in sys.modules))"
+            ),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.stdout.strip() == "False"
