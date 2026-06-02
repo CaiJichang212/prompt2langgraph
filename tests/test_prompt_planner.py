@@ -18,6 +18,27 @@ def test_prompting_module_exports_request_and_result_types() -> None:
     assert result.raw_text.startswith("{")
 
 
+def test_system_prompt_documents_v04_phase1_json_plan_fields() -> None:
+    from prompt2langgraph.prompting.planner import SYSTEM_PROMPT
+
+    required_fragments = [
+        '"workflow_id"',
+        '"metadata"',
+        '"state_schema"',
+        '"reducers"',
+        '"policies"',
+        '"join_sources"',
+        '"join"',
+        "allowed_models",
+        "allowed_tool_refs",
+        "external_call",
+        "fanout",
+    ]
+
+    for fragment in required_fragments:
+        assert fragment in SYSTEM_PROMPT
+
+
 def test_load_prompt_planner_config_reads_env(monkeypatch) -> None:
     import warnings
 
