@@ -10,6 +10,7 @@ from prompt2langgraph.adapters.skill_dir import analyze_skill_dir
 from prompt2langgraph.compiler.langgraph_py import compile_workflow_to_graph
 from prompt2langgraph.ir.models import EdgeKind, WorkflowSpec
 from prompt2langgraph.prompting.parser import parse_prompt_plan_text
+from prompt2langgraph.prompting.pipeline import plan_prompt, plan_skill
 from prompt2langgraph.prompting.planner import PromptPlanRequest, plan_prompt_to_workflow_spec
 from prompt2langgraph.prompting.skill_planner import SkillPlanRequest, plan_skill_to_workflow_spec
 from prompt2langgraph.registry.executors import ExecutorDefinition, ExecutorRegistry
@@ -547,3 +548,147 @@ def test_prompt_skill_corpus_negative_cases_report_expected_errors(
     )
 
     assert expected in _validation_error_codes(workflow)
+
+
+def test_prompt_skill_corpus_pipeline_offline_metrics_cover_all_sources() -> None:
+    executors = _build_corpus_executor_registry()
+    skill_results = []
+    prompt_results = []
+    json_plan_reports = []
+
+    for case in _skill_to_workflow_cases():
+        skill_dir = CORPUS / str(case["skill_dir"])
+        analysis = analyze_skill_dir(skill_dir)
+        result = plan_skill(
+            SkillPlanRequest(skill_dir=str(skill_dir)),
+            analysis=analysis,
+            model_client=_FakePlanModel(
+                _offline_plan_for_case(case),
+                expected_message_content=_skill_expected_message_content(skill_dir, analysis),
+            ),
+            compile_smoke=True,
+            executor_registry=executors,
+        )
+        skill_results.append(result)
+
+    for case in _prompt_to_workflow_cases():
+        data = _load_json(CORPUS / str(case["prompt_file"]))
+        assert isinstance(data, dict)
+        result = plan_prompt(
+            PromptPlanRequest(prompt=str(data["prompt"])),
+            model_client=_FakePlanModel(
+                _offline_plan_for_case(case),
+                expected_message_content=(str(data["prompt"]),),
+            ),
+            compile_smoke=True,
+            executor_registry=executors,
+        )
+        prompt_results.append(result)
+
+    for case in _json_plan_cases():
+        plan = _load_plan_from_case(case)
+        parsed = parse_prompt_plan_text(json.dumps(plan), source=case["json_plan_file"])
+        workflow = json_plan_to_workflow_spec(
+            parsed,
+            executors=executors,
+            source=case["json_plan_file"],
+        )
+        report = validate_workflow(workflow, executors=executors)
+        assert report.ok is True
+        assert compile_workflow_to_graph(workflow, executors) is not None
+        json_plan_reports.append(report)
+
+    parse_negative = next(
+        case for case in _negative_cases() if case["test_category"] == "parse_negative"
+    )
+    parse_data = _load_json(CORPUS / str(parse_negative["test_file"]))
+    assert isinstance(parse_data, dict)
+    parse_result = plan_prompt(
+        PromptPlanRequest(prompt="negative parse"),
+        model_client=type(
+            "InvalidModel",
+            (),
+            {
+                "invoke": lambda self, messages: type(
+                    "Response", (), {"content": str(parse_data["llm_output"])}
+                )()
+            },
+        )(),
+        compile_smoke=True,
+        executor_registry=executors,
+    )
+    assert parse_result.ok is False
+    assert parse_result.stages["parse"].ok is False
+
+    validation_negative = next(
+        case for case in _negative_cases() if case["test_category"] == "security_negative"
+    )
+    validation_data = _load_json(CORPUS / str(validation_negative["test_file"]))
+    assert isinstance(validation_data, dict)
+    validation_result = plan_prompt(
+        PromptPlanRequest(prompt="negative validation"),
+        model_client=_FakePlanModel(validation_data["json_plan"]),
+        compile_smoke=True,
+        executor_registry=executors,
+        tool_registry=ToolCallableRegistry(),
+    )
+    assert validation_result.ok is False
+    assert validation_result.stages["validation"].ok is False
+    assert validation_negative["expected_error"] in [
+        diagnostic.code for diagnostic in validation_result.diagnostics
+    ]
+
+    for result in [*skill_results, *prompt_results]:
+        assert result.ok is True, result.diagnostics
+        assert result.stages["parse"].ok is True
+        assert result.stages["validation"].ok is True
+        assert result.stages["compile_smoke"].ok is True
+
+    stage_metrics = {
+        "skill": {
+            "parse_success": sum(1 for result in skill_results if result.stages["parse"].ok),
+            "validation_success": sum(
+                1 for result in skill_results if result.stages["validation"].ok
+            ),
+            "compile_smoke_success": sum(
+                1 for result in skill_results if result.stages["compile_smoke"].ok
+            ),
+        },
+        "prompt": {
+            "parse_success": sum(1 for result in prompt_results if result.stages["parse"].ok),
+            "validation_success": sum(
+                1 for result in prompt_results if result.stages["validation"].ok
+            ),
+            "compile_smoke_success": sum(
+                1 for result in prompt_results if result.stages["compile_smoke"].ok
+            ),
+        },
+        "json_plan": {
+            "parse_success": len(json_plan_reports),
+            "validation_success": sum(1 for report in json_plan_reports if report.ok),
+            "compile_smoke_success": len(json_plan_reports),
+        },
+        "negative": {
+            "parse_failure": int(not parse_result.stages["parse"].ok),
+            "validation_failure": int(not validation_result.stages["validation"].ok),
+        },
+    }
+
+    assert stage_metrics == {
+        "skill": {
+            "parse_success": len(_skill_to_workflow_cases()),
+            "validation_success": len(_skill_to_workflow_cases()),
+            "compile_smoke_success": len(_skill_to_workflow_cases()),
+        },
+        "prompt": {
+            "parse_success": len(_prompt_to_workflow_cases()),
+            "validation_success": len(_prompt_to_workflow_cases()),
+            "compile_smoke_success": len(_prompt_to_workflow_cases()),
+        },
+        "json_plan": {
+            "parse_success": len(_json_plan_cases()),
+            "validation_success": len(_json_plan_cases()),
+            "compile_smoke_success": len(_json_plan_cases()),
+        },
+        "negative": {"parse_failure": 1, "validation_failure": 1},
+    }
