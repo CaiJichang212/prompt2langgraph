@@ -1,0 +1,16 @@
+#!/bin/sh
+set -eu
+
+ROOT="$(git rev-parse --show-toplevel)"
+cd "$ROOT"
+
+export UV_CACHE_DIR="${UV_CACHE_DIR:-${TMPDIR:-/tmp}/prompt2langgraph-uv-cache}"
+
+echo "pre-push: ruff check"
+uv run ruff check src tests scripts
+
+echo "pre-push: ruff format check"
+uv run ruff format --check src tests scripts
+
+echo "pre-push: pytest"
+uv run pytest
