@@ -97,7 +97,7 @@ uv run pt2lg run tests/fixtures/fanout_map_reduce.json --input '{"items":["alpha
 - `runtime/retry.py`：`NodeSpec.retry.max_attempts` 的 wrapper retry；仅重试 LLM timeout、LLM API timeout/5xx/server failure 和 tool timeout。`side_effect` retry 必须绑定 `security.idempotency_key`。
 - `runtime/observability.py`：汇总 `RunMetrics.retry_count`、`tool_call_count`、`call_count`、`total_latency_ms` 和 token 摘要。
 - `runtime/audit.py`：写入 `.pt2lg-runtime/audit.log.jsonl` 安全元数据，不记录 secret、完整 payload、API key、完整模型响应或敏感 tool 参数。
-- `runtime/side_effects.py`：以 `(workflow_id, thread_id, idempotency_key)` 记录成功 side-effect 原始 executor output，重复命中时跳过 executor。
+- `runtime/side_effects.py`：以 `(workflow_id, thread_id, node_id, idempotency_key)` 记录成功 side-effect 原始 executor output，重复命中时跳过 executor。
 - `runtime/events.py`：`RunMetrics`、`ExternalCallRecord`（含 latency/status/attempt/category）、`RunResult.external_calls`。
 - `validate/security.py`：`check_external_policy()`、`check_model_whitelist()`、`check_tool_refs()` 策略校验。
 - `visualization/mermaid.py`：Mermaid 渲染。
@@ -121,7 +121,7 @@ uv run pt2lg run tests/fixtures/fanout_map_reduce.json --input '{"items":["alpha
 - 编译失败会清理已知旧产物和 `generated/`，避免误用旧 bundle。
 - `manifest.json` 包含 secret-free `runtime_requirements`，只记录 `model_refs`、`tool_refs`、`checkpoint_required` 和 policy summary。
 - `human_gate` 基于 LangGraph `interrupt()`；CLI bundle 运行的等待态保存在 bundle 下 `.pt2lg-runtime/`。安装可选依赖 `checkpoint-sqlite`（`langgraph-checkpoint-sqlite>=2.0`）后，CLI 使用 `SqliteSaver` 提供更稳定的本地 checkpoint，路径为 `.pt2lg-runtime/<thread_hash>.db`。旧 `.json` runtime 状态文件与新的 `.db` checkpoint 不互相迁移。SQLite checkpoint 默认保留以支持后续 time travel debugging，但 resume 成功后不再自动清理 `.db` 文件。
-- `LANGCHAIN_TOOL` 在 v0.3 仍为 reserved/experimental，不作为默认可执行能力；v0.3 tool path 是受信任 Python tool module + `ExecutorType.PYTHON_CALLABLE`。
+- `LANGCHAIN_TOOL` 在 v0.3 为保留类型，`validate_workflow()` 会直接拒绝执行；v0.3 tool path 是受信任 Python tool module + `ExecutorType.PYTHON_CALLABLE`。
 - `collect_metrics=True` 时，`RunResult.external_calls` 中可获取成功和失败调用的 `ExternalCallRecord`。
 - CLI `run` 命令能根据 workflow 节点类型自动构造 `model_client` 和 `tool_registry`，并可通过 `--tool-module` 注册受信任 Python callable。
 - v0.3 3C engineering gates 覆盖 deterministic compile、bundle load/invoke、dynamic tool、side-effect interrupt/resume 和 offline corpus；这不代表 standalone deployment bundles、secret manager integration、sandboxing、remote audit services 或 LangChain Tool execution 已实现。
@@ -143,6 +143,7 @@ uv run pt2lg run tests/fixtures/fanout_map_reduce.json --input '{"items":["alpha
 
 - 修改行为前先读对应测试，新增行为必须更新 `tests/`。
 - 完成后至少运行 `uv run pytest`。
+- `tests/prompts_skills_test/` 是离线语料目录，不是 pytest 入口；对应验收入口是 `tests/test_prompt_skill_corpus.py`。
 - 若改动涉及编译产物、bundle 读取、resume 或 lockfile 路径，额外跑相关 CLI fixture 回归命令。
 - 若改动涉及 Prompt 入口（`prompting/`、`cli.py plan`、`__init__.py`），额外跑 `tests/test_prompt_planner.py`、`tests/test_prompt_parser.py`、`tests/test_public_api.py`、`tests/test_cli.py`。
 - 若改动涉及 executor dispatch 或策略校验，额外跑 `tests/test_security_policy.py`、`tests/test_integration_execution.py`。

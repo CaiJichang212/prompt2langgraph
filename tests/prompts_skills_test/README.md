@@ -175,6 +175,8 @@ result = parse_prompt_plan_text('This is plain text, not JSON')
 
 ## Running Tests
 
+`tests/prompts_skills_test/` 是离线语料目录，不是 pytest 测试入口。运行本语料的验收测试时，应执行 `tests/test_prompt_skill_corpus.py`。
+
 ```bash
 # Run all tests
 uv run pytest tests/
@@ -185,7 +187,7 @@ uv run pytest tests/test_prompt_planner.py -v
 uv run pytest tests/test_json_plan_adapter.py -v
 uv run pytest tests/test_security_policy.py -v
 
-# Run this corpus
+# Run this corpus (pytest entrypoint)
 uv run pytest tests/test_prompt_skill_corpus.py -v
 ```
 
@@ -197,5 +199,5 @@ uv run pytest tests/test_prompt_skill_corpus.py -v
 - Invalid cases test error handling and validation boundaries.
 - Positive corpus cases assert expected node/edge patterns, validation success, and compiler smoke success.
 - Pipeline metric coverage records offline parse, validation, and compile smoke success for prompt, Skill, and JSON plan positives, plus parse/validation failure stages for negatives.
-- v0.3 runtime tool execution path remains trusted Python tool modules plus `ExecutorType.PYTHON_CALLABLE`; `LANGCHAIN_TOOL` stays reserved/experimental in this corpus as well.
+- v0.3 runtime tool execution path remains trusted Python tool modules plus `ExecutorType.PYTHON_CALLABLE`; `LANGCHAIN_TOOL` is reserved and rejected by validation in this corpus as well.
 - Live LLM output may vary by model and should remain outside the default offline test path.

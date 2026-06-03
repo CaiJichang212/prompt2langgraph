@@ -53,7 +53,7 @@ git config core.hooksPath .githooks
 - `builtin.mock_retriever` 返回 `mock://...` artifact reference，不访问网络
 - `human_gate` 通过 LangGraph interrupt 触发等待态，需要后续 `resume`
 - `side_effect` 节点类型已在 registry 中定义，但是否可通过校验取决于工作流安全策略
-- `LANGCHAIN_TOOL` 在 v0.3 仍为 reserved/experimental，不作为默认可执行能力；v0.3 的 tool 执行路径是受信任 Python tool module + `ExecutorType.PYTHON_CALLABLE`
+- `LANGCHAIN_TOOL` 在 v0.3 为保留类型，`validate_workflow()` 会直接拒绝执行；v0.3 的 tool 执行路径是受信任 Python tool module + `ExecutorType.PYTHON_CALLABLE`
 
 ## 快速开始
 
@@ -219,7 +219,7 @@ uv run pt2lg resume <bundle>/workflow.lock.json --thread-id '<thread_id>' --resu
 
 `NodeSpec.retry.max_attempts` 会在运行时启用轻量 wrapper retry。当前只重试明确的瞬时错误：LLM timeout、LLM API timeout/5xx/server failure，以及 tool timeout。业务校验错误、缺失 model/tool client、未授权或未注册 tool、无效 LLM 输入和 side-effect 拒绝不会默认重试。
 
-`side_effect` 节点只有在声明 `security.idempotency_key` 时才允许 retry。运行时以 `(workflow_id, thread_id, idempotency_key)` 为作用域记录成功的原始 executor output；同一作用域再次执行时直接返回已记录 output，不再次调用 executor。
+`side_effect` 节点只有在声明 `security.idempotency_key` 时才允许 retry。运行时以 `(workflow_id, thread_id, node_id, idempotency_key)` 为作用域记录成功的原始 executor output；同一作用域再次执行时直接返回已记录 output，不再次调用 executor。
 
 当 CLI 或 `run_workflow()` 使用 `.pt2lg-runtime` / `state_store_dir` 时，运行时会写入 `.pt2lg-runtime/audit.log.jsonl`。audit 只包含安全元数据字段，例如 `run_id`、`thread_id`、`workflow_id`、`node_id`、`event_type`、`status`、`latency_ms`、`error_code`、`retry_count` 和 `timestamp`，不记录完整 input payload、完整模型响应、API key、secret 或敏感 tool 参数。
 

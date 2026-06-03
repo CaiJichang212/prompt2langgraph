@@ -57,7 +57,7 @@ Prompt 计划生成能力已落地：通过 `plan_prompt_to_workflow_spec()` 或
 - `manifest.json` 包含 secret-free `runtime_requirements`，只记录 `model_refs`、`tool_refs`、`checkpoint_required` 和 policy summary，不写入 secret 或 secret 名称。
 - `llm/` 顶层模块为 LLM 客户端构造共享入口（`LLMConfig`、`build_llm_client()`、`dict_messages_to_langchain()`），`.env` 配置同时服务于 Prompt 计划生成和运行时 LLM 执行。
 - v0.3 3B 已实现 `NodeSpec.retry.max_attempts` 的 wrapper retry；可重试错误范围保持窄口径：LLM timeout、LLM API timeout/5xx/server failure、tool timeout。
-- `side_effect` retry 必须声明 `security.idempotency_key`；成功副作用以 `(workflow_id, thread_id, idempotency_key)` 为作用域记录原始 executor output，重复命中时不再次调用 executor。
+- `side_effect` retry 必须声明 `security.idempotency_key`；成功副作用以 `(workflow_id, thread_id, node_id, idempotency_key)` 为作用域记录原始 executor output，重复命中时不再次调用 executor。
 - `collect_metrics=True` 时，`RunResult.external_calls` 中可获取成功和失败调用的 `ExternalCallRecord`，包含 latency、status、attempt、category；`RunMetrics` 汇总 retry/tool/call/latency。
 - 使用 `state_store_dir` 或 CLI `.pt2lg-runtime` 时会写入安全 audit 元数据到 `.pt2lg-runtime/audit.log.jsonl`，不得包含 secret、完整 payload、API key、完整模型响应或敏感 tool 参数。
 - CLI `run` 命令能根据 workflow 节点类型自动构造 `model_client` 和 `tool_registry`，并可通过 `--tool-module` 注册受信任 Python callable。
@@ -65,7 +65,7 @@ Prompt 计划生成能力已落地：通过 `plan_prompt_to_workflow_spec()` 或
 - `side_effect` 节点默认需要审批，通过 `pt2lg resume --resume '{"decision":"approved"}'` 恢复执行。
 - 3C 已补齐最小 runtime config bundle；不要把当前 bundle 描述扩展为 standalone deployment bundle、secret manager、sandbox 或远程审计服务。
 - 策略约束在 `validate_workflow()` 阶段即被检查：`external_call` 开关、`allowed_models` 白名单、`allowed_tool_refs` 白名单。
-- `LANGCHAIN_TOOL` 在 v0.3 仍为 reserved/experimental，不作为默认可执行能力；v0.3 tool path 是受信任 Python tool module + `ExecutorType.PYTHON_CALLABLE`。
+- `LANGCHAIN_TOOL` 在 v0.3 为保留类型，`validate_workflow()` 会直接拒绝执行；v0.3 tool path 是受信任 Python tool module + `ExecutorType.PYTHON_CALLABLE`。
 - 3C engineering gates 覆盖 deterministic compile、bundle load/invoke、dynamic tool、side-effect interrupt/resume 和 offline corpus；这不代表项目已提供 standalone deployment bundles、secret manager integration、sandboxing、remote audit services 或 LangChain Tool execution。
 
 ## Do & Don't
@@ -135,6 +135,9 @@ uv run ruff format src/prompt2langgraph/compiler/codegen.py
 
 # 运行单个测试文件
 uv run pytest tests/test_compile_flow.py -v
+
+# 运行离线语料 pytest 入口（注意：tests/prompts_skills_test/ 是语料目录，不是 pytest 入口）
+uv run pytest tests/test_prompt_skill_corpus.py -v
 
 # 运行单个测试函数
 uv run pytest tests/test_compile_flow.py::test_compile_linear -v
