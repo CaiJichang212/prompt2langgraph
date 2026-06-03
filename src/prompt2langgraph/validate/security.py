@@ -7,6 +7,7 @@ from prompt2langgraph.diagnostics.codes import (
     E_SEC_014,
     E_SEC_015,
     E_SIDE_008,
+    W_SEC_016,
     W_SIDE_001,
 )
 from prompt2langgraph.diagnostics.report import Diagnostic, DiagnosticLocation
@@ -123,6 +124,27 @@ def check_tool_refs(
                     location=DiagnosticLocation(node_id=node.id),
                 )
             )
+    return diagnostics
+
+
+def check_langchain_tool_reserved(workflow: WorkflowSpec) -> list[Diagnostic]:
+    """检查：LANGCHAIN_TOOL 节点在 v0.3 仅保留为 reserved/experimental warning。"""
+    diagnostics: list[Diagnostic] = []
+    for node in workflow.nodes:
+        if node.executor.type is not ExecutorType.LANGCHAIN_TOOL:
+            continue
+        diagnostics.append(
+            Diagnostic(
+                code=W_SEC_016,
+                severity="warning",
+                message="ExecutorType.LANGCHAIN_TOOL is reserved/experimental in v0.3",
+                location=DiagnosticLocation(node_id=node.id),
+                hint=(
+                    "use trusted Python tool modules with ExecutorType.PYTHON_CALLABLE "
+                    "for executable tool paths"
+                ),
+            )
+        )
     return diagnostics
 
 
