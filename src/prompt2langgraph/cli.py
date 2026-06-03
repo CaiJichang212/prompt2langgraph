@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import hashlib
+import importlib
 import json
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -31,6 +33,13 @@ from prompt2langgraph.visualization.mermaid import workflow_to_mermaid
 app = typer.Typer(no_args_is_help=True)
 COMPILE_OUT_OPTION = typer.Option(Path("build"), "--out")
 RUN_INPUT_OPTION = typer.Option(..., "--input")
+
+
+@dataclass(frozen=True)
+class RuntimeClients:
+    model_client: Any | None
+    tool_registry: Any | None
+    executor_registry: Any
 
 
 @app.command()
@@ -78,11 +87,39 @@ def compile(
 def run(
     workflow_json: Path,
     input: Path = RUN_INPUT_OPTION,
+    tool_module: list[str] = typer.Option([], "--tool-module"),
     json_output: bool = typer.Option(False, "--json", help="Emit a machine-readable result."),
 ) -> None:
     """Run a Workflow IR or simplified JSON plan with a JSON input payload."""
 
-    workflow_or_report = _load_workflow_source_or_report(workflow_json)
+    loaded_tool_registry = _load_tool_modules(tool_module)
+    if isinstance(loaded_tool_registry, ValidationReport):
+        result_payload = {
+            "status": "failed",
+            "output": {},
+            "diagnostics": [
+                item.model_dump(mode="json") for item in loaded_tool_registry.diagnostics
+            ],
+        }
+        _emit(result_payload, json_output, "run failed")
+        raise typer.Exit(1)
+    if not tool_module:
+        loaded_tool_registry = None
+    executor_registry = _executor_registry_with_tools(loaded_tool_registry)
+    if isinstance(executor_registry, ValidationReport):
+        result_payload = {
+            "status": "failed",
+            "output": {},
+            "diagnostics": [
+                item.model_dump(mode="json") for item in executor_registry.diagnostics
+            ],
+        }
+        _emit(result_payload, json_output, "run failed")
+        raise typer.Exit(1)
+
+    workflow_or_report = _load_workflow_source_or_report(
+        workflow_json, executors=executor_registry
+    )
     if isinstance(workflow_or_report, ValidationReport):
         result_payload = {
             "status": "failed",
@@ -110,7 +147,11 @@ def run(
     from prompt2langgraph.ir.normalize import normalize_workflow
     from prompt2langgraph.runtime.runner import run_workflow
 
-    model_client, tool_registry = _build_runtime_clients(workflow_or_report)
+    clients = _build_runtime_clients(
+        workflow_or_report,
+        loaded_tool_registry=loaded_tool_registry,
+        executor_registry=executor_registry,
+    )
 
     thread_id = f"cli_{uuid4().hex}"
     # Compute thread_key using the same method as _thread_key in runner.py
@@ -134,8 +175,9 @@ def run(
         workflow_or_report,
         input_payload,
         thread_id=thread_id,
-        model_client=model_client,
-        tool_registry=tool_registry,
+        executors=clients.executor_registry,
+        model_client=clients.model_client,
+        tool_registry=clients.tool_registry,
         state_store_dir=_runtime_state_store_dir(workflow_json),
         checkpointer=checkpointer,
     )
@@ -436,6 +478,9 @@ def _emit_planning_result(
         payload["repair_attempts"] = [
             attempt.model_dump(mode="json") for attempt in result.repair_attempts
         ]
+    tool_readiness = getattr(result, "tool_readiness", None)
+    if tool_readiness is not None:
+        payload["tool_readiness"] = tool_readiness.model_dump(mode="json")
     if include_validation:
         payload["validation"] = _planning_validation_payload(result)
     if include_compile_smoke:
@@ -488,11 +533,39 @@ def resume(
     workflow_json: Path,
     thread_id: str = typer.Option(..., "--thread-id"),
     resume: str = typer.Option(..., "--resume"),
+    tool_module: list[str] = typer.Option([], "--tool-module"),
     json_output: bool = typer.Option(False, "--json", help="Emit a machine-readable result."),
 ) -> None:
     """Resume a waiting Workflow IR or compiled bundle."""
 
-    workflow_or_report = _load_workflow_source_or_report(workflow_json)
+    loaded_tool_registry = _load_tool_modules(tool_module)
+    if isinstance(loaded_tool_registry, ValidationReport):
+        result_payload = {
+            "status": "failed",
+            "output": {},
+            "diagnostics": [
+                item.model_dump(mode="json") for item in loaded_tool_registry.diagnostics
+            ],
+        }
+        _emit(result_payload, json_output, "resume failed")
+        raise typer.Exit(1)
+    if not tool_module:
+        loaded_tool_registry = None
+    executor_registry = _executor_registry_with_tools(loaded_tool_registry)
+    if isinstance(executor_registry, ValidationReport):
+        result_payload = {
+            "status": "failed",
+            "output": {},
+            "diagnostics": [
+                item.model_dump(mode="json") for item in executor_registry.diagnostics
+            ],
+        }
+        _emit(result_payload, json_output, "resume failed")
+        raise typer.Exit(1)
+
+    workflow_or_report = _load_workflow_source_or_report(
+        workflow_json, executors=executor_registry
+    )
     if isinstance(workflow_or_report, ValidationReport):
         result_payload = {
             "status": "failed",
@@ -509,7 +582,11 @@ def resume(
     from prompt2langgraph.ir.normalize import normalize_workflow
     from prompt2langgraph.runtime.runner import run_workflow
 
-    model_client, tool_registry = _build_runtime_clients(workflow_or_report)
+    clients = _build_runtime_clients(
+        workflow_or_report,
+        loaded_tool_registry=loaded_tool_registry,
+        executor_registry=executor_registry,
+    )
 
     # Compute thread_key using the same method as _thread_key in runner.py
     workflow_hash = sha256_canonical_json(
@@ -533,8 +610,9 @@ def resume(
         {},
         thread_id=thread_id,
         resume_payload=resume_payload,
-        model_client=model_client,
-        tool_registry=tool_registry,
+        executors=clients.executor_registry,
+        model_client=clients.model_client,
+        tool_registry=clients.tool_registry,
         state_store_dir=_runtime_state_store_dir(workflow_json),
         checkpointer=checkpointer,
     )
@@ -543,17 +621,111 @@ def resume(
         raise typer.Exit(1)
 
 
-def _build_runtime_clients(workflow: WorkflowSpec) -> tuple[Any, Any]:
-    """根据 workflow 节点类型构造 model_client 和 tool_registry。
+def _load_tool_modules(
+    module_names: list[str],
+) -> Any | ValidationReport:
+    from prompt2langgraph.registry.tool_executor import ToolCallableRegistry
 
-    注意：CLI 自动构造的 tool_registry 是一个空 ToolCallableRegistry()。
-    若 workflow 包含 PYTHON_CALLABLE 节点，需通过 Python API 注入已注册
-    callable 的 tool_registry，否则运行时校验会报 E_SEC_015。
-    """
+    class _CliToolCallableRegistry(ToolCallableRegistry):
+        def register(self, ref: str, callable: Any) -> None:
+            if self.has(ref):
+                raise ValueError(f'tool ref "{ref}" is already registered')
+            super().register(ref, callable)
+
+    registry = _CliToolCallableRegistry()
+    for module_name in module_names:
+        try:
+            module = importlib.import_module(module_name)
+        except Exception as exc:
+            return ValidationReport(
+                diagnostics=[
+                    Diagnostic(
+                        code=E_RUNTIME_010,
+                        severity="error",
+                        message=f'failed to import tool module "{module_name}"',
+                        location=DiagnosticLocation(source=module_name),
+                        hint=str(exc),
+                    )
+                ]
+            )
+        register_tools = getattr(module, "register_tools", None)
+        if not callable(register_tools):
+            return ValidationReport(
+                diagnostics=[
+                    Diagnostic(
+                        code=E_RUNTIME_010,
+                        severity="error",
+                        message=(
+                            f'tool module "{module_name}" must define '
+                            "register_tools(registry)"
+                        ),
+                        location=DiagnosticLocation(source=module_name),
+                    )
+                ]
+            )
+        try:
+            register_tools(registry)
+        except Exception as exc:
+            return ValidationReport(
+                diagnostics=[
+                    Diagnostic(
+                        code=E_RUNTIME_010,
+                        severity="error",
+                        message=(
+                            f'tool module "{module_name}" failed while registering tools'
+                        ),
+                        location=DiagnosticLocation(source=module_name),
+                        hint=str(exc),
+                    )
+                ]
+            )
+    return registry
+
+
+def _executor_registry_with_tools(tool_registry: Any | None) -> Any | ValidationReport:
     from prompt2langgraph.ir.models import ExecutorType
+    from prompt2langgraph.registry.builtins import builtin_executor_registry
+    from prompt2langgraph.registry.executors import ExecutorDefinition
+
+    registry = builtin_executor_registry()
+    if tool_registry is None:
+        return registry
+    for ref in tool_registry.refs():
+        if registry.has(ref):
+            return ValidationReport(
+                diagnostics=[
+                    Diagnostic(
+                        code=E_RUNTIME_010,
+                        severity="error",
+                        message=f'tool ref "{ref}" cannot override an existing executor ref',
+                        location=DiagnosticLocation(source=ref),
+                    )
+                ]
+            )
+        registry.register(
+            ExecutorDefinition(ref=ref, type=ExecutorType.PYTHON_CALLABLE, dynamic=True)
+        )
+    return registry
+
+
+def _build_runtime_clients(
+    workflow: WorkflowSpec,
+    *,
+    loaded_tool_registry: Any | None = None,
+    executor_registry: Any | None = None,
+) -> RuntimeClients:
+    """Build runtime clients for CLI run/resume."""
+    from prompt2langgraph.ir.models import ExecutorType
+    from prompt2langgraph.registry.tool_executor import ToolCallableRegistry
 
     model_client = None
-    tool_registry = None
+    tool_registry = loaded_tool_registry
+    selected_executor_registry = executor_registry or _executor_registry_with_tools(tool_registry)
+    if isinstance(selected_executor_registry, ValidationReport):
+        message = "; ".join(
+            diagnostic.message for diagnostic in selected_executor_registry.diagnostics
+        )
+        raise RuntimeError(message or "failed to build executor registry")
 
     has_llm_node = any(n.executor.type is ExecutorType.LLM for n in workflow.nodes)
     has_tool_node = any(n.executor.type is ExecutorType.PYTHON_CALLABLE for n in workflow.nodes)
@@ -563,15 +735,21 @@ def _build_runtime_clients(workflow: WorkflowSpec) -> tuple[Any, Any]:
 
         model_client = build_llm_client()
 
-    if has_tool_node:
-        from prompt2langgraph.registry.tool_executor import ToolCallableRegistry
-
+    if has_tool_node and tool_registry is None:
         tool_registry = ToolCallableRegistry()
 
-    return model_client, tool_registry
+    return RuntimeClients(
+        model_client=model_client,
+        tool_registry=tool_registry,
+        executor_registry=selected_executor_registry,
+    )
 
 
-def _load_workflow_or_report(path: Path) -> WorkflowSpec | ValidationReport:
+def _load_workflow_or_report(
+    path: Path,
+    *,
+    executors: Any | None = None,
+) -> WorkflowSpec | ValidationReport:
     raw = _load_json(path)
     if isinstance(raw, ValidationReport):
         return raw
@@ -579,7 +757,7 @@ def _load_workflow_or_report(path: Path) -> WorkflowSpec | ValidationReport:
         if isinstance(raw, dict) and "schema_version" in raw:
             return IRAdapter().parse(raw, source=str(path))
         if isinstance(raw, dict):
-            return JSONPlanAdapter().parse(raw, source=str(path))
+            return JSONPlanAdapter(executors=executors).parse(raw, source=str(path))
     except ValidationError as exc:
         return ValidationReport(
             diagnostics=[
@@ -637,7 +815,11 @@ def _load_workflow_or_report(path: Path) -> WorkflowSpec | ValidationReport:
     )
 
 
-def _load_workflow_source_or_report(path: Path) -> WorkflowSpec | ValidationReport:
+def _load_workflow_source_or_report(
+    path: Path,
+    *,
+    executors: Any | None = None,
+) -> WorkflowSpec | ValidationReport:
     if path.name == "workflow.lock.json":
         try:
             from prompt2langgraph.runtime.artifacts import load_bundle_workflow
@@ -655,7 +837,7 @@ def _load_workflow_source_or_report(path: Path) -> WorkflowSpec | ValidationRepo
                     )
                 ]
             )
-    return _load_workflow_or_report(path)
+    return _load_workflow_or_report(path, executors=executors)
 
 
 def _load_json(path: Path) -> dict[str, Any] | ValidationReport:
