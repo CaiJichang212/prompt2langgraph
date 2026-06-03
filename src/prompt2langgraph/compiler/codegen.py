@@ -159,12 +159,24 @@ from __future__ import annotations
 
 import argparse
 import json
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from prompt2langgraph.compiler.langgraph_py import compile_workflow_to_graph
-from prompt2langgraph.ir.models import WorkflowSpec
+from prompt2langgraph.ir.models import ExecutorType, PolicySpec, WorkflowSpec
 from prompt2langgraph.registry.builtins import builtin_executor_registry
+from prompt2langgraph.registry.tool_executor import ToolCallableRegistry
+from prompt2langgraph.validate.validator import validate_workflow
+
+
+@dataclass(frozen=True)
+class RuntimeConfig:
+    executor_registry: Any | None = None
+    model_client: Any | None = None
+    tool_registry: Any | None = None
+    checkpointer: Any | None = None
+    policies: PolicySpec | None = None
 
 
 def load_workflow() -> WorkflowSpec:
@@ -173,18 +185,62 @@ def load_workflow() -> WorkflowSpec:
     return WorkflowSpec.model_validate(data)
 
 
-def build_graph():
-    return compile_workflow_to_graph(load_workflow(), builtin_executor_registry())
+def build_graph(config: RuntimeConfig | None = None):
+    selected = config or RuntimeConfig()
+    workflow = load_workflow()
+    if selected.policies is not None and not isinstance(selected.policies, PolicySpec):
+        raise RuntimeError(
+            "RuntimeConfig.policies must be a complete PolicySpec override"
+        )
+    effective_workflow = (
+        workflow.model_copy(update={"policies": selected.policies})
+        if selected.policies is not None
+        else workflow
+    )
+    executors = selected.executor_registry or builtin_executor_registry()
+    tool_registry = selected.tool_registry
+    has_tool_node = any(
+        node.executor.type is ExecutorType.PYTHON_CALLABLE
+        for node in effective_workflow.nodes
+    )
+    if tool_registry is None and has_tool_node:
+        tool_registry = ToolCallableRegistry()
+    report = validate_workflow(
+        effective_workflow,
+        executors=executors,
+        tool_registry=tool_registry,
+    )
+    if not report.ok:
+        diagnostics = [item.model_dump(mode="json") for item in report.diagnostics]
+        raise RuntimeError(
+            "generated bundle runtime config validation failed: "
+            + json.dumps(diagnostics, ensure_ascii=False, sort_keys=True)
+        )
+    return compile_workflow_to_graph(
+        effective_workflow,
+        executors,
+        checkpointer=selected.checkpointer,
+        policies=selected.policies,
+        model_client=selected.model_client,
+        tool_registry=tool_registry,
+    )
 
 
 def compile_graph():
     return build_graph()
 
 
-def invoke_graph(input_payload: dict[str, Any] | None = None) -> dict[str, Any]:
+def invoke(
+    input_payload: dict[str, Any] | None = None,
+    config: RuntimeConfig | None = None,
+) -> dict[str, Any]:
     workflow = load_workflow()
-    graph = compile_workflow_to_graph(workflow, builtin_executor_registry())
+    graph = build_graph(config)
     return graph.invoke(input_payload if input_payload is not None else sample_input(workflow))
+
+
+def invoke_graph(input_payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    return invoke(input_payload)
 
 
 def sample_input(workflow: WorkflowSpec | None = None) -> dict[str, Any]:
@@ -226,7 +282,7 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--input", type=Path, help="JSON file containing workflow input state.")
     args = parser.parse_args(argv)
     input_payload = _load_input(args.input) if args.input is not None else None
-    state = invoke_graph(input_payload)
+    state = invoke(input_payload)
     print(json.dumps(state, ensure_ascii=False, indent=2, sort_keys=True, default=str))
 
 
