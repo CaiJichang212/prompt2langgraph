@@ -221,6 +221,125 @@ def test_non_fanout_append_reducer_preserves_scalar_output() -> None:
     assert result["answer"] == "seed:Answer: hello"
 
 
+def test_node_wrapper_retries_retryable_executor_error() -> None:
+    calls: list[int] = []
+    retries: list[tuple[str, int]] = []
+
+    def flaky_handler(inputs: dict, params: dict) -> dict:
+        calls.append(len(calls) + 1)
+        if len(calls) == 1:
+            raise ExecutorError("E_LLM_001", "LLM call timed out")
+        return {"answer": f"Answer: {inputs['question']}"}
+
+    workflow = WorkflowSpec.model_validate(
+        {
+            "schema_version": "0.1",
+            "workflow_id": "retryable_node",
+            "name": "Retryable Node",
+            "entrypoint": "compose",
+            "state_schema": {
+                "input": {"question": {"type": "string"}},
+                "output": {"answer": {"type": "string"}},
+                "channels": {"question": {"type": "string"}, "answer": {"type": "string"}},
+                "private": {},
+                "reducers": {},
+            },
+            "nodes": [
+                {
+                    "id": "compose",
+                    "kind": "transform",
+                    "executor": {"ref": "test.flaky", "type": "builtin"},
+                    "inputs": {"question": {"state_key": "question"}},
+                    "outputs": {"answer": {"state_key": "answer"}},
+                    "retry": {"max_attempts": 2},
+                    "params": {},
+                }
+            ],
+            "edges": [],
+            "policies": {},
+            "metadata": {},
+        }
+    )
+    registry = ExecutorRegistry(
+        [
+            ExecutorDefinition(
+                ref="test.flaky",
+                type=ExecutorType.BUILTIN,
+                input_schema={"question": TypeSpec(type=TypeName.STRING)},
+                output_schema={"answer": TypeSpec(type=TypeName.STRING)},
+                handler=flaky_handler,
+            )
+        ]
+    )
+
+    graph = compile_workflow_to_graph(
+        workflow,
+        registry,
+        retry_sink=lambda node_id, attempt: retries.append((node_id, attempt)),
+    )
+    result = graph.invoke({"question": "hello"})
+
+    assert result["answer"] == "Answer: hello"
+    assert calls == [1, 2]
+    assert retries == [("compose", 2)]
+
+
+def test_node_wrapper_does_not_retry_non_retryable_executor_error() -> None:
+    calls: list[int] = []
+
+    def invalid_handler(inputs: dict, params: dict) -> dict:
+        calls.append(len(calls) + 1)
+        raise ExecutorError("E_LLM_003", "inputs must contain messages")
+
+    workflow = WorkflowSpec.model_validate(
+        {
+            "schema_version": "0.1",
+            "workflow_id": "non_retryable_node",
+            "name": "Non Retryable Node",
+            "entrypoint": "compose",
+            "state_schema": {
+                "input": {"question": {"type": "string"}},
+                "output": {"answer": {"type": "string"}},
+                "channels": {"question": {"type": "string"}, "answer": {"type": "string"}},
+                "private": {},
+                "reducers": {},
+            },
+            "nodes": [
+                {
+                    "id": "compose",
+                    "kind": "transform",
+                    "executor": {"ref": "test.invalid", "type": "builtin"},
+                    "inputs": {"question": {"state_key": "question"}},
+                    "outputs": {"answer": {"state_key": "answer"}},
+                    "retry": {"max_attempts": 3},
+                    "params": {},
+                }
+            ],
+            "edges": [],
+            "policies": {},
+            "metadata": {},
+        }
+    )
+    registry = ExecutorRegistry(
+        [
+            ExecutorDefinition(
+                ref="test.invalid",
+                type=ExecutorType.BUILTIN,
+                input_schema={"question": TypeSpec(type=TypeName.STRING)},
+                output_schema={"answer": TypeSpec(type=TypeName.STRING)},
+                handler=invalid_handler,
+            )
+        ]
+    )
+
+    graph = compile_workflow_to_graph(workflow, registry)
+    with pytest.raises(ExecutorError) as exc_info:
+        graph.invoke({"question": "hello"})
+
+    assert exc_info.value.code == "E_LLM_003"
+    assert calls == [1]
+
+
 # --- Dynamic Executor Dispatch tests ---
 
 
@@ -478,13 +597,8 @@ def test_dynamic_tool_node_raises_executor_error_when_no_tool_registry() -> None
     assert exc_info.value.node_id == "call_tool"
 
 
-def test_collect_metrics_error_sink_and_metrics_sink_both_called_on_error() -> None:
-    """Only error_sink is called for failed ExecutorError when both sinks exist.
-
-    metrics_sink is skipped when error_sink is present to avoid double-counting:
-    the runner's _error_sink wrapper already converts the error to an ExternalCallRecord.
-    metrics_sink is only used as a standalone fallback when error_sink is None.
-    """
+def test_collect_metrics_dynamic_tool_failure_uses_metrics_sink_without_error_sink() -> None:
+    """Dynamic external failures are recorded once by metrics_sink with latency metadata."""
     from prompt2langgraph.registry.executors import ExecutorError
 
     failed_calls: list = []
@@ -531,10 +645,11 @@ def test_collect_metrics_error_sink_and_metrics_sink_both_called_on_error() -> N
     with pytest.raises(ExecutorError):
         graph.invoke({"question": "hello"})
 
-    # error_sink received the error
-    assert len(error_calls) == 1
-    # metrics_sink should NOT be called when error_sink is present (avoid double-counting)
-    assert len(failed_calls) == 0
+    assert error_calls == []
+    assert len(failed_calls) == 1
+    assert failed_calls[0].status == "failed"
+    assert failed_calls[0].category == "tool"
+    assert failed_calls[0].latency_ms is not None
 
 
 def test_collect_metrics_success_record_emitted() -> None:
