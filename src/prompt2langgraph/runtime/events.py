@@ -40,6 +40,8 @@ class ExternalCallRecord(BaseModel):
     token_count: int | None = None
     status: Literal["succeeded", "failed"]
     error_code: str | None = None
+    attempt: int = 1
+    category: Literal["llm", "tool", "side_effect", "external"] = "external"
 
 
 class RunResult(BaseModel):
