@@ -1,5 +1,6 @@
 import importlib.util
 import json
+import sys
 from dataclasses import replace
 from pathlib import Path
 from typing import Annotated, get_args, get_origin
@@ -35,8 +36,43 @@ def import_generated_module(path: Path, module_name: str):
     assert spec is not None
     assert spec.loader is not None
     module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
     spec.loader.exec_module(module)
     return module
+
+
+def tool_workflow() -> WorkflowSpec:
+    return WorkflowSpec.model_validate(
+        {
+            "schema_version": "0.1",
+            "workflow_id": "bundle_tool_smoke",
+            "name": "Bundle Tool Smoke",
+            "entrypoint": "call_tool",
+            "state_schema": {
+                "input": {"question": {"type": "string"}},
+                "output": {"answer": {"type": "string"}},
+                "channels": {
+                    "question": {"type": "string"},
+                    "answer": {"type": "string"},
+                },
+                "private": {},
+                "reducers": {},
+            },
+            "nodes": [
+                {
+                    "id": "call_tool",
+                    "kind": "tool",
+                    "executor": {"ref": "fake.upper", "type": "python_callable"},
+                    "inputs": {"question": {"state_key": "question"}},
+                    "outputs": {"answer": {"state_key": "answer"}},
+                    "params": {},
+                }
+            ],
+            "edges": [],
+            "policies": {"allowed_tool_refs": ["fake.upper"]},
+            "metadata": {},
+        }
+    )
 
 
 def test_canonical_json_and_hash_are_deterministic() -> None:
@@ -102,6 +138,24 @@ def test_artifact_builders_emit_expected_minimal_shapes() -> None:
             }
         },
         "artifact_policy": {"large_objects": "artifact_ref"},
+        "runtime_requirements": {
+            "model_refs": [],
+            "tool_refs": [],
+            "checkpoint_required": False,
+            "policy": {
+                "external_call": False,
+                "allow_side_effects": False,
+                "allowed_models": [],
+                "allowed_tool_refs": [],
+            },
+            "policy_overrides_supported": [
+                "allow_side_effects",
+                "allowed_models",
+                "allowed_tool_refs",
+                "default_timeout_s",
+                "external_call",
+            ],
+        },
     }
 
     assert report["ok"] is True
@@ -481,6 +535,52 @@ def test_manifest_binds_custom_executor_registry() -> None:
     assert "API_KEY" not in json.dumps(manifest["executor_bindings"])
 
 
+def test_manifest_contains_secret_free_runtime_requirements() -> None:
+    workflow = load_workflow("linear_llm.json")
+
+    manifest = build_manifest(workflow)
+
+    assert manifest["runtime_requirements"] == {
+        "model_refs": [],
+        "tool_refs": [],
+        "checkpoint_required": False,
+        "policy": {
+            "external_call": False,
+            "allow_side_effects": False,
+            "allowed_models": [],
+            "allowed_tool_refs": [],
+        },
+        "policy_overrides_supported": [
+            "allow_side_effects",
+            "allowed_models",
+            "allowed_tool_refs",
+            "default_timeout_s",
+            "external_call",
+        ],
+    }
+    assert "secret" not in json.dumps(manifest["runtime_requirements"]).lower()
+
+
+def test_manifest_runtime_requirements_reports_dynamic_tool_refs() -> None:
+    workflow = tool_workflow()
+    executor_registry = ExecutorRegistry(
+        [
+            ExecutorDefinition(
+                ref="fake.upper",
+                type=ExecutorType.PYTHON_CALLABLE,
+                dynamic=True,
+            )
+        ]
+    )
+
+    manifest = build_manifest(workflow, executor_registry=executor_registry)
+
+    assert manifest["runtime_requirements"]["tool_refs"] == ["fake.upper"]
+    assert manifest["runtime_requirements"]["model_refs"] == []
+    assert manifest["runtime_requirements"]["checkpoint_required"] is False
+    assert manifest["runtime_requirements"]["policy"]["allowed_tool_refs"] == ["fake.upper"]
+
+
 def test_bundle_paths_load_workflow_from_lockfile(tmp_path: Path) -> None:
     workflow = load_workflow("linear_llm.json")
     output_dir = tmp_path / workflow.workflow_id
@@ -514,7 +614,10 @@ def test_emit_generated_bundle_writes_importable_graph_module(tmp_path: Path) ->
     assert (generated / "nodes.py").exists()
     graph_py = generated / "graph.py"
     assert graph_py.exists()
-    assert "def build_graph()" in graph_py.read_text(encoding="utf-8")
+    assert "class RuntimeConfig" in graph_py.read_text(encoding="utf-8")
+    assert "def build_graph(config: RuntimeConfig | None = None)" in graph_py.read_text(
+        encoding="utf-8"
+    )
     assert "def compile_graph()" in graph_py.read_text(encoding="utf-8")
 
     state_module = import_generated_module(generated / "state.py", "generated_state")
@@ -536,6 +639,169 @@ def test_emit_generated_bundle_writes_importable_graph_module(tmp_path: Path) ->
     assert callable(graph_module.compile_graph)
 
 
+def test_generated_graph_runtime_config_supports_clients_and_old_entrypoints(
+    tmp_path: Path,
+) -> None:
+    workflow = load_workflow("linear_llm.json")
+    from prompt2langgraph.compiler.codegen import emit_generated_bundle
+
+    (tmp_path / "workflow.ir.json").write_text(
+        json.dumps(workflow.model_dump(mode="json"), ensure_ascii=False),
+        encoding="utf-8",
+    )
+    generated = emit_generated_bundle(workflow, tmp_path)
+    graph_module = import_generated_module(generated / "graph.py", "generated_graph_config")
+
+    assert callable(graph_module.RuntimeConfig)
+    assert callable(graph_module.build_graph)
+    assert callable(graph_module.compile_graph)
+    assert callable(graph_module.invoke)
+    assert callable(graph_module.invoke_graph)
+
+    graph = graph_module.build_graph(graph_module.RuntimeConfig())
+    assert graph is not None
+    assert graph_module.compile_graph() is not None
+    assert graph_module.invoke({"question": "hello"}) == {
+        "question": "hello",
+        "answer": "Answer: hello",
+    }
+    assert graph_module.invoke_graph({"question": "hello"}) == {
+        "question": "hello",
+        "answer": "Answer: hello",
+    }
+
+
+def test_generated_graph_runtime_config_runs_dynamic_tool_workflow(
+    tmp_path: Path,
+) -> None:
+    workflow = tool_workflow()
+    from prompt2langgraph.compiler.codegen import emit_generated_bundle
+    from prompt2langgraph.registry.tool_executor import ToolCallableRegistry
+
+    (tmp_path / "workflow.ir.json").write_text(
+        json.dumps(workflow.model_dump(mode="json"), ensure_ascii=False),
+        encoding="utf-8",
+    )
+    generated = emit_generated_bundle(workflow, tmp_path)
+    graph_module = import_generated_module(generated / "graph.py", "generated_graph_tool_config")
+    executor_registry = ExecutorRegistry(
+        [
+            ExecutorDefinition(
+                ref="fake.upper",
+                type=ExecutorType.PYTHON_CALLABLE,
+                dynamic=True,
+            )
+        ]
+    )
+    tools = ToolCallableRegistry()
+    tools.register("fake.upper", lambda inputs, params: {"answer": inputs["question"].upper()})
+
+    result = graph_module.invoke(
+        {"question": "hello"},
+        graph_module.RuntimeConfig(
+            executor_registry=executor_registry,
+            tool_registry=tools,
+        ),
+    )
+
+    assert result == {"question": "hello", "answer": "HELLO"}
+
+
+def test_generated_graph_runtime_config_rejects_unauthorized_tool_policy(
+    tmp_path: Path,
+) -> None:
+    workflow = tool_workflow()
+    workflow.policies.allowed_tool_refs = []
+    from prompt2langgraph.compiler.codegen import emit_generated_bundle
+    from prompt2langgraph.registry.tool_executor import ToolCallableRegistry
+
+    (tmp_path / "workflow.ir.json").write_text(
+        json.dumps(workflow.model_dump(mode="json"), ensure_ascii=False),
+        encoding="utf-8",
+    )
+    generated = emit_generated_bundle(workflow, tmp_path)
+    graph_module = import_generated_module(
+        generated / "graph.py",
+        "generated_graph_unauthorized_tool_config",
+    )
+    executor_registry = ExecutorRegistry(
+        [
+            ExecutorDefinition(
+                ref="fake.upper",
+                type=ExecutorType.PYTHON_CALLABLE,
+                dynamic=True,
+            )
+        ]
+    )
+    tools = ToolCallableRegistry()
+    tools.register("fake.upper", lambda inputs, params: {"answer": inputs["question"].upper()})
+
+    with pytest.raises(RuntimeError, match="runtime config validation failed"):
+        graph_module.build_graph(
+            graph_module.RuntimeConfig(
+                executor_registry=executor_registry,
+                tool_registry=tools,
+            )
+        )
+
+
+def test_generated_graph_runtime_config_rejects_non_policyspec_override(
+    tmp_path: Path,
+) -> None:
+    workflow = load_workflow("linear_llm.json")
+    from prompt2langgraph.compiler.codegen import emit_generated_bundle
+
+    (tmp_path / "workflow.ir.json").write_text(
+        json.dumps(workflow.model_dump(mode="json"), ensure_ascii=False),
+        encoding="utf-8",
+    )
+    generated = emit_generated_bundle(workflow, tmp_path)
+    graph_module = import_generated_module(
+        generated / "graph.py",
+        "generated_graph_invalid_policy_override",
+    )
+
+    with pytest.raises(RuntimeError, match="RuntimeConfig.policies must be a complete PolicySpec"):
+        graph_module.build_graph(
+            graph_module.RuntimeConfig(
+                policies={"allowed_tool_refs": ["fake.upper"]},
+            )
+        )
+
+
+def test_generated_graph_runtime_config_requires_tool_registry_at_build_time(
+    tmp_path: Path,
+) -> None:
+    workflow = tool_workflow()
+    from prompt2langgraph.compiler.codegen import emit_generated_bundle
+
+    (tmp_path / "workflow.ir.json").write_text(
+        json.dumps(workflow.model_dump(mode="json"), ensure_ascii=False),
+        encoding="utf-8",
+    )
+    generated = emit_generated_bundle(workflow, tmp_path)
+    graph_module = import_generated_module(
+        generated / "graph.py",
+        "generated_graph_missing_tool_registry",
+    )
+    executor_registry = ExecutorRegistry(
+        [
+            ExecutorDefinition(
+                ref="fake.upper",
+                type=ExecutorType.PYTHON_CALLABLE,
+                dynamic=True,
+            )
+        ]
+    )
+
+    with pytest.raises(RuntimeError, match="runtime config validation failed"):
+        graph_module.build_graph(
+            graph_module.RuntimeConfig(
+                executor_registry=executor_registry,
+            )
+        )
+
+
 def test_manifest_contains_executor_bindings_from_compile_path(tmp_path: Path) -> None:
     """Test that manifest includes executor bindings when compiled through the full compile path."""
     workflow = load_workflow("linear_llm.json")
@@ -550,6 +816,53 @@ def test_manifest_contains_executor_bindings_from_compile_path(tmp_path: Path) -
     assert manifest["executor_bindings"]["compose"]["dynamic"] is False
     assert manifest["executor_bindings"]["compose"]["allowed_models"] == []
     assert manifest["executor_bindings"]["compose"]["external_call"] is False
+
+
+def test_compile_workflow_to_artifacts_accepts_registries_for_dynamic_tool(
+    tmp_path: Path,
+) -> None:
+    from prompt2langgraph.registry.tool_executor import ToolCallableRegistry
+    from prompt2langgraph.runtime.artifacts import compile_workflow_to_artifacts
+
+    workflow = tool_workflow()
+    tools = ToolCallableRegistry()
+    tools.register("fake.upper", lambda inputs, params: {"answer": inputs["question"].upper()})
+    executor_registry = ExecutorRegistry(
+        [
+            ExecutorDefinition(
+                ref="fake.upper",
+                type=ExecutorType.PYTHON_CALLABLE,
+                dynamic=True,
+            )
+        ]
+    )
+
+    report, bundle_dir = compile_workflow_to_artifacts(
+        workflow,
+        out_dir=tmp_path,
+        executor_registry=executor_registry,
+        tool_registry=tools,
+    )
+
+    assert report.ok, report.diagnostics
+    manifest = json.loads((bundle_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["executor_bindings"]["call_tool"]["executor"] == "fake.upper"
+    assert manifest["executor_bindings"]["call_tool"]["type"] == "python_callable"
+    assert manifest["executor_bindings"]["call_tool"]["dynamic"] is True
+
+    graph_module = import_generated_module(
+        bundle_dir / "generated" / "graph.py",
+        "compiled_dynamic_tool_graph",
+    )
+    result = graph_module.invoke(
+        {"question": "hello"},
+        graph_module.RuntimeConfig(
+            executor_registry=executor_registry,
+            tool_registry=tools,
+        ),
+    )
+
+    assert result == {"question": "hello", "answer": "HELLO"}
 
 
 def test_manifest_contains_policy_summary_from_compile_path(tmp_path: Path) -> None:
