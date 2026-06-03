@@ -2,10 +2,24 @@
 
 import json
 from pathlib import Path
+from typing import Any
 
 from langgraph.checkpoint.memory import InMemorySaver
 
-from prompt2langgraph.ir.models import WorkflowSpec
+from prompt2langgraph.ir.models import (
+    EdgeKind,
+    EdgeSpec,
+    ExecutorRef,
+    ExecutorType,
+    NodeSpec,
+    PolicySpec,
+    SecurityPolicy,
+    StateSchema,
+    StateSelector,
+    TypeName,
+    TypeSpec,
+    WorkflowSpec,
+)
 from prompt2langgraph.runtime.runner import run_workflow
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -109,7 +123,7 @@ def test_side_effect_idempotency_store_persists_successful_output(tmp_path: Path
 
     path = tmp_path / "side_effects.json"
     store = SideEffectIdempotencyStore(path)
-    key = ("workflow_a", "thread_a", "write-file")
+    key = ("workflow_a", "thread_a", "record_effect", "write-file")
 
     assert store.get_success(*key) is None
     store.record_success(*key, output={"effect_result": "done"})
@@ -159,6 +173,89 @@ def test_side_effect_idempotency_skips_duplicate_success(tmp_path: Path) -> None
     assert second.status == "succeeded"
     assert calls == [1]
     assert second.output == {"effect_result": "hello"}
+
+
+def test_side_effect_idempotency_scope_includes_node_id(tmp_path: Path) -> None:
+    from prompt2langgraph.registry.executors import ExecutorDefinition, ExecutorRegistry
+
+    calls: list[str] = []
+
+    def record_effect(inputs: dict[str, Any], params: dict[str, Any]) -> dict[str, Any]:
+        calls.append(inputs["value"])
+        return {"value": inputs["value"]}
+
+    workflow = WorkflowSpec(
+        schema_version="0.1",
+        workflow_id="side_effect_scope",
+        name="Side Effect Scope",
+        entrypoint="write_one",
+        state_schema=StateSchema(
+            input={"question": TypeSpec(type=TypeName.STRING)},
+            output={
+                "effect_one": TypeSpec(type=TypeName.STRING),
+                "effect_two": TypeSpec(type=TypeName.STRING),
+            },
+            channels={
+                "question": TypeSpec(type=TypeName.STRING),
+                "effect_one": TypeSpec(type=TypeName.STRING),
+                "effect_two": TypeSpec(type=TypeName.STRING),
+            },
+        ),
+        nodes=[
+            NodeSpec(
+                id="write_one",
+                kind="side_effect",
+                executor=ExecutorRef(
+                    ref="builtin.identity_transform",
+                    type=ExecutorType.BUILTIN,
+                ),
+                inputs={"value": StateSelector(state_key="question")},
+                outputs={"value": StateSelector(state_key="effect_one")},
+                security=SecurityPolicy(idempotency_key="shared-key"),
+            ),
+            NodeSpec(
+                id="write_two",
+                kind="side_effect",
+                executor=ExecutorRef(
+                    ref="builtin.identity_transform",
+                    type=ExecutorType.BUILTIN,
+                ),
+                inputs={"value": StateSelector(state_key="question")},
+                outputs={"value": StateSelector(state_key="effect_two")},
+                security=SecurityPolicy(idempotency_key="shared-key"),
+            ),
+        ],
+        edges=[
+            EdgeSpec(
+                id="e1",
+                source="write_one",
+                target="write_two",
+                kind=EdgeKind.LINEAR,
+            )
+        ],
+        policies=PolicySpec(allow_side_effects=True),
+    )
+    registry = ExecutorRegistry(
+        [
+            ExecutorDefinition(
+                ref="builtin.identity_transform",
+                type=ExecutorType.BUILTIN,
+                handler=record_effect,
+            )
+        ]
+    )
+
+    result = run_workflow(
+        workflow,
+        {"question": "hello"},
+        thread_id="same-thread",
+        state_store_dir=tmp_path / ".pt2lg-runtime",
+        executors=registry,
+    )
+
+    assert result.status == "succeeded"
+    assert result.output == {"effect_one": "hello", "effect_two": "hello"}
+    assert calls == ["hello", "hello"]
 
 
 def test_side_effect_idempotency_does_not_record_invalid_executor_output(
@@ -290,6 +387,63 @@ def test_side_effect_with_idempotency_key_can_retry_retryable_error(tmp_path: Pa
     assert result.status == "succeeded"
     assert calls == [1, 2]
     assert result.metrics.retry_count == 1
+
+
+def test_run_workflow_accepts_audit_sink_and_records_idempotency_skip_event(
+    tmp_path: Path,
+) -> None:
+    from prompt2langgraph.ir.models import ExecutorType, SecurityPolicy
+    from prompt2langgraph.registry.executors import ExecutorDefinition, ExecutorRegistry
+
+    class CollectingAuditSink:
+        def __init__(self) -> None:
+            self.records: list[Any] = []
+
+        def write(self, record: Any) -> None:
+            self.records.append(record)
+
+    workflow = load_workflow("side_effect_allowed.json")
+    workflow.nodes[0].security = SecurityPolicy(idempotency_key="write-once")
+    calls: list[int] = []
+
+    def write_once(inputs, params):
+        calls.append(len(calls) + 1)
+        return {"value": inputs["value"]}
+
+    registry = ExecutorRegistry(
+        [
+            ExecutorDefinition(
+                ref="builtin.identity_transform",
+                type=ExecutorType.BUILTIN,
+                handler=write_once,
+            )
+        ]
+    )
+    audit_sink = CollectingAuditSink()
+
+    first = run_workflow(
+        workflow,
+        {"question": "hello"},
+        thread_id="same-thread",
+        state_store_dir=tmp_path / ".pt2lg-runtime",
+        executors=registry,
+        audit_sink=audit_sink,
+    )
+    second = run_workflow(
+        workflow,
+        {"question": "hello again"},
+        thread_id="same-thread",
+        state_store_dir=tmp_path / ".pt2lg-runtime",
+        executors=registry,
+        audit_sink=audit_sink,
+    )
+
+    assert first.status == "succeeded"
+    assert second.status == "succeeded"
+    assert calls == [1]
+    assert any(
+        record.event_type == "side_effect.skipped_by_idempotency" for record in audit_sink.records
+    )
 
 
 def test_side_effect_node_event_sequence_for_approval():
