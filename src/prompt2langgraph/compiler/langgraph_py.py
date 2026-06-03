@@ -6,6 +6,7 @@ import operator
 import re
 import warnings
 from collections.abc import Callable
+from time import perf_counter
 from typing import Annotated, Any
 
 from langgraph.graph import END, START, StateGraph
@@ -26,6 +27,7 @@ from prompt2langgraph.ir.models import (
 from prompt2langgraph.registry.executors import ExecutorDefinition, ExecutorError, ExecutorRegistry
 
 NodeEventSink = Callable[[str, str], None]
+RetrySink = Callable[[str, int], None]
 
 
 def compile_workflow_to_graph(
@@ -39,6 +41,10 @@ def compile_workflow_to_graph(
     tool_registry: Any | None = None,
     error_sink: Callable[[Any], None] | None = None,
     metrics_sink: Callable[[Any], None] | None = None,
+    retry_sink: RetrySink | None = None,
+    side_effect_store: Any | None = None,
+    workflow_id: str | None = None,
+    thread_id: str | None = None,
 ):
     """Compile a validated WorkflowSpec into an invokable LangGraph graph."""
     effective_policies = policies if policies is not None else workflow.policies
@@ -63,6 +69,10 @@ def compile_workflow_to_graph(
                 tool_registry=tool_registry,
                 error_sink=error_sink,
                 metrics_sink=metrics_sink,
+                retry_sink=retry_sink,
+                side_effect_store=side_effect_store,
+                workflow_id=workflow_id or workflow.workflow_id,
+                thread_id=thread_id,
             ),
         )
 
@@ -213,6 +223,7 @@ def _invoke_executor(
     model_client: Any | None,
     tool_registry: Any | None,
     metrics_sink: Callable[[Any], None] | None,
+    attempt: int = 1,
 ) -> dict:
     """Dispatch to the appropriate executor based on executor type and dynamic flag."""
     from prompt2langgraph.diagnostics.codes import E_SEC_013, E_SEC_015
@@ -229,7 +240,25 @@ def _invoke_executor(
         from prompt2langgraph.registry.llm_executor import LLMExecutor
 
         llm_executor = LLMExecutor(model_client=model_client)
-        result = llm_executor(inputs, params)
+        started_at = perf_counter()
+        try:
+            result = llm_executor(inputs, params)
+        except ExecutorError as exc:
+            if policies.collect_metrics and metrics_sink is not None:
+                metrics_sink(
+                    ExternalCallRecord(
+                        node_id=node.id,
+                        executor_ref=executor.ref,
+                        model=getattr(model_client, "model_name", None)
+                        or getattr(model_client, "model", None),
+                        latency_ms=round((perf_counter() - started_at) * 1000, 3),
+                        status="failed",
+                        error_code=exc.code,
+                        attempt=attempt,
+                        category="llm",
+                    )
+                )
+            raise
         if policies.collect_metrics and metrics_sink is not None:
             metrics_sink(
                 ExternalCallRecord(
@@ -237,7 +266,10 @@ def _invoke_executor(
                     executor_ref=executor.ref,
                     model=getattr(model_client, "model_name", None)
                     or getattr(model_client, "model", None),
+                    latency_ms=round((perf_counter() - started_at) * 1000, 3),
                     status="succeeded",
+                    attempt=attempt,
+                    category="llm",
                 )
             )
         return result
@@ -255,13 +287,32 @@ def _invoke_executor(
         tool_executor = ToolExecutor(
             registry=tool_registry, tool_ref=executor.ref, timeout_s=timeout_s
         )
-        result = tool_executor(inputs, params)
+        started_at = perf_counter()
+        try:
+            result = tool_executor(inputs, params)
+        except ExecutorError as exc:
+            if policies.collect_metrics and metrics_sink is not None:
+                metrics_sink(
+                    ExternalCallRecord(
+                        node_id=node.id,
+                        executor_ref=executor.ref,
+                        latency_ms=round((perf_counter() - started_at) * 1000, 3),
+                        status="failed",
+                        error_code=exc.code,
+                        attempt=attempt,
+                        category="tool",
+                    )
+                )
+            raise
         if policies.collect_metrics and metrics_sink is not None:
             metrics_sink(
                 ExternalCallRecord(
                     node_id=node.id,
                     executor_ref=executor.ref,
+                    latency_ms=round((perf_counter() - started_at) * 1000, 3),
                     status="succeeded",
+                    attempt=attempt,
+                    category="tool",
                 )
             )
         return result
@@ -283,6 +334,10 @@ def _node_wrapper(
     tool_registry: Any | None = None,
     error_sink: Callable[[Any], None] | None = None,
     metrics_sink: Callable[[Any], None] | None = None,
+    retry_sink: RetrySink | None = None,
+    side_effect_store: Any | None = None,
+    workflow_id: str | None = None,
+    thread_id: str | None = None,
 ):
     executor = executors.get(node.executor.ref)
     effective_policies = policies if policies is not None else PolicySpec()
@@ -304,6 +359,26 @@ def _node_wrapper(
 
         # Prepare inputs and params (may be overridden by side_effect handler).
         params = node.params
+        idempotency_key = (
+            node.security.idempotency_key
+            if node.kind == "side_effect" and node.security is not None
+            else None
+        )
+        idempotency_hit_outputs = None
+        if (
+            node.kind == "side_effect"
+            and idempotency_key
+            and side_effect_store is not None
+            and workflow_id is not None
+            and thread_id is not None
+        ):
+            stored_outputs = side_effect_store.get_success(
+                workflow_id,
+                thread_id,
+                idempotency_key,
+            )
+            if stored_outputs is not None:
+                idempotency_hit_outputs = stored_outputs
 
         # Handle side_effect node approval flow
         # NOTE: This is a compiler-level intercept rather than an executor handler
@@ -312,7 +387,7 @@ def _node_wrapper(
         # the real approval + execution orchestration happens here.
         # Direct executor.invoke() bypasses approval — this is acceptable because
         # validate_workflow() enforces E_SIDE_008 at the validation boundary.
-        if node.kind == "side_effect":
+        if node.kind == "side_effect" and idempotency_hit_outputs is None:
             handler_result = side_effect_handler(
                 inputs,
                 node.params,
@@ -340,6 +415,7 @@ def _node_wrapper(
                             executor_ref=executor.ref,
                             status="failed",
                             error_code="E_SIDE_008",
+                            category="side_effect",
                         )
                     )
                 return update
@@ -361,21 +437,32 @@ def _node_wrapper(
             params = handler_result.get("params", params)
 
         try:
-            raw_outputs = _invoke_executor(
-                node,
-                executor,
-                inputs,
-                params,
-                policies=effective_policies,
-                model_client=model_client,
-                tool_registry=tool_registry,
-                metrics_sink=metrics_sink,
-            )
+            from prompt2langgraph.runtime.retry import run_with_retry
+
+            if idempotency_hit_outputs is not None:
+                raw_outputs = idempotency_hit_outputs
+            else:
+                raw_outputs = run_with_retry(
+                    node,
+                    lambda attempt: _invoke_executor(
+                        node,
+                        executor,
+                        inputs,
+                        params,
+                        policies=effective_policies,
+                        model_client=model_client,
+                        tool_registry=tool_registry,
+                        metrics_sink=metrics_sink,
+                        attempt=attempt,
+                    ),
+                    retry_sink=retry_sink,
+                )
             # Record successful external call for side_effect after approval.
             # Only for BUILTIN executors: LLM and PYTHON_CALLABLE executors
             # are already recorded by _invoke_executor() above.
             if (
                 node.kind == "side_effect"
+                and idempotency_hit_outputs is None
                 and not executor.dynamic
                 and effective_policies.collect_metrics
                 and metrics_sink is not None
@@ -385,6 +472,7 @@ def _node_wrapper(
                         node_id=node.id,
                         executor_ref=executor.ref,
                         status="succeeded",
+                        category="side_effect",
                     )
                 )
         except ExecutorError as exc:
@@ -392,12 +480,23 @@ def _node_wrapper(
                 exc.node_id = node.id
             if exc.executor_ref is None:
                 exc.executor_ref = executor.ref
-            if error_sink is not None:
+            from prompt2langgraph.ir.models import ExecutorType
+
+            dynamic_external_recorded = (
+                effective_policies.collect_metrics
+                and metrics_sink is not None
+                and executor.dynamic
+                and (
+                    (executor.type is ExecutorType.LLM and model_client is not None)
+                    or (executor.type is ExecutorType.PYTHON_CALLABLE and tool_registry is not None)
+                )
+            )
+            if error_sink is not None and not dynamic_external_recorded:
                 error_sink(exc)
             if (
-                error_sink is None
-                and effective_policies.collect_metrics
+                effective_policies.collect_metrics
                 and metrics_sink is not None
+                and not dynamic_external_recorded
             ):
                 metrics_sink(
                     ExternalCallRecord(
@@ -405,6 +504,7 @@ def _node_wrapper(
                         executor_ref=executor.ref,
                         status="failed",
                         error_code=exc.code,
+                        category="external",
                     )
                 )
             raise
@@ -422,6 +522,20 @@ def _node_wrapper(
             ):
                 output_value = [output_value]
             update[selector.state_key] = output_value
+        if (
+            node.kind == "side_effect"
+            and idempotency_hit_outputs is None
+            and idempotency_key
+            and side_effect_store is not None
+            and workflow_id is not None
+            and thread_id is not None
+        ):
+            side_effect_store.record_success(
+                workflow_id,
+                thread_id,
+                idempotency_key,
+                output=raw_outputs,
+            )
         for edge in loop_edges:
             if edge.loop_guard is None:
                 continue
