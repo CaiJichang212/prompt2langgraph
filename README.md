@@ -17,7 +17,7 @@ git config core.hooksPath .githooks
 - Prompt 计划生成基于 `langchain_openai`，优先兼容 Qwen、vLLM 暴露的 OpenAI-style API 及其他第三方兼容接口
 - Prompt 配置默认从 `.env` 读取 `MODEL`、`BASE_URL`、`API_KEY`，CLI 参数可覆盖
 - 对 `SKILL.md` 技能目录做 Skill → `WorkflowSpec` 的 LLM 驱动 alpha 转换（可诊断、可人工修正，不保证任意 Skill 一次成功），不执行脚本，不自动注册 tool callable
-- Prompt/Skill planning 提供结构化 pipeline，可返回 generation、parse、adapter、validation、compile smoke 阶段状态，并支持可配置 repair attempts
+- Prompt/Skill planning 提供结构化 pipeline，可返回 generation、parse、adapter、validation、compile smoke 阶段状态、tool readiness 摘要，并支持可配置 repair attempts
 - 结构化 planning 默认保持 `tool_registry=None` 的校验兼容语义；需要严格检查 Tool callable 注册时可显式注入空或已注册的 `ToolCallableRegistry`
 - 校验工作流的 schema、registry 绑定、图结构、类型绑定和安全约束
 - 编译为 `langgraph-py` 目标，并输出 lockfile、IR、manifest、compile report、Mermaid 与生成代码骨架
@@ -105,6 +105,14 @@ uv run pt2lg run build/linear_llm/workflow.lock.json --input '{"question":"hello
 - 内联 JSON 对象字符串
 - 指向 JSON 文件的路径
 
+### CLI Tool Module
+
+`pt2lg run` 和 `pt2lg resume` 可通过 `--tool-module <module>` 加载受信任 Python tool module。module 必须定义 `register_tools(registry)`，并通过 `ToolCallableRegistry.register(ref, callable)` 注册 callable。
+
+Tool 执行仍需 workflow policy 通过 `allowed_tool_refs` 授权。CLI 会先加载 tool module，再解析 Workflow IR 或简化 JSON plan，因此简化 JSON plan 可以引用自定义 `python_callable` executor ref。
+
+`--tool-module` 不是 sandbox，也不支持任意 shell 命令。tool ref 在多个 module 中必须唯一，且不能覆盖内置或既有 executor ref。
+
 ### 5. 通过 Prompt 生成工作流
 
 使用 `plan` 命令，通过自然语言 Prompt 让 LLM 生成简化 JSON plan：
@@ -140,6 +148,7 @@ uv run pt2lg plan --prompt "Build a workflow" --repair-attempts 1 --json
 - `--validate` 输出 adapter + validation 结果，不写 bundle。
 - `--compile-smoke` 输出 validation 与内存编译检查结果，不写 bundle、不执行 workflow。
 - `--repair-attempts` 默认 `0`，可在 parse/adapter/validation/compile smoke 失败后请求模型修复并重新进入 pipeline。
+- JSON 输出在生成 workflow 后会包含 `tool_readiness` 摘要，用于展示 required、allowed、registered、missing 和 unauthorized tool refs。
 
 说明：Prompt 只生成简化 JSON plan。`builtin.echo_llm` 仍是确定性 mock executor。如需运行时 `llm` 节点调用真实模型，需在 workflow policies 中设置 `external_call=True` 和 `allowed_models`。
 
@@ -226,6 +235,7 @@ result = pt2lg.run_workflow(workflow, {"question": "hello"})
 - `PlanningPipelineResult`
 - `SkillPlanRequest`
 - `SkillPlanResult`
+- `ToolReadiness`
 - `validate_workflow`
 - `run_workflow`
 - `compile_workflow`
@@ -513,8 +523,8 @@ CLI 的 `validate`、`compile`、`run`、`graph`、`resume` 都支持 `--json` �
 - 内置 mock executor 以确定性测试为目标，便于本地回归和快照验证
 - 真实 LLM 调用需显式启用：`policies.external_call=True` + `policies.allowed_models` 白名单
 - 受控 Tool 执行需显式授权：`policies.allowed_tool_refs` 白名单 + `ToolCallableRegistry` 注册
-  - CLI `run` 自动构造的 `tool_registry` 为空注册表，仅用于校验占位
-  - 实际执行 PYTHON_CALLABLE 节点时，需通过 Python API 注入已注册 callable 的 `tool_registry`
+  - CLI `run` / `resume` 可通过 `--tool-module <module>` 加载受信任 Python module 并注册 callable
+  - Python API 可直接向 `run_workflow()` 注入已注册 callable 的 `tool_registry`
 - 策略约束在 `validate_workflow()` 阶段即被检查，运行时做防御性二次校验
 - 条件表达式当前仅支持 `<state_key> <comparison> <literal>` 形式
 - `comparison` 仅支持 `<`、`<=`、`>`、`>=`、`==`、`!=`

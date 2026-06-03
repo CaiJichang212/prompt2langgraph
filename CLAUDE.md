@@ -24,7 +24,7 @@ Prompt 计划生成基于 `langchain_openai`，默认从 `.env` 读取 `MODEL`�
 
 `analyze_skill_dir()` 保留静态分析能力。Skill → `WorkflowSpec` 的 LLM 驱动 alpha 转换已实现（`plan --skill-dir`），可诊断、可人工修正，不保证任意 Skill 一次成功；不执行 skill 脚本，不自动注册 tool callable。
 
-结构化 Prompt/Skill planning 已落地：`plan_prompt()` / `plan_skill()` 返回 generation、parse、adapter、validation、compile smoke 阶段状态、diagnostics、validation report 和 repair attempts 摘要。兼容入口 `plan_prompt_to_workflow_spec()` / `plan_skill_to_workflow_spec()` 仍保持旧语义，成功时直接返回 `WorkflowSpec`，不默认执行 compile smoke。结构化 planning 默认保持 `tool_registry=None` 的校验兼容语义；需要严格检查 Tool callable 注册时可显式注入空或已注册的 `ToolCallableRegistry`。
+结构化 Prompt/Skill planning 已落地：`plan_prompt()` / `plan_skill()` 返回 generation、parse、adapter、validation、compile smoke 阶段状态、diagnostics、validation report、repair attempts 和 tool readiness 摘要。兼容入口 `plan_prompt_to_workflow_spec()` / `plan_skill_to_workflow_spec()` 仍保持旧语义，成功时直接返回 `WorkflowSpec`，不默认执行 compile smoke。结构化 planning 默认保持 `tool_registry=None` 的校验兼容语义；需要严格检查 Tool callable 注册时可显式注入空或已注册的 `ToolCallableRegistry`。
 
 ## 常用命令
 
@@ -105,6 +105,7 @@ uv run pt2lg run tests/fixtures/fanout_map_reduce.json --input '{"items":["alpha
 - JSON plan 适配保留显式 `workflow_id`、顶层 `metadata`、`policies`、`state_schema.reducers`、兼容顶层 `reducers` 和 edge 级 `join_sources`。
 - `llm` 节点可通过 `ExecutorType.LLM`（ref 格式 `llm.<model_id>`）调用真实模型，需 `external_call=True` + `allowed_models` 白名单。
 - `tool` 节点可通过 `ExecutorType.PYTHON_CALLABLE` 执行受控 callable，需 `allowed_tool_refs` 白名单 + `ToolCallableRegistry` 注册。
+- CLI `run` / `resume` 支持 `--tool-module <module>` 加载受信任 Python module；module 必须暴露 `register_tools(registry)`，并通过 `ToolCallableRegistry.register(ref, callable)` 注册工具。tool module 必须先于 workflow parse/load 加载，简化 JSON plan 的自定义 tool ref 依赖该顺序。`--tool-module` 不是 sandbox，不支持任意 shell；tool 执行仍需 `allowed_tool_refs` 授权。tool ref 不允许重复注册，也不允许覆盖内置或既有 executor ref。
 - 真实 executor 和 mock executor 可通过 executor ref 区分（`builtin.echo_llm` = mock，`llm.qwen-plus` = real）。
 - 条件表达式只支持简单 `<state_key> <comparison> <literal>`。
 - `loop` 依赖 `loop_guard.max_iterations`；`fanout` 的 reduce 依赖 `state_schema.reducers`。
@@ -115,7 +116,7 @@ uv run pt2lg run tests/fixtures/fanout_map_reduce.json --input '{"items":["alpha
 - `human_gate` 基于 LangGraph `interrupt()`；CLI bundle 运行的等待态保存在 bundle 下 `.pt2lg-runtime/`。安装可选依赖 `checkpoint-sqlite`（`langgraph-checkpoint-sqlite>=2.0`）后，CLI 使用 `SqliteSaver` 提供更稳定的本地 checkpoint，路径为 `.pt2lg-runtime/<thread_hash>.db`。旧 `.json` runtime 状态文件与新的 `.db` checkpoint 不互相迁移。SQLite checkpoint 默认保留以支持后续 time travel debugging，但 resume 成功后不再自动清理 `.db` 文件。
 - `LANGCHAIN_TOOL` 在 v0.4 第一期仍为 reserved/experimental，不作为默认可执行能力。
 - `collect_metrics=True` 时，`RunResult.external_calls` 中可获取成功和失败调用的 `ExternalCallRecord`。
-- CLI `run` 命令能根据 workflow 节点类型自动构造 `model_client` 和 `tool_registry`。
+- CLI `run` 命令能根据 workflow 节点类型自动构造 `model_client` 和 `tool_registry`，并可通过 `--tool-module` 注册受信任 Python callable。
 
 ## 修改时的硬规则
 
