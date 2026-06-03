@@ -11,7 +11,7 @@ from prompt2langgraph.adapters.json_plan import JSONPlanAdapter
 from prompt2langgraph.adapters.skill_dir import SkillDirectoryAnalysis, analyze_skill_dir
 from prompt2langgraph.diagnostics.codes import E_PARSE_001, E_RUNTIME_010, E_SCHEMA_002
 from prompt2langgraph.diagnostics.report import Diagnostic, DiagnosticLocation, ValidationReport
-from prompt2langgraph.ir.models import WorkflowSpec
+from prompt2langgraph.ir.models import ExecutorType, WorkflowSpec
 from prompt2langgraph.prompting.parser import parse_prompt_plan_text
 from prompt2langgraph.registry.builtins import builtin_executor_registry
 from prompt2langgraph.registry.executors import ExecutorRegistry
@@ -46,12 +46,21 @@ class RepairAttemptRecord(BaseModel):
     ok: bool = False
 
 
+class ToolReadiness(BaseModel):
+    required_tool_refs: list[str] = Field(default_factory=list)
+    allowed_tool_refs: list[str] = Field(default_factory=list)
+    registered_tool_refs: list[str] = Field(default_factory=list)
+    missing_tool_refs: list[str] = Field(default_factory=list)
+    unauthorized_tool_refs: list[str] = Field(default_factory=list)
+
+
 class PlanningPipelineResult(BaseModel):
     ok: bool
     source: PlanningSource
     raw_text: str | None = None
     plan: dict[str, Any] | None = None
     workflow: WorkflowSpec | None = None
+    tool_readiness: ToolReadiness | None = None
     validation_report: ValidationReport | None = None
     diagnostics: list[Diagnostic] = Field(default_factory=list)
     stages: dict[PlanningStageName, PlanningStageStatus] = Field(default_factory=dict)
@@ -95,6 +104,38 @@ def _stage_diagnostic_codes(result: PlanningPipelineResult, stage: PlanningStage
     if status is None:
         return [diagnostic.code for diagnostic in result.diagnostics]
     return [diagnostic.code for diagnostic in status.diagnostics]
+
+
+def _tool_readiness_for(
+    workflow: WorkflowSpec,
+    tool_registry: ToolCallableRegistry | None,
+) -> ToolReadiness:
+    required_refs: set[str] = set()
+    allowed_refs: set[str] = set()
+    unauthorized_refs: set[str] = set()
+    for node in workflow.nodes:
+        if node.executor.type is not ExecutorType.PYTHON_CALLABLE:
+            continue
+        ref = node.executor.ref
+        required_refs.add(ref)
+        if node.security is not None and node.security.allowed_tool_refs is not None:
+            effective_allowed = node.security.allowed_tool_refs
+        else:
+            effective_allowed = workflow.policies.allowed_tool_refs
+        allowed_refs.update(effective_allowed or [])
+        if not effective_allowed or ref not in effective_allowed:
+            unauthorized_refs.add(ref)
+
+    required = sorted(required_refs)
+    allowed = sorted(allowed_refs)
+    registered = tool_registry.refs() if tool_registry is not None else []
+    return ToolReadiness(
+        required_tool_refs=required,
+        allowed_tool_refs=allowed,
+        registered_tool_refs=registered,
+        missing_tool_refs=sorted(set(required) - set(registered)),
+        unauthorized_tool_refs=sorted(unauthorized_refs),
+    )
 
 
 def _parse_diagnostic(exc: AdapterParseError, *, source: PlanningSource) -> Diagnostic:
@@ -178,6 +219,7 @@ def _result_for_raw_text(
             stages=stages,
         )
     stages["adapter"] = _ok_stage()
+    tool_readiness = _tool_readiness_for(workflow, tool_registry)
 
     validation_report = validate_workflow(
         workflow,
@@ -198,6 +240,7 @@ def _result_for_raw_text(
             raw_text=raw_text,
             plan=plan,
             workflow=workflow,
+            tool_readiness=tool_readiness,
             validation_report=validation_report,
             diagnostics=diagnostics,
             stages=stages,
@@ -218,6 +261,7 @@ def _result_for_raw_text(
                 raw_text=raw_text,
                 plan=plan,
                 workflow=workflow,
+                tool_readiness=tool_readiness,
                 validation_report=validation_report,
                 diagnostics=diagnostics,
                 stages=stages,
@@ -235,6 +279,7 @@ def _result_for_raw_text(
         raw_text=raw_text,
         plan=plan,
         workflow=workflow,
+        tool_readiness=tool_readiness,
         validation_report=validation_report,
         diagnostics=diagnostics,
         stages=stages,
@@ -479,6 +524,7 @@ __all__ = [
     "PlanningStageName",
     "PlanningStageStatus",
     "RepairAttemptRecord",
+    "ToolReadiness",
     "plan_prompt",
     "plan_skill",
 ]
