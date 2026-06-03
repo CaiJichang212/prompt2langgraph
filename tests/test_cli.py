@@ -893,8 +893,15 @@ def test_resume_command_calls_build_runtime_clients(tmp_path: Path) -> None:
     # 我们通过检查 resume 命令是否正确传递 model_client 来验证
     from unittest.mock import patch
 
+    from prompt2langgraph.cli import RuntimeClients
+    from prompt2langgraph.registry.builtins import builtin_executor_registry
+
     with patch("prompt2langgraph.cli._build_runtime_clients") as mock_build:
-        mock_build.return_value = (None, None)
+        mock_build.return_value = RuntimeClients(
+            model_client=None,
+            tool_registry=None,
+            executor_registry=builtin_executor_registry(),
+        )
         # 即使 workflow 没有 LLM 节点，_build_runtime_clients 也应被调用
         CliRunner().invoke(
             app,
@@ -910,6 +917,74 @@ def test_resume_command_calls_build_runtime_clients(tmp_path: Path) -> None:
         )
         # 验证 _build_runtime_clients 被调用
         mock_build.assert_called_once()
+
+
+def test_plan_command_outputs_tool_readiness(monkeypatch) -> None:
+    from prompt2langgraph.prompting.pipeline import ToolReadiness
+
+    class FakeResult:
+        ok = True
+        plan = {"name": "ToolPlan", "nodes": [], "edges": []}
+        diagnostics = []
+        repair_attempts = []
+        validation_report = None
+        stages = {}
+        tool_readiness = ToolReadiness(
+            required_tool_refs=["fake.upper"],
+            allowed_tool_refs=["fake.upper"],
+            registered_tool_refs=[],
+            missing_tool_refs=["fake.upper"],
+            unauthorized_tool_refs=[],
+        )
+
+    monkeypatch.setattr(
+        "prompt2langgraph.prompting.plan_prompt",
+        lambda *args, **kwargs: FakeResult(),
+    )
+
+    result = CliRunner().invoke(
+        app,
+        ["plan", "--prompt", "Use a fake tool", "--json"],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["tool_readiness"]["required_tool_refs"] == ["fake.upper"]
+    assert payload["tool_readiness"]["missing_tool_refs"] == ["fake.upper"]
+
+
+def test_plan_skill_command_outputs_tool_readiness(monkeypatch) -> None:
+    from prompt2langgraph.prompting.pipeline import ToolReadiness
+
+    class FakeResult:
+        ok = True
+        plan = {"name": "SkillToolPlan", "nodes": [], "edges": []}
+        diagnostics = []
+        repair_attempts = []
+        validation_report = None
+        stages = {}
+        tool_readiness = ToolReadiness(
+            required_tool_refs=["fake.upper"],
+            allowed_tool_refs=["fake.upper"],
+            registered_tool_refs=[],
+            missing_tool_refs=["fake.upper"],
+            unauthorized_tool_refs=[],
+        )
+
+    monkeypatch.setattr(
+        "prompt2langgraph.prompting.plan_skill",
+        lambda *args, **kwargs: FakeResult(),
+    )
+
+    result = CliRunner().invoke(
+        app,
+        ["plan", "--skill-dir", "tests/fixtures/skill_basic", "--json"],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["tool_readiness"]["required_tool_refs"] == ["fake.upper"]
+    assert payload["tool_readiness"]["missing_tool_refs"] == ["fake.upper"]
 
 
 def test_plan_command_requires_either_prompt_or_skill_dir() -> None:
