@@ -93,8 +93,12 @@ uv run pt2lg run tests/fixtures/fanout_map_reduce.json --input '{"items":["alpha
 - `registry/`：节点类型与 executor 注册表，builtins 在 `registry/builtins.py`。`LLMExecutor` 在 `registry/llm_executor.py`，`ToolExecutor` + `ToolCallableRegistry` 在 `registry/tool_executor.py`。`ExecutorError` 在 `registry/executors.py`。
 - `compiler/langgraph_py.py`：实现 conditional / loop / fanout 路由与 state schema lowering，支持动态 executor dispatch（`ExecutorType.LLM` / `PYTHON_CALLABLE`）。
 - `runtime/artifacts.py`：bundle 生成、lockfile/manifest/report、bundle 校验、旧产物清理。
-- `runtime/runner.py`：运行时事件、`human_gate` interrupt、`.pt2lg-runtime/` 本地恢复状态。支持 `model_client` / `tool_registry` 注入和 `ExternalCallRecord` 收集。
-- `runtime/events.py`：`RunMetrics`（含 `call_count`、`total_latency_ms`）、`ExternalCallRecord`、`RunResult.external_calls`。
+- `runtime/runner.py`：运行时事件、`human_gate` interrupt、`.pt2lg-runtime/` 本地恢复状态。支持 `model_client` / `tool_registry` 注入、`ExternalCallRecord` 收集、安全 audit JSONL 和 side-effect 幂等 store。
+- `runtime/retry.py`：`NodeSpec.retry.max_attempts` 的 wrapper retry；仅重试 LLM timeout、LLM API timeout/5xx/server failure 和 tool timeout。`side_effect` retry 必须绑定 `security.idempotency_key`。
+- `runtime/observability.py`：汇总 `RunMetrics.retry_count`、`tool_call_count`、`call_count`、`total_latency_ms` 和 token 摘要。
+- `runtime/audit.py`：写入 `.pt2lg-runtime/audit.log.jsonl` 安全元数据，不记录 secret、完整 payload、API key、完整模型响应或敏感 tool 参数。
+- `runtime/side_effects.py`：以 `(workflow_id, thread_id, idempotency_key)` 记录成功 side-effect 原始 executor output，重复命中时跳过 executor。
+- `runtime/events.py`：`RunMetrics`、`ExternalCallRecord`（含 latency/status/attempt/category）、`RunResult.external_calls`。
 - `validate/security.py`：`check_external_policy()`、`check_model_whitelist()`、`check_tool_refs()` 策略校验。
 - `visualization/mermaid.py`：Mermaid 渲染。
 - `__init__.py`：稳定 public API：`WorkflowSpec`、`validate_workflow`、`run_workflow`、`compile_workflow`、`PromptPlanRequest`、`PromptPlanResult`、`SkillPlanRequest`、`SkillPlanResult`、`plan_prompt()`、`plan_skill()`、`plan_prompt_to_workflow_spec()`、`plan_skill_to_workflow_spec()`。
@@ -117,6 +121,7 @@ uv run pt2lg run tests/fixtures/fanout_map_reduce.json --input '{"items":["alpha
 - `LANGCHAIN_TOOL` 在 v0.4 第一期仍为 reserved/experimental，不作为默认可执行能力。
 - `collect_metrics=True` 时，`RunResult.external_calls` 中可获取成功和失败调用的 `ExternalCallRecord`。
 - CLI `run` 命令能根据 workflow 节点类型自动构造 `model_client` 和 `tool_registry`，并可通过 `--tool-module` 注册受信任 Python callable。
+- v0.4 3B 已完成最小 retry、side-effect idempotency、audit JSONL 和 runtime metrics；3C runtime config bundle 仍未完成，不要在文档或注释中暗示它已可用。
 
 ## 修改时的硬规则
 

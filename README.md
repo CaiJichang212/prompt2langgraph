@@ -206,6 +206,16 @@ uv run pt2lg resume <bundle>/workflow.lock.json --thread-id '<thread_id>' --resu
 - `--resume` 优先按 JSON 解析，因此可传 `"approved"`、`null`、对象或数组
 - 若工作流内容变化，旧 `thread_id` 不会被错误复用
 
+## Runtime 语义
+
+`NodeSpec.retry.max_attempts` 会在运行时启用轻量 wrapper retry。当前只重试明确的瞬时错误：LLM timeout、LLM API timeout/5xx/server failure，以及 tool timeout。业务校验错误、缺失 model/tool client、未授权或未注册 tool、无效 LLM 输入和 side-effect 拒绝不会默认重试。
+
+`side_effect` 节点只有在声明 `security.idempotency_key` 时才允许 retry。运行时以 `(workflow_id, thread_id, idempotency_key)` 为作用域记录成功的原始 executor output；同一作用域再次执行时直接返回已记录 output，不再次调用 executor。
+
+当 CLI 或 `run_workflow()` 使用 `.pt2lg-runtime` / `state_store_dir` 时，运行时会写入 `.pt2lg-runtime/audit.log.jsonl`。audit 只包含安全元数据字段，例如 `run_id`、`thread_id`、`workflow_id`、`node_id`、`event_type`、`status`、`latency_ms`、`error_code`、`retry_count` 和 `timestamp`，不记录完整 input payload、完整模型响应、API key、secret 或敏感 tool 参数。
+
+`collect_metrics=True` 时，`RunResult.external_calls` 会记录外部调用状态、latency、category 和 attempt；`RunMetrics` 汇总 `retry_count`、`tool_call_count`、`call_count`、`total_latency_ms` 和可用 token 摘要。当前 3B 不实现 LangGraph native retry、分布式 idempotency storage、完整 token accounting 或 3C runtime config bundle。
+
 ## Python API
 
 常用入口从包根导出：
