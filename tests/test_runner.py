@@ -224,9 +224,9 @@ def test_failed_retry_run_preserves_retry_metrics_and_audit(tmp_path: Path) -> N
 
     assert result.status == "failed"
     assert result.metrics.retry_count == 1
-    audit_lines = (tmp_path / ".pt2lg-runtime" / "audit.log.jsonl").read_text(
-        encoding="utf-8"
-    ).splitlines()
+    audit_lines = (
+        (tmp_path / ".pt2lg-runtime" / "audit.log.jsonl").read_text(encoding="utf-8").splitlines()
+    )
     records = [json.loads(line) for line in audit_lines]
     assert any(record["event_type"] == "run.failed" for record in records)
     assert any(
