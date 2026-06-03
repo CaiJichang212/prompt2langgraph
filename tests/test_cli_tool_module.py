@@ -239,6 +239,124 @@ def test_cli_run_loads_tool_module_before_json_plan_adapter(tmp_path: Path, monk
     assert payload["output"] == {"answer": "HELLO"}
 
 
+def test_cli_compile_loads_tool_module_before_json_plan_adapter(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    _write_tool_module(tmp_path)
+    monkeypatch.syspath_prepend(str(tmp_path))
+    plan_path = tmp_path / "tool_plan.json"
+    _write_tool_json_plan(plan_path)
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "compile",
+            str(plan_path),
+            "--tool-module",
+            "fake_cli_tools",
+            "--out",
+            str(tmp_path / "build"),
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.stdout)
+    assert payload["ok"] is True
+    bundle_dir = tmp_path / "build" / "tool_plan_smoke"
+    manifest = json.loads((bundle_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["executor_bindings"]["call_tool"]["executor"] == "fake.upper"
+    assert manifest["executor_bindings"]["call_tool"]["type"] == "python_callable"
+    assert manifest["runtime_requirements"]["tool_refs"] == ["fake.upper"]
+    assert (bundle_dir / "generated" / "graph.py").exists()
+
+
+def test_cli_compile_with_tool_module_rejects_unauthorized_tool_ref(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    _write_tool_module(tmp_path)
+    monkeypatch.syspath_prepend(str(tmp_path))
+    plan_path = tmp_path / "unauthorized_tool_plan.json"
+    plan_path.write_text(
+        json.dumps(
+            {
+                "name": "Unauthorized Tool Plan",
+                "workflow_id": "unauthorized_tool_plan",
+                "inputs": {"question": "string"},
+                "outputs": {"answer": "string"},
+                "nodes": [
+                    {
+                        "id": "call_tool",
+                        "kind": "tool",
+                        "executor": "fake.upper",
+                        "inputs": {"question": "question"},
+                        "outputs": {"answer": "answer"},
+                    }
+                ],
+                "edges": [],
+                "policies": {"allowed_tool_refs": []},
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "compile",
+            str(plan_path),
+            "--tool-module",
+            "fake_cli_tools",
+            "--out",
+            str(tmp_path / "build"),
+            "--json",
+        ],
+    )
+
+    assert result.exit_code != 0
+    payload = json.loads(result.stdout)
+    assert payload["ok"] is False
+    assert any(
+        item["code"] == "E_SEC_015" and "fake.upper" in item["message"]
+        for item in payload["diagnostics"]
+    )
+    assert "Traceback" not in result.stdout
+
+
+def test_cli_compile_reports_tool_module_without_register_tools(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    module_path = tmp_path / "bad_cli_tools.py"
+    module_path.write_text("VALUE = 1\n", encoding="utf-8")
+    monkeypatch.syspath_prepend(str(tmp_path))
+    plan_path = tmp_path / "tool_plan.json"
+    _write_tool_json_plan(plan_path)
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "compile",
+            str(plan_path),
+            "--tool-module",
+            "bad_cli_tools",
+            "--out",
+            str(tmp_path / "build"),
+            "--json",
+        ],
+    )
+
+    assert result.exit_code != 0
+    payload = json.loads(result.stdout)
+    assert payload["ok"] is False
+    assert payload["diagnostics"][0]["code"] == "E_RUNTIME_010"
+    assert "register_tools" in payload["diagnostics"][0]["message"]
+    assert "Traceback" not in result.stdout
+
+
 def test_cli_run_without_tool_module_fails_for_python_callable_ir(tmp_path: Path) -> None:
     workflow_path = tmp_path / "tool_workflow.json"
     _write_tool_ir(workflow_path)
