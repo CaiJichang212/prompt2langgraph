@@ -71,6 +71,7 @@ def __getattr__(name: str) -> Any:
         "PlanningPipelineResult",
         "PlanningStageStatus",
         "RepairAttemptRecord",
+        "ToolReadiness",
         "plan_prompt",
         "plan_skill",
     }:
@@ -91,6 +92,7 @@ __all__ = [
     "RepairAttemptRecord",
     "SkillPlanRequest",
     "SkillPlanResult",
+    "ToolReadiness",
     "ValidationReport",
     "WorkflowSpec",
     "compile_workflow",
