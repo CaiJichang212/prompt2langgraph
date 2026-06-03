@@ -24,6 +24,7 @@ def __getattr__(name: str):
         "PlanningPipelineResult",
         "PlanningStageStatus",
         "RepairAttemptRecord",
+        "ToolReadiness",
         "plan_prompt",
         "plan_skill",
     }:
@@ -40,6 +41,7 @@ __all__ = [
     "PlanningPipelineResult",
     "PlanningStageStatus",
     "RepairAttemptRecord",
+    "ToolReadiness",
     "build_model_client",
     "generate_plan_text",
     "load_prompt_planner_config",
