@@ -25,6 +25,7 @@ from prompt2langgraph.registry.builtins import builtin_executor_registry
 from prompt2langgraph.registry.executors import ExecutorRegistry
 from prompt2langgraph.runtime.audit import (
     AuditRecord,
+    AuditSink,
     JsonlAuditSink,
     audit_path_for_state_store,
     utc_timestamp,
@@ -59,6 +60,7 @@ def run_workflow(
     thread_id: str | None = None,
     resume_payload: Any = _NO_RESUME,
     state_store_dir: Path | None = None,
+    audit_sink: AuditSink | None = None,
     model_client: Any | None = None,
     tool_registry: Any | None = None,
     checkpointer: Any | None = None,
@@ -72,8 +74,10 @@ def run_workflow(
         events.append(RunEvent(type="run.resumed", run_id=run_id, thread_id=thread_id))
     metrics_collector = RuntimeMetricsCollector()
     external_calls = metrics_collector.external_calls
-    audit_path = audit_path_for_state_store(state_store_dir)
-    audit_sink = JsonlAuditSink(audit_path) if audit_path is not None else None
+    audit_target = audit_sink
+    if audit_target is None:
+        audit_path = audit_path_for_state_store(state_store_dir)
+        audit_target = JsonlAuditSink(audit_path) if audit_path is not None else None
 
     def _audit(
         event_type: str,
@@ -84,9 +88,9 @@ def run_workflow(
         error_code: str | None = None,
         retry_count: int = 0,
     ) -> None:
-        if audit_sink is None:
+        if audit_target is None:
             return
-        audit_sink.write(
+        audit_target.write(
             AuditRecord(
                 run_id=run_id,
                 thread_id=thread_id,
@@ -231,6 +235,11 @@ def run_workflow(
             error_sink=_error_sink,
             metrics_sink=_metrics_sink,
             retry_sink=_retry_sink,
+            audit_sink=lambda event_type, status, node_id: _audit(
+                event_type,
+                status,
+                node_id=node_id,
+            ),
             side_effect_store=side_effect_store,
             workflow_id=workflow.workflow_id,
             thread_id=thread_id,
