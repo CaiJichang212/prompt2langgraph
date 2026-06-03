@@ -11,12 +11,15 @@ from prompt2langgraph.ir.models import (
     TypeSpec,
     WorkflowSpec,
 )
+from prompt2langgraph.registry.executors import ExecutorDefinition, ExecutorRegistry
 from prompt2langgraph.registry.tool_executor import ToolCallableRegistry
 from prompt2langgraph.validate.security import (
     check_external_policy,
+    check_langchain_tool_reserved,
     check_model_whitelist,
     check_tool_refs,
 )
+from prompt2langgraph.validate.validator import validate_workflow
 
 
 def _make_workflow(
@@ -205,6 +208,53 @@ def test_langchain_tool_node_not_checked_by_check_tool_refs() -> None:
     )
     diags = check_tool_refs(wf, registry)
     assert diags == []
+
+
+def test_langchain_tool_node_reports_reserved_warning() -> None:
+    """LANGCHAIN_TOOL 节点应产生 reserved/experimental warning。"""
+    wf = _make_workflow(
+        nodes=[
+            NodeSpec(
+                id="lc_tool",
+                kind="tool",
+                executor=ExecutorRef(ref="lc.some_tool", type=ExecutorType.LANGCHAIN_TOOL),
+            ),
+        ],
+    )
+
+    diags = check_langchain_tool_reserved(wf)
+
+    assert len(diags) == 1
+    assert diags[0].code == "W_SEC_016"
+    assert diags[0].severity == "warning"
+    assert diags[0].location.node_id == "lc_tool"
+
+
+def test_validate_workflow_includes_langchain_tool_reserved_warning() -> None:
+    """validator 应纳入 LANGCHAIN_TOOL reserved warning。"""
+    wf = _make_workflow(
+        nodes=[
+            NodeSpec(
+                id="lc_tool",
+                kind="tool",
+                executor=ExecutorRef(ref="lc.some_tool", type=ExecutorType.LANGCHAIN_TOOL),
+            ),
+        ],
+        policies=PolicySpec(allowed_tool_refs=[]),
+    )
+    executors = ExecutorRegistry(
+        [
+            ExecutorDefinition(
+                ref="lc.some_tool",
+                type=ExecutorType.LANGCHAIN_TOOL,
+                dynamic=True,
+            )
+        ]
+    )
+
+    report = validate_workflow(wf, executors=executors)
+
+    assert any(diag.code == "W_SEC_016" for diag in report.diagnostics)
 
 
 def test_node_level_allowed_tool_refs_overrides_global() -> None:
