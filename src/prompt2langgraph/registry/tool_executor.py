@@ -16,6 +16,8 @@ class ToolCallableRegistry:
         self._callables: dict[str, ExecutorHandler] = {}
 
     def register(self, ref: str, callable: ExecutorHandler) -> None:
+        if ref in self._callables:
+            raise ValueError(f'tool ref "{ref}" is already registered')
         self._callables[ref] = callable
 
     def get(self, ref: str) -> ExecutorHandler:
