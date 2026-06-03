@@ -1,8 +1,8 @@
-# v0.4 Phase 3A CLI Tool Registry Implementation Plan
+# v0.3 Phase 3A CLI Tool Registry Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Implement v0.4 Phase 3A so CLI can load trusted Python tool modules before workflow parsing, run/resume `PYTHON_CALLABLE` tool workflows, and expose Skill planning tool readiness.
+**Goal:** Implement v0.3 Phase 3A so CLI can load trusted Python tool modules before workflow parsing, run/resume `PYTHON_CALLABLE` tool workflows, and expose Skill planning tool readiness.
 
 **Architecture:** Keep the existing validator, adapter, compiler, and runner boundaries. Add a small CLI runtime-client layer that loads `--tool-module`, builds a `ToolCallableRegistry`, synthesizes dynamic `ExecutorDefinition(type=PYTHON_CALLABLE)`, and passes the same executor registry through parse, validate, and run. Add `ToolReadiness` to the existing planning pipeline as a reporting field only; it does not replace validator security checks.
 
@@ -19,7 +19,7 @@
 
 ## Scope
 
-This plan implements only v0.4 Phase 3A:
+This plan implements only v0.3 Phase 3A:
 
 - CLI `run` / `resume` support `--tool-module <module>`.
 - Tool modules expose `register_tools(registry)`.
@@ -51,7 +51,7 @@ This plan does not implement retry, audit, side-effect idempotency, runtime conf
 - Create `tests/test_cli_tool_module.py`: focused CLI tool-module tests.
 - Modify `tests/test_prompt_pipeline.py`: add tool readiness unit tests.
 - Modify `tests/test_cli.py`: assert `pt2lg plan --json` emits `tool_readiness` when the planning result contains it.
-- Modify `README.md`, `AGENTS.md`, `CLAUDE.md`, and `docs/prompt2langgraph-v0.4-开发计划文档.md`: document the 3A behavior after implementation.
+- Modify `README.md`, `AGENTS.md`, `CLAUDE.md`, and `docs/prompt2langgraph-v0.3-开发计划文档.md`: document the 3A behavior after implementation.
 
 ---
 
@@ -1348,7 +1348,7 @@ Expected: commit succeeds if commits are allowed.
 - Modify: `README.md`
 - Modify: `AGENTS.md`
 - Modify: `CLAUDE.md`
-- Modify: `docs/prompt2langgraph-v0.4-开发计划文档.md`
+- Modify: `docs/prompt2langgraph-v0.3-开发计划文档.md`
 
 - [ ] **Step 1: Update README**
 
@@ -1381,9 +1381,9 @@ Add equivalent concise notes:
 - tool ref 不允许重复注册，也不允许覆盖内置或既有 executor ref。
 ```
 
-- [ ] **Step 3: Update v0.4 development plan status**
+- [ ] **Step 3: Update v0.3 development plan status**
 
-In `docs/prompt2langgraph-v0.4-开发计划文档.md`, update the 3A section to mark CLI tool registry loading and Skill required tool refs as implemented after tests pass. Use wording that does not imply retry, audit, idempotency, or runtime config bundle are done.
+In `docs/prompt2langgraph-v0.3-开发计划文档.md`, update the 3A section to mark CLI tool registry loading and Skill required tool refs as implemented after tests pass. Use wording that does not imply retry, audit, idempotency, or runtime config bundle are done.
 
 - [ ] **Step 4: Run focused tests**
 
@@ -1420,7 +1420,7 @@ Expected: all tests pass.
 Run:
 
 ```bash
-git add README.md AGENTS.md CLAUDE.md docs/prompt2langgraph-v0.4-开发计划文档.md
+git add README.md AGENTS.md CLAUDE.md docs/prompt2langgraph-v0.3-开发计划文档.md
 git commit -m "docs: document v04 phase3a tool module workflow"
 ```
 

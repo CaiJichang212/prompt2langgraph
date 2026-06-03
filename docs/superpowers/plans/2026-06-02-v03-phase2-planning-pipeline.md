@@ -1,8 +1,8 @@
-# prompt2langgraph v0.4 Phase 2 Planning Pipeline Implementation Plan
+# prompt2langgraph v0.3 Phase 2 Planning Pipeline Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Implement v0.4 Phase 2 Prompt/Skill planning reliability so generated plans are parsed, diagnosed, optionally repaired, validated, compile-smoked, and evaluated offline.
+**Goal:** Implement v0.3 Phase 2 Prompt/Skill planning reliability so generated plans are parsed, diagnosed, optionally repaired, validated, compile-smoked, and evaluated offline.
 
 **Architecture:** Keep `WorkflowSpec`, `JSONPlanAdapter`, `validate_workflow()`, and `compile_workflow_to_graph()` as existing boundaries. Add a focused `prompting.pipeline` layer that orchestrates generation, parse, adapter, validation, compile smoke, repair attempts, and structured diagnostics while preserving the old `plan_*_to_workflow_spec()` compatibility behavior.
 
@@ -25,7 +25,7 @@
 
 Implement the project-level plan in:
 
-- `docs/prompt2langgraph-v0.4-第二期实施计划.md`
+- `docs/prompt2langgraph-v0.3-第二期实施计划.md`
 
 Core contracts:
 
@@ -89,7 +89,7 @@ Core contracts:
   - `README.md`
   - `CLAUDE.md`
   - `AGENTS.md`
-  - `docs/prompt2langgraph-v0.4-开发计划文档.md`
+  - `docs/prompt2langgraph-v0.3-开发计划文档.md`
   - `tests/prompts_skills_test/README.md`
 
 ## Task 1: Parser Robustness
@@ -1769,7 +1769,7 @@ Expected: PASS.
 In `tests/prompts_skills_test/README.md`, add a short section:
 
 ```markdown
-## v0.4 Phase 2 Planning Pipeline Metrics
+## v0.3 Phase 2 Planning Pipeline Metrics
 
 The default corpus tests exercise Prompt and Skill planning through deterministic fake model responses. The offline gate requires:
 
@@ -1797,13 +1797,13 @@ Expected: corpus test and corpus README changed.
 - Modify: `README.md`
 - Modify: `CLAUDE.md`
 - Modify: `AGENTS.md`
-- Modify: `docs/prompt2langgraph-v0.4-开发计划文档.md`
-- Review: `docs/prompt2langgraph-v0.4-第二期实施计划.md`
+- Modify: `docs/prompt2langgraph-v0.3-开发计划文档.md`
+- Review: `docs/prompt2langgraph-v0.3-第二期实施计划.md`
 
 **Current source facts used by this task:**
 
 - Project instructions require README, CLAUDE, and AGENTS sync for documentation changes.
-- v0.4 second phase still excludes CLI tool registry, MCP, direct workflow execution from prompts, and `LANGCHAIN_TOOL` execution.
+- v0.3 second phase still excludes CLI tool registry, MCP, direct workflow execution from prompts, and `LANGCHAIN_TOOL` execution.
 
 - [ ] **Step 1: Update README**
 
@@ -1821,9 +1821,9 @@ Add the same capability boundary in both files:
 Prompt/Skill planning uses a structured offline-testable pipeline. Prompt and Skill inputs still generate simplified JSON plan only; they do not directly run workflows. Repair attempts are optional and must re-enter parse/adapt/validate/compile-smoke checks. Default tests must not call live LLM endpoints.
 ```
 
-- [ ] **Step 3: Update v0.4 project plan**
+- [ ] **Step 3: Update v0.3 project plan**
 
-In `docs/prompt2langgraph-v0.4-开发计划文档.md`, update the second phase completion language to match implemented behavior:
+In `docs/prompt2langgraph-v0.3-开发计划文档.md`, update the second phase completion language to match implemented behavior:
 
 ```markdown
 第二期完成后，Prompt/Skill planning 具备结构化 pipeline 结果，能区分 generation、parse、adapter、validation 和 compile smoke 阶段；repair attempts 可配置并默认离线可测；Skill 静态风险诊断保留在 planning result 中；默认测试不访问网络。

@@ -1,4 +1,4 @@
-# prompt2langgraph v0.4 第二期实施计划
+# prompt2langgraph v0.3 第二期实施计划
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -12,7 +12,7 @@
 
 ## 1. 背景与范围
 
-第二期承接 `docs/prompt2langgraph-v0.4-开发计划文档.md` 第 9 节，目标是补齐 Prompt/Skill 生成可靠性闭环。
+第二期承接 `docs/prompt2langgraph-v0.3-开发计划文档.md` 第 9 节，目标是补齐 Prompt/Skill 生成可靠性闭环。
 
 纳入范围：
 
@@ -26,7 +26,7 @@
 排除范围：
 
 - 不实现 CLI tool registry 加载；该能力属于第三期。
-- 不实现 `LANGCHAIN_TOOL` 端到端执行；v0.4 仍按 reserved/experimental 处理。
+- 不实现 `LANGCHAIN_TOOL` 端到端执行；v0.3 仍按 reserved/experimental 处理。
 - 不引入 MCP、Web UI、OpenAPI 服务、进程沙箱或网络隔离。
 - 不把 Prompt 入口升级为直接运行 workflow 的命令。
 - 不把 live LLM 评估纳入默认 `pytest`。
@@ -39,7 +39,7 @@
 - `src/prompt2langgraph/prompting/planner.py` 当前提供 `PromptPlanRequest`、`PromptPlanResult`、`generate_plan_text()`、`plan_prompt_to_workflow_spec()`；后者直接执行 `generate -> parse -> JSONPlanAdapter().parse()` 并返回 `WorkflowSpec`。
 - `src/prompt2langgraph/prompting/skill_planner.py` 当前提供 `SkillPlanRequest`、`SkillPlanResult`、`generate_skill_plan_text()`、`plan_skill_to_workflow_spec()`；Skill 静态分析来自 `analyze_skill_dir()`，但 `plan_skill_to_workflow_spec()` 返回 `WorkflowSpec` 时不会把分析风险放入结构化 planning result。
 - `src/prompt2langgraph/cli.py` 的 `plan` 命令当前有 `--prompt`、`--skill-dir`、`--validate`、`--json`、`--param`，内部路径为 `_run_prompt_plan()` 和 `_run_skill_plan()`；`--validate` 只执行 adapter + validator，没有 compile smoke 阶段结果。
-- `src/prompt2langgraph/adapters/json_plan.py` 的 `JSONPlanAdapter().parse(plan, source=...)` 是简化 JSON plan 到 `WorkflowSpec` 的唯一适配入口，已支持 v0.4 第一期字段。
+- `src/prompt2langgraph/adapters/json_plan.py` 的 `JSONPlanAdapter().parse(plan, source=...)` 是简化 JSON plan 到 `WorkflowSpec` 的唯一适配入口，已支持 v0.3 第一期字段。
 - `src/prompt2langgraph/validate/validator.py` 的 `validate_workflow()` 返回 `ValidationReport`，其中 `ValidationReport.ok` 由 diagnostics 中是否存在 error 决定。
 - `src/prompt2langgraph/compiler/langgraph_py.py` 的 `compile_workflow_to_graph(workflow, executors, ...)` 可作为 compile smoke；默认可配合 `builtin_executor_registry()` 使用。
 - `src/prompt2langgraph/diagnostics/report.py` 中 `Diagnostic` 字段为 `code`、`severity`、`message`、`location`、`hint`；`DiagnosticLocation` 可携带 `source`、`path`、`line`、`column`。
@@ -287,7 +287,7 @@ uv run pytest tests/test_cli.py -v
 
 - `tests/test_prompt_skill_corpus.py`
 - `tests/prompts_skills_test/README.md`
-- `docs/prompt2langgraph-v0.4-开发计划文档.md`
+- `docs/prompt2langgraph-v0.3-开发计划文档.md`
 
 任务：
 
@@ -295,7 +295,7 @@ uv run pytest tests/test_cli.py -v
 - [ ] 统计离线指标：parse success、validation success、compile smoke success。
 - [ ] 默认测试继续使用 fake model，不访问网络。
 - [ ] README 记录 live 评估为手动命令，不作为默认门禁。
-- [ ] v0.4 总文档同步第二期实际完成边界。
+- [ ] v0.3 总文档同步第二期实际完成边界。
 
 验收：
 
@@ -696,7 +696,7 @@ uv run pytest
 - `README.md`：补充 `pt2lg plan` 的 parser、repair、compile smoke 行为。
 - `CLAUDE.md`：同步 Prompt/Skill planning 边界。
 - `AGENTS.md`：同步当前能力边界和测试命令。
-- `docs/prompt2langgraph-v0.4-开发计划文档.md`：把第二期完成状态从计划描述更新为实际行为。
+- `docs/prompt2langgraph-v0.3-开发计划文档.md`：把第二期完成状态从计划描述更新为实际行为。
 - `tests/prompts_skills_test/README.md`：记录离线指标和 live 评估手动命令。
 
 文档不得承诺第三期能力，例如 CLI tool registry、真实 tool 执行闭环、`LANGCHAIN_TOOL` 执行、MCP 集成。
@@ -711,7 +711,7 @@ uv run pytest
 4. Repair attempts。
 5. CLI 与 public API 对齐。
 6. Corpus 离线评估口径。
-7. README、CLAUDE、AGENTS、v0.4 总文档同步。
+7. README、CLAUDE、AGENTS、v0.3 总文档同步。
 8. 全量测试。
 
 该顺序让每一步都有独立可运行测试，并避免在 parser、pipeline、CLI 三层同时改动时难以定位失败来源。

@@ -1,8 +1,8 @@
-# prompt2langgraph v0.4 Phase 1 Plan Semantics Implementation Plan
+# prompt2langgraph v0.3 Phase 1 Plan Semantics Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Implement v0.4 Phase 1 Plan semantic fidelity so simplified JSON plans preserve `workflow_id`, `metadata`, reducers, policies, and join semantics across Prompt, Skill, validation, compile, run, and docs.
+**Goal:** Implement v0.3 Phase 1 Plan semantic fidelity so simplified JSON plans preserve `workflow_id`, `metadata`, reducers, policies, and join semantics across Prompt, Skill, validation, compile, run, and docs.
 
 **Architecture:** Keep `WorkflowSpec` as the canonical IR and make `JSONPlanAdapter` the only simplified JSON plan normalization boundary. Update Prompt and Skill planner instructions to emit fields already supported by the adapter, then lock behavior with offline tests and CLI smoke fixtures.
 
@@ -24,7 +24,7 @@
 
 Implement the project-level plan in:
 
-- `docs/prompt2langgraph-v0.4-第一期实施计划文档.md`
+- `docs/prompt2langgraph-v0.3-第一期实施计划文档.md`
 
 The scope is Phase 1 only:
 
@@ -493,7 +493,7 @@ Create `tests/fixtures/json_plan_fanout_run.json` with:
   "name": "JSON Plan Fanout Run",
   "entrypoint": "split",
   "metadata": {
-    "source": "v0.4-phase1-smoke"
+    "source": "v0.3-phase1-smoke"
   },
   "inputs": {
     "items": {
@@ -982,7 +982,7 @@ JSON plan 适配保留显式 `workflow_id`、顶层 `metadata`、`policies`、`s
 Ensure both files state:
 
 ```markdown
-`LANGCHAIN_TOOL` 在 v0.4 第一期仍为 reserved/experimental，不作为默认可执行能力。
+`LANGCHAIN_TOOL` 在 v0.3 第一期仍为 reserved/experimental，不作为默认可执行能力。
 ```
 
 - [ ] **Step 4: Update corpus README**

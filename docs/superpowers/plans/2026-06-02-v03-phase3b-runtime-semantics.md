@@ -1,8 +1,8 @@
-# v0.4 Phase 3B Runtime Semantics Implementation Plan
+# v0.3 Phase 3B Runtime Semantics Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Implement v0.4 Phase 3B so `RetryPolicy`, side-effect idempotency, audit JSONL, and runtime metrics have minimal executable semantics.
+**Goal:** Implement v0.3 Phase 3B so `RetryPolicy`, side-effect idempotency, audit JSONL, and runtime metrics have minimal executable semantics.
 
 **Architecture:** Keep Workflow IR unchanged except for using the existing `NodeSpec.retry` and `SecurityPolicy.idempotency_key` fields. Add focused runtime helpers for retry classification, observability, audit, and side-effect idempotency; wire them through the compiler node wrapper and runner without introducing 3C runtime config bundle behavior. Retry is implemented as a compiler wrapper around node executor invocation, not as LangGraph native retry.
 
@@ -12,7 +12,7 @@
 
 ## Scope
 
-This plan implements only v0.4 Phase 3B:
+This plan implements only v0.3 Phase 3B:
 
 - `NodeSpec.retry.max_attempts` affects runtime execution.
 - Retryable errors are explicit and narrow: LLM timeout (`E_LLM_001`), retryable LLM API errors (`E_LLM_002` with timeout/5xx/server wording), and tool timeout (`E_SEC_015` with `timed out` wording).
@@ -53,7 +53,7 @@ This plan does not implement Phase 3A CLI tool module loading, Phase 3C runtime 
 - Modify `tests/test_runner.py`: metrics aggregation and audit wiring tests.
 - Modify `tests/test_side_effect_executor.py`: idempotency and side-effect retry tests.
 - Modify `tests/test_cli.py`: CLI audit file regression.
-- Modify `README.md`, `AGENTS.md`, `CLAUDE.md`, and `docs/prompt2langgraph-v0.4-开发计划文档.md`: document 3B status after tests pass.
+- Modify `README.md`, `AGENTS.md`, `CLAUDE.md`, and `docs/prompt2langgraph-v0.3-开发计划文档.md`: document 3B status after tests pass.
 
 ## Execution Rules
 
@@ -1882,7 +1882,7 @@ Expected: commit succeeds if commits are approved.
 - Modify: `README.md`
 - Modify: `AGENTS.md`
 - Modify: `CLAUDE.md`
-- Modify: `docs/prompt2langgraph-v0.4-开发计划文档.md`
+- Modify: `docs/prompt2langgraph-v0.3-开发计划文档.md`
 
 - [x] **Step 1: Update README runtime section**
 
@@ -1913,15 +1913,15 @@ payloads, API keys, secrets, full model responses, or full tool parameters.
 Add equivalent concise notes to `AGENTS.md` and `CLAUDE.md`:
 
 ```markdown
-- v0.4 3B implements wrapper retry for `NodeSpec.retry.max_attempts`; retryable errors are intentionally narrow: LLM timeout, retryable LLM API timeout/5xx/server failures, and tool timeout.
+- v0.3 3B implements wrapper retry for `NodeSpec.retry.max_attempts`; retryable errors are intentionally narrow: LLM timeout, retryable LLM API timeout/5xx/server failures, and tool timeout.
 - Security errors, missing clients, unauthorized/unregistered tools, invalid LLM input, output contract errors, and side-effect rejection are not default retry targets.
 - `side_effect` retry requires `security.idempotency_key`; successful side-effect output is stored by `(workflow_id, thread_id, idempotency_key)` and reused for duplicate executions.
 - Runtime audit writes safe metadata to `.pt2lg-runtime/audit.log.jsonl` and must not include secrets, full payloads, API keys, full model responses, or sensitive tool parameters.
 ```
 
-- [x] **Step 3: Update v0.4 development plan status**
+- [x] **Step 3: Update v0.3 development plan status**
 
-In `docs/prompt2langgraph-v0.4-开发计划文档.md`, update the 3B sections to state:
+In `docs/prompt2langgraph-v0.3-开发计划文档.md`, update the 3B sections to state:
 
 ```markdown
 3B implementation status: minimal runtime retry, side-effect idempotency,
@@ -1937,7 +1937,7 @@ Place this note under the 3B headings without marking 3C complete.
 Run:
 
 ```bash
-rg -n "3B|retry|idempotency|audit|runtime config bundle|LangGraph native retry" README.md AGENTS.md CLAUDE.md docs/prompt2langgraph-v0.4-开发计划文档.md
+rg -n "3B|retry|idempotency|audit|runtime config bundle|LangGraph native retry" README.md AGENTS.md CLAUDE.md docs/prompt2langgraph-v0.3-开发计划文档.md
 ```
 
 Expected: output shows 3B documented and does not claim 3C runtime config bundle is implemented.
@@ -1947,7 +1947,7 @@ Expected: output shows 3B documented and does not claim 3C runtime config bundle
 If commits are approved, run:
 
 ```bash
-git add README.md AGENTS.md CLAUDE.md docs/prompt2langgraph-v0.4-开发计划文档.md
+git add README.md AGENTS.md CLAUDE.md docs/prompt2langgraph-v0.3-开发计划文档.md
 git commit -m "docs: document v04 phase3b runtime semantics"
 ```
 
@@ -2012,7 +2012,7 @@ Expected: full suite passes.
 If commits are approved and regression changes were needed, run:
 
 ```bash
-git add src/prompt2langgraph tests README.md AGENTS.md CLAUDE.md docs/prompt2langgraph-v0.4-开发计划文档.md
+git add src/prompt2langgraph tests README.md AGENTS.md CLAUDE.md docs/prompt2langgraph-v0.3-开发计划文档.md
 git commit -m "test: cover v04 phase3b runtime regression"
 ```
 

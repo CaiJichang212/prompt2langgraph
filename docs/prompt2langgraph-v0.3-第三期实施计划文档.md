@@ -1,8 +1,8 @@
-# prompt2langgraph v0.4 第三期实施计划文档
+# prompt2langgraph v0.3 第三期实施计划文档
 
 ## 1. 文档目的
 
-本文档用于定义 `prompt2langgraph` v0.4 第三期的工程实施计划，作为后续代码任务拆分、测试验收和文档同步的依据。
+本文档用于定义 `prompt2langgraph` v0.3 第三期的工程实施计划，作为后续代码任务拆分、测试验收和文档同步的依据。
 
 本文档是项目级实施计划，不是 agent 执行脚本。它描述目标、行为契约、模块任务、验收标准和风险边界；只在必要位置给出“最小补丁片段”和“可直接运行的测试片段”。若后续需要交给 coding agent 逐步执行，应基于本文档另行生成细粒度 agent 执行计划，并放在 `docs/superpowers/plans/` 下。
 
@@ -10,7 +10,7 @@
 
 ## 2. 阶段定位
 
-v0.4 第三期对应《prompt2langgraph v0.4 开发计划文档》第 10 节的 **可执行与治理闭环**。
+v0.3 第三期对应《prompt2langgraph v0.3 开发计划文档》第 10 节的 **可执行与治理闭环**。
 
 第一期已经把简化 JSON plan 与当前 `WorkflowSpec` 语义对齐。第二期已经把 Prompt/Skill planning 推进为可解析、可诊断、可修复、可 compile smoke 的结构化链路。第三期的重点不是扩展新的图语义，而是兑现已经暴露在 IR、public API、CLI 和文档中的运行语义：
 
@@ -20,7 +20,7 @@ v0.4 第三期对应《prompt2langgraph v0.4 开发计划文档》第 10 节的 
 - side-effect approval 与 idempotency 绑定，resume 后不重复执行同一幂等键。
 - runtime metrics 与 audit 输出最小但稳定的运行摘要。
 - generated bundle 支持最小 runtime config 的 `build_graph(config)` 和 `invoke(input, config)`。
-- `ExecutorType.LANGCHAIN_TOOL` 明确保持 reserved/experimental，不纳入 v0.4 可执行能力。
+- `ExecutorType.LANGCHAIN_TOOL` 明确保持 reserved/experimental，不纳入 v0.3 可执行能力。
 
 ---
 
@@ -76,7 +76,7 @@ v0.4 第三期对应《prompt2langgraph v0.4 开发计划文档》第 10 节的 
    - metrics 记录 retry count 和最终状态。
 
 4. **3B：Side-effect idempotency 与最小 audit**
-   - 以 `workflow_id + thread_id + node_id + idempotency_key` 作为 v0.4 幂等作用域。
+   - 以 `workflow_id + thread_id + node_id + idempotency_key` 作为 v0.3 幂等作用域。
    - 已批准且已执行的幂等键在 resume 后不重复执行。
    - 增加 `.pt2lg-runtime/audit.log.jsonl` 或可注入 audit sink。
    - audit 只记录最小字段，不记录 secret、完整 input payload、完整 model response 或敏感 tool 参数。
@@ -97,7 +97,7 @@ v0.4 第三期对应《prompt2langgraph v0.4 开发计划文档》第 10 节的 
    - 覆盖 10/100 节点线性图编译、fanout/join compile smoke、prompt/skill corpus offline success rate、tool run smoke、side-effect interrupt/resume smoke、bundle load/invoke smoke。
 
 8. **`LANGCHAIN_TOOL` reserved/experimental**
-   - README、AGENTS、CLAUDE、public docs 和 validator diagnostics 明确该 executor type 不作为 v0.4 可执行能力。
+   - README、AGENTS、CLAUDE、public docs 和 validator diagnostics 明确该 executor type 不作为 v0.3 可执行能力。
    - 不实现 LangChain Tool 端到端执行、schema 映射或安全策略。
 
 ---
@@ -200,7 +200,7 @@ class ToolReadiness(BaseModel):
 
 ### 7.4 RetryPolicy
 
-`NodeSpec.retry.max_attempts` 在 v0.4 第三期只对动态 LLM/tool wrapper 生效。
+`NodeSpec.retry.max_attempts` 在 v0.3 第三期只对动态 LLM/tool wrapper 生效。
 
 行为要求：
 
@@ -280,7 +280,7 @@ def _is_retryable_executor_error(exc: ExecutorError) -> bool:
 
 - 默认 CLI 对 bundle 运行写入 `<bundle>/.pt2lg-runtime/audit.log.jsonl`。
 - 直接运行源文件时，默认写入当前工作目录下 `.pt2lg-runtime/audit.log.jsonl`；不得默认写入 `tests/fixtures/` 或源文件相邻目录。
-- 后续可增加显式 `--runtime-dir` 或 `--audit-dir` 覆盖路径；v0.4 第三期不要求完整配置系统。
+- 后续可增加显式 `--runtime-dir` 或 `--audit-dir` 覆盖路径；v0.3 第三期不要求完整配置系统。
 - Python API 可注入 `audit_sink`。
 - audit 不记录完整 `input_payload`、完整 model response、API key、secret 名称或敏感 tool 参数。
 - JSONL 每行是单个 JSON object，便于后续追加和 grep。
@@ -350,14 +350,14 @@ def build_graph(config: RuntimeConfig | None = None):
 
 ### 7.9 `LANGCHAIN_TOOL`
 
-`ExecutorType.LANGCHAIN_TOOL` 在 v0.4 第三期仍是 reserved/experimental。
+`ExecutorType.LANGCHAIN_TOOL` 在 v0.3 第三期仍是 reserved/experimental。
 
 行为要求：
 
 - README、AGENTS、CLAUDE、开发计划和实施计划均不得宣传其可执行。
-- validator 对 `LANGCHAIN_TOOL` 节点应产生明确 warning，建议新增 `W_SEC_016`，message 标明 `ExecutorType.LANGCHAIN_TOOL is reserved/experimental in v0.4`。
+- validator 对 `LANGCHAIN_TOOL` 节点应产生明确 warning，建议新增 `W_SEC_016`，message 标明 `ExecutorType.LANGCHAIN_TOOL is reserved/experimental in v0.3`。
 - warning 不应由 `check_tool_refs()` 产生；该函数继续只检查 `ExecutorType.PYTHON_CALLABLE`，避免与现有安全测试语义冲突。
-- `JSONPlanAdapter`、Skill prompt 和 Prompt planner 可保留该枚举存在说明，但必须标注不作为 v0.4 可执行能力。
+- `JSONPlanAdapter`、Skill prompt 和 Prompt planner 可保留该枚举存在说明，但必须标注不作为 v0.3 可执行能力。
 - 真正的 LangChain Tool schema 映射和安全策略进入 v0.5+。
 
 ---
@@ -707,7 +707,7 @@ def register_tools(registry):
 - 新增 `tests/test_benchmark_gates.py` 或 `tests/test_engineering_gates.py`
 - `tests/prompts_skills_test/README.md`
 - `README.md`
-- `docs/prompt2langgraph-v0.4-开发计划文档.md`
+- `docs/prompt2langgraph-v0.3-开发计划文档.md`
 
 实施内容：
 
@@ -734,7 +734,7 @@ uv run pytest
 - `README.md`
 - `AGENTS.md`
 - `CLAUDE.md`
-- `docs/prompt2langgraph-v0.4-开发计划文档.md`
+- `docs/prompt2langgraph-v0.3-开发计划文档.md`
 - `tests/prompts_skills_test/README.md`
 
 实施内容：
@@ -816,7 +816,7 @@ uv run pytest
 - artifact compile API 支持 executor registry 注入，dynamic tool bundle 可生成并通过 `RuntimeConfig` 注入 registry 运行。
 - 旧 generated bundle 入口仍有兼容测试。
 - benchmark 和工程门禁默认离线、可重复、不访问网络。
-- `LANGCHAIN_TOOL` 被明确标记为 reserved/experimental，validator 产生 reserved warning，且不作为 v0.4 可执行能力宣传。
+- `LANGCHAIN_TOOL` 被明确标记为 reserved/experimental，validator 产生 reserved warning，且不作为 v0.3 可执行能力宣传。
 - README、AGENTS、CLAUDE、测试说明与实际行为一致。
 - 全量 `uv run pytest` 通过。
 
@@ -829,7 +829,7 @@ uv run pytest
 | CLI tool module 扩大执行面 | 用户误加载不可信 Python module | 默认不加载；文档明确受信任边界；不支持 shell / JSON registry |
 | tool module 加载晚于 workflow parse | 简化 JSON plan 的自定义 tool ref 被降级为 builtin | 固定加载顺序：tool module 先于 workflow parse/load |
 | 只注册 ToolCallableRegistry 导致 validator 仍失败 | CLI tool workflow 无法运行 | tool refs 同步合成 dynamic `ExecutorDefinition` |
-| Retry 重复执行副作用 | 外部状态被重复修改 | v0.4 retry 只默认覆盖动态 LLM/tool；side-effect retry 必须绑定 approval/idempotency |
+| Retry 重复执行副作用 | 外部状态被重复修改 | v0.3 retry 只默认覆盖动态 LLM/tool；side-effect retry 必须绑定 approval/idempotency |
 | idempotency record 绑定 pending interrupt 生命周期 | 成功后清理 pending thread 导致去重记录丢失 | idempotency runtime store 与 pending interrupt store 分离 |
 | audit 泄露敏感内容 | 安全事故 | audit schema 固定最小字段；测试断言不包含完整 payload |
 | generated bundle 破坏旧入口 | 现有 golden 测试失败 | 保留 `compile_graph()` 和 `invoke_graph()` 兼容入口 |
@@ -846,7 +846,7 @@ uv run pytest
 - `README.md`
 - `AGENTS.md`
 - `CLAUDE.md`
-- `docs/prompt2langgraph-v0.4-开发计划文档.md`
+- `docs/prompt2langgraph-v0.3-开发计划文档.md`
 - `tests/prompts_skills_test/README.md`
 
 同步内容必须覆盖：

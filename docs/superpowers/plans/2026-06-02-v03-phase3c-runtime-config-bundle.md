@@ -1,8 +1,8 @@
-# v0.4 Phase 3C Runtime Config Bundle Implementation Plan
+# v0.3 Phase 3C Runtime Config Bundle Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Implement v0.4 Phase 3C so generated bundles expose a minimal runtime config, dynamic tool bundles can be compiled and invoked, manifests report runtime requirements, and offline benchmark/engineering gates cover the 3C closure.
+**Goal:** Implement v0.3 Phase 3C so generated bundles expose a minimal runtime config, dynamic tool bundles can be compiled and invoked, manifests report runtime requirements, and offline benchmark/engineering gates cover the 3C closure.
 
 **Architecture:** Keep bundle artifacts as library-backed runtime artifacts rather than self-contained deployments. Extend generated `graph.py` with a small `RuntimeConfig` object and compatible `build_graph()`, `compile_graph()`, `invoke()`, and `invoke_graph()` entrypoints. Thread optional executor and tool registries through artifact compilation and CLI compile so dynamic tool workflows can be validated, bundled, and invoked without reintroducing 3A loader logic.
 
@@ -20,7 +20,7 @@
 
 ## Scope
 
-This plan implements only v0.4 Phase 3C:
+This plan implements only v0.3 Phase 3C:
 
 - Generated `graph.py` exposes `RuntimeConfig`, `build_graph(config=None)`, and `invoke(input_payload=None, config=None)`.
 - Existing `compile_graph()` and `invoke_graph()` generated entrypoints remain compatible.
@@ -52,7 +52,7 @@ This plan implements only v0.4 Phase 3C:
 - Modify `tests/test_cli_tool_module.py`: CLI compile with tool module smoke.
 - Modify `tests/test_engineering_gates.py`: Phase 3C offline benchmark smoke coverage.
 - Modify `tests/test_bundle_golden.py` only if normalization needs adjustment. Prefer updating golden JSON snapshots with `scripts/update_golden.py`.
-- Modify `README.md`, `AGENTS.md`, `CLAUDE.md`, `tests/prompts_skills_test/README.md`, and `docs/prompt2langgraph-v0.4-开发计划文档.md`: document Phase 3C status and gates.
+- Modify `README.md`, `AGENTS.md`, `CLAUDE.md`, `tests/prompts_skills_test/README.md`, and `docs/prompt2langgraph-v0.3-开发计划文档.md`: document Phase 3C status and gates.
 
 ---
 
@@ -1304,7 +1304,7 @@ Expected: commit succeeds if commits are allowed.
 - Modify: `AGENTS.md`
 - Modify: `CLAUDE.md`
 - Modify: `tests/prompts_skills_test/README.md`
-- Modify: `docs/prompt2langgraph-v0.4-开发计划文档.md`
+- Modify: `docs/prompt2langgraph-v0.3-开发计划文档.md`
 
 - [ ] **Step 1: Update README bundle section**
 
@@ -1331,7 +1331,7 @@ and compile reports must not contain real secrets or secret names.
 Add this concise note to both `AGENTS.md` and `CLAUDE.md` near the bundle guidance:
 
 ```markdown
-- v0.4 3C generated bundle `generated/graph.py` exposes `RuntimeConfig`,
+- v0.3 3C generated bundle `generated/graph.py` exposes `RuntimeConfig`,
   `build_graph(config=None)`, and `invoke(input_payload=None, config=None)`,
   while keeping `compile_graph()` and `invoke_graph()` compatible.
 - `RuntimeConfig` supports local injection of executor registry, model client,
@@ -1352,9 +1352,9 @@ tool bundle smoke, side-effect interrupt/resume smoke, and deterministic
 10/100-node compile smoke.
 ```
 
-- [ ] **Step 4: Update v0.4 development plan status**
+- [ ] **Step 4: Update v0.3 development plan status**
 
-In `docs/prompt2langgraph-v0.4-开发计划文档.md`, under the 3C sections, add wording equivalent to:
+In `docs/prompt2langgraph-v0.3-开发计划文档.md`, under the 3C sections, add wording equivalent to:
 
 ```markdown
 3C implementation status: generated bundles expose a minimal RuntimeConfig,
@@ -1369,13 +1369,13 @@ execution.
 - [ ] **Step 5: Keep `LANGCHAIN_TOOL` reserved wording current**
 
 In `README.md`, `AGENTS.md`, and `CLAUDE.md`, make sure existing `LANGCHAIN_TOOL`
-notes say v0.4 keeps it reserved/experimental and does not provide end-to-end
+notes say v0.3 keeps it reserved/experimental and does not provide end-to-end
 execution. Use this wording if the current text is stale:
 
 ```markdown
-- `LANGCHAIN_TOOL` remains reserved/experimental in v0.4 and is not a default
+- `LANGCHAIN_TOOL` remains reserved/experimental in v0.3 and is not a default
   executable capability. Use trusted Python tool modules plus
-  `ExecutorType.PYTHON_CALLABLE` for the v0.4 tool execution path.
+  `ExecutorType.PYTHON_CALLABLE` for the v0.3 tool execution path.
 ```
 
 - [ ] **Step 6: Search docs for overclaims**
@@ -1383,7 +1383,7 @@ execution. Use this wording if the current text is stale:
 Run:
 
 ```bash
-rg -n "runtime config|RuntimeConfig|deployable|secret manager|LANGCHAIN_TOOL|benchmark|3C" README.md AGENTS.md CLAUDE.md tests/prompts_skills_test/README.md docs/prompt2langgraph-v0.4-开发计划文档.md
+rg -n "runtime config|RuntimeConfig|deployable|secret manager|LANGCHAIN_TOOL|benchmark|3C" README.md AGENTS.md CLAUDE.md tests/prompts_skills_test/README.md docs/prompt2langgraph-v0.3-开发计划文档.md
 ```
 
 Expected: output shows 3C behavior documented and does not claim standalone deployment, secret manager, sandbox, or LangChain Tool execution.
@@ -1393,7 +1393,7 @@ Expected: output shows 3C behavior documented and does not claim standalone depl
 Run only after user approval:
 
 ```bash
-git add README.md AGENTS.md CLAUDE.md tests/prompts_skills_test/README.md docs/prompt2langgraph-v0.4-开发计划文档.md
+git add README.md AGENTS.md CLAUDE.md tests/prompts_skills_test/README.md docs/prompt2langgraph-v0.3-开发计划文档.md
 git commit -m "docs: document phase3c runtime config bundles"
 ```
 
@@ -1476,7 +1476,7 @@ No code commit is required for this step. If any prior commit was skipped becaus
 - [ ] Manifest `runtime_requirements` lists model refs, tool refs, checkpoint requirement, and policy summary without secrets or secret names.
 - [ ] Golden bundle snapshots match generated artifacts.
 - [ ] Engineering gates remain offline and avoid brittle performance thresholds.
-- [ ] `LANGCHAIN_TOOL` remains documented as reserved/experimental, not as a v0.4 executable path.
+- [ ] `LANGCHAIN_TOOL` remains documented as reserved/experimental, not as a v0.3 executable path.
 - [ ] Documentation states 3C behavior without implying deployable bundles, secret manager integration, sandboxing, remote audit, or LangChain Tool execution.
 
 ## Execution Handoff

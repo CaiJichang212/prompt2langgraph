@@ -1,8 +1,8 @@
-# prompt2langgraph v0.4 开发计划文档
+# prompt2langgraph v0.3 开发计划文档
 
 ## 1. 文档目的
 
-本文档用于定义 `prompt2langgraph` v0.4 的项目级开发计划，作为后续实施计划、任务拆分、测试验收和文档同步的上位输入。
+本文档用于定义 `prompt2langgraph` v0.3 的项目级开发计划，作为后续实施计划、任务拆分、测试验收和文档同步的上位输入。
 
 本文档以当前代码和测试为基础，吸收以下评估报告结论：
 
@@ -22,19 +22,19 @@
 - 规范 Workflow IR 和简化 JSON plan 可以进入 `validate / compile / run / resume / graph / bundle` 主链路。
 - Workflow IR、registry、validator、compiler、runner、artifact、Mermaid 等核心模块已经形成稳定边界。
 - 测试基线健康，评估报告记录全量测试 `366 passed`，覆盖率 `89.32%`，高于当前覆盖率门槛；实际开发中应以最新 `uv run pytest` 结果为准。
-- `tests/prompts_skills_test` 已经形成离线 prompt、Skill、JSON plan、负向用例语料，可作为 v0.4 的主要验收基础。
+- `tests/prompts_skills_test` 已经形成离线 prompt、Skill、JSON plan、负向用例语料，可作为 v0.3 的主要验收基础。
 
-但按目标衡量，项目仍然更接近“确定性 Workflow IR 编译与本地执行内核”，尚未达到“Prompt/Skill-first 可稳定生成并执行 LangGraph 图”的阶段。v0.4 应把重心放在目标链路中最短板的位置，而不是继续横向扩展生态能力。
+但按目标衡量，项目仍然更接近“确定性 Workflow IR 编译与本地执行内核”，尚未达到“Prompt/Skill-first 可稳定生成并执行 LangGraph 图”的阶段。v0.3 应把重心放在目标链路中最短板的位置，而不是继续横向扩展生态能力。
 
 ---
 
-## 3. v0.4 总体定位
+## 3. v0.3 总体定位
 
-v0.4 的总体定位是：
+v0.3 的总体定位是：
 
 **把 Prompt / Skill / JSON plan 输入从 alpha 入口推进为可诊断、可修复、可验收的端到端工作流生成与执行链路。**
 
-v0.4 不把重点放在新增大量节点类型、Web UI、多后端编译或复杂生态集成，而是集中补齐评估报告中的 P0/P1 差距：
+v0.3 不把重点放在新增大量节点类型、Web UI、多后端编译或复杂生态集成，而是集中补齐评估报告中的 P0/P1 差距：
 
 1. JSON plan 到 Workflow IR 的语义保真。
 2. Prompt/Skill planning 的解析、校验、修复和评估闭环。
@@ -42,7 +42,7 @@ v0.4 不把重点放在新增大量节点类型、Web UI、多后端编译或复
 4. `RetryPolicy`、side-effect idempotency、metrics、audit、bundle runtime config 等已暴露能力的运行语义。
 5. 文档一致性、测试语料、benchmark 和工程门禁。
 
-v0.4 的目标不是“一次性生产级平台化”，而是让项目从“IR/plan 编译工具包”升级为“Prompt/Skill 可以较稳定生成、校验、编译并受控运行 LangGraph 图的工具链”。
+v0.3 的目标不是“一次性生产级平台化”，而是让项目从“IR/plan 编译工具包”升级为“Prompt/Skill 可以较稳定生成、校验、编译并受控运行 LangGraph 图的工具链”。
 
 ---
 
@@ -52,29 +52,29 @@ v0.4 的目标不是“一次性生产级平台化”，而是让项目从“IR/
 
 评估报告对以下缺口形成共识：
 
-| 主题 | 当前状态 | v0.4 处理方式 |
+| 主题 | 当前状态 | v0.3 处理方式 |
 |---|---|---|
 | JSON plan 语义保真 | 当前代码已支持 `state_schema.reducers`、`policies`、edge 级 `join_sources`；剩余缺口集中在显式 `workflow_id`、`metadata`、顶层 `reducers` 兼容、端到端 run smoke 和文档一致性 | 作为第一期核心任务 |
 | Prompt/Skill planning 不稳定 | 依赖 LLM 单次输出 JSON，parser 鲁棒性有限，缺少 repair 和质量指标 | 作为第二期核心任务 |
 | Skill/tool 执行闭环不足 | Python API 可注入工具，但 CLI registry 为空；Skill 不产生可执行 tool 注册体验 | 作为第三期核心任务 |
-| 已建模运行语义未完全兑现 | 3B 已补齐 `RetryPolicy`、side-effect idempotency、metrics、audit 的最小运行语义；3C 已补齐最小 runtime config bundle 与 secret-free runtime requirements；`LANGCHAIN_TOOL` 当前仍为保留枚举 | 第三期只做最小运行语义；`LANGCHAIN_TOOL` 在 v0.4 标记为 reserved/experimental，不实现端到端执行 |
+| 已建模运行语义未完全兑现 | 3B 已补齐 `RetryPolicy`、side-effect idempotency、metrics、audit 的最小运行语义；3C 已补齐最小 runtime config bundle 与 secret-free runtime requirements；`LANGCHAIN_TOOL` 当前仍为保留枚举 | 第三期只做最小运行语义；`LANGCHAIN_TOOL` 在 v0.3 标记为 reserved/experimental，不实现端到端执行 |
 | 生产化与工程门禁不足 | bundle 偏骨架，benchmark 和观测指标不足，部分文档与源码演进不同步 | 第三期只交付最小 runtime config、benchmark 门禁说明和文档一致性；完整可部署 bundle 推迟到 v0.5+ |
 
-### 4.2 v0.4 优先级原则
+### 4.2 v0.3 优先级原则
 
-v0.4 采用以下优先级原则：
+v0.3 采用以下优先级原则：
 
 1. **先补输入语义，再补生成鲁棒性，最后补执行治理。**
 2. **先保证离线确定性验收，再引入真实外部调用验收。**
 3. **Prompt/Skill 只能生成计划，不能绕过 adapter、validator、policy、binding 和 compiler。**
 4. **真实 LLM/tool/side-effect 执行必须显式授权、白名单控制、可诊断、可审计。**
-5. **不把 v0.5+ 的生态扩展提前混入 v0.4 主线。**
+5. **不把 v0.5+ 的生态扩展提前混入 v0.3 主线。**
 
 ---
 
-## 5. v0.4 纳入范围
+## 5. v0.3 纳入范围
 
-v0.4 纳入以下范围：
+v0.3 纳入以下范围：
 
 1. 增强 `JSONPlanAdapter` 剩余语义，补齐显式 `workflow_id`、`metadata`、顶层 `reducers` 兼容，并保持 `state_schema.reducers`、`policies`、`join_sources` 的回归覆盖。
 2. 对齐 Prompt planner、Skill planner 的输出 schema 与 JSON plan adapter 的实际能力。
@@ -82,7 +82,7 @@ v0.4 纳入以下范围：
 4. 建立 `generate -> parse -> adapt -> validate -> compile` 的统一 planning pipeline 诊断。
 5. 支持可配置的 planning repair attempts，把 parse/adapter/validation 诊断反馈给模型进行修复。
 6. 用 `tests/prompts_skills_test` 建立 Prompt/Skill/JSON plan 离线评估指标和回归套件。
-7. 定义并实现 CLI tool registry 加载的最小安全模型，v0.4 默认采用 `--tool-module` 入口。
+7. 定义并实现 CLI tool registry 加载的最小安全模型，v0.3 默认采用 `--tool-module` 入口。
 8. 让 Skill 计划产物可以声明 required tool refs、风险提示和注册状态。
 9. 补齐 `RetryPolicy` 的最小运行时语义。
 10. 增强 side-effect idempotency、approval/audit 和 metrics 的最小基础能力。
@@ -91,9 +91,9 @@ v0.4 纳入以下范围：
 
 ---
 
-## 6. v0.4 排除范围
+## 6. v0.3 排除范围
 
-v0.4 不纳入以下内容：
+v0.3 不纳入以下内容：
 
 - Web UI、Human-in-the-Loop 管理界面或可视化编辑器。
 - MCP 工具生态集成。
@@ -108,13 +108,13 @@ v0.4 不纳入以下内容：
 - 非 OpenAI-compatible provider 的完整多供应商适配。
 - 大规模分布式调度、并行度调度和资源编排。
 
-这些能力可以进入 v0.5+ 路线图，但不作为 v0.4 的完成标准。
+这些能力可以进入 v0.5+ 路线图，但不作为 v0.3 的完成标准。
 
 ---
 
 ## 7. 三期开发划分
 
-v0.4 分为三期推进：
+v0.3 分为三期推进：
 
 1. **第一期：Plan 语义保真闭环**
 2. **第二期：Prompt/Skill 生成可靠性闭环**
@@ -132,7 +132,7 @@ v0.4 分为三期推进：
 
 **让 Prompt、Skill 或 LLM 生成的简化 JSON plan 与当前 WorkflowSpec IR 已支持的语义保持一致，补齐剩余字段缺口，并建立防回归验收。**
 
-第一期完成后，JSON plan 应能表达当前 IR 和 compiler 已经支持的核心语义。当前已支持的 `state_schema.reducers`、`policies`、edge 级 `join_sources` 应作为回归能力保留；v0.4 第一阶段重点补齐显式 `workflow_id`、`metadata`、顶层 `reducers` 兼容和端到端 run smoke。
+第一期完成后，JSON plan 应能表达当前 IR 和 compiler 已经支持的核心语义。当前已支持的 `state_schema.reducers`、`policies`、edge 级 `join_sources` 应作为回归能力保留；v0.3 第一阶段重点补齐显式 `workflow_id`、`metadata`、顶层 `reducers` 兼容和端到端 run smoke。
 
 ### 8.2 主要任务
 
@@ -144,7 +144,7 @@ v0.4 分为三期推进：
 - `policies` 可进入 `WorkflowSpec.policies`。
 - edge 级 `join_sources` 可进入 `EdgeSpec.join_sources`。
 
-v0.4 第一期应补齐以下剩余字段与兼容入口：
+v0.3 第一期应补齐以下剩余字段与兼容入口：
 
 - 顶层 `workflow_id` 应优先于 `name` 派生 ID；缺省时继续保持 `name` slug 兼容行为。
 - 顶层 `metadata`。
@@ -279,7 +279,7 @@ prompt / skill
 
 基于 `tests/prompts_skills_test` 建立评估指标：
 
-| 指标 | 含义 | v0.4 初始目标 |
+| 指标 | 含义 | v0.3 初始目标 |
 |---|---|---:|
 | prompt parse success | Prompt fake/live 输出可解析为 JSON object | 离线 100%，live 目标不低于 90% |
 | prompt validation success | Prompt plan 可通过 validate | 离线 100%，live 目标不低于 75% |
@@ -287,7 +287,7 @@ prompt / skill
 | skill validation success | Skill plan 可通过 validate | 离线 100%，live 目标不低于 60% |
 | compile smoke success | 验证通过的 plan 可完成 compile smoke | 离线 100% |
 
-v0.4 发布门禁以离线指标为准。live 指标不进入默认单测，不依赖网络调用；只作为手动或显式启用的评估报告。live 评估必须记录模型、`BASE_URL` 类型、样本集版本、执行命令、成功率和失败诊断摘要，避免把不可重复的外部模型波动作为默认质量门禁。
+v0.3 发布门禁以离线指标为准。live 指标不进入默认单测，不依赖网络调用；只作为手动或显式启用的评估报告。live 评估必须记录模型、`BASE_URL` 类型、样本集版本、执行命令、成功率和失败诊断摘要，避免把不可重复的外部模型波动作为默认质量门禁。
 
 实现状态：`tests/test_prompt_skill_corpus.py` 已用 fake model 覆盖 prompt、Skill、JSON plan 和 negative cases 的离线 pipeline 指标；测试显式注入 corpus executor registry，避免 corpus-only refs 被默认 registry 误判。
 
@@ -346,12 +346,12 @@ uv run pytest
 
 当前实现状态：3A 已落地到 CLI `run` / `resume`。CLI 会先加载 `--tool-module`、构造 `ToolCallableRegistry`、合成动态 `ExecutorDefinition(type=PYTHON_CALLABLE)`，再解析 Workflow IR 或简化 JSON plan，并把同一 executor registry 与 tool registry 传给校验和运行链路。
 
-v0.4 正式入口采用：
+v0.3 正式入口采用：
 
 - `--tool-module <module>`：从受控 Python module 加载注册函数。
 - 模块必须暴露 `register_tools(registry)` 函数，并只通过 `ToolCallableRegistry.register(ref, callable)` 注册工具。
 
-`--tool-registry <json>` 不作为 v0.4 正式入口，可作为 v0.5+ 配置化扩展。v0.4 入口必须满足：
+`--tool-registry <json>` 不作为 v0.3 正式入口，可作为 v0.5+ 配置化扩展。v0.3 入口必须满足：
 
 - tool ref 必须与 `allowed_tool_refs` 白名单匹配。
 - 未注册 tool、未授权 tool、schema 不匹配 tool 均返回稳定 diagnostic。
@@ -386,11 +386,11 @@ Skill planning 产物应能声明 required tool refs 和注册状态：
 - side_effect 节点重试必须与 approval/idempotency 绑定，避免重复副作用。
 - metrics 中记录 retry count 和最终状态。
 
-v0.4 可以先采用 wrapper retry，不强制依赖 LangGraph 内置 retry 能力。
+v0.3 可以先采用 wrapper retry，不强制依赖 LangGraph 内置 retry 能力。
 
 #### 10.2.4 3B：Side-effect idempotency 与最小 audit
 
-当前实现状态：3B 已落地本地 JSON-backed side-effect idempotency store 和 audit JSONL。成功副作用以 `(workflow_id, thread_id, idempotency_key)` 为作用域记录原始 executor output；重复命中时直接返回已记录 output，不再次调用 executor。`.pt2lg-runtime/audit.log.jsonl` 只写安全元数据，不写 secret、完整 payload、完整模型响应、API key 或敏感 tool 参数。分布式 idempotency storage 和可配置 audit 后端仍不在 v0.4 3B 范围内。
+当前实现状态：3B 已落地本地 JSON-backed side-effect idempotency store 和 audit JSONL。成功副作用以 `(workflow_id, thread_id, idempotency_key)` 为作用域记录原始 executor output；重复命中时直接返回已记录 output，不再次调用 executor。`.pt2lg-runtime/audit.log.jsonl` 只写安全元数据，不写 secret、完整 payload、完整模型响应、API key 或敏感 tool 参数。分布式 idempotency storage 和可配置 audit 后端仍不在 v0.3 3B 范围内。
 
 增强 side-effect 的治理能力：
 
@@ -432,7 +432,7 @@ v0.4 可以先采用 wrapper retry，不强制依赖 LangGraph 内置 retry 能�
 
 #### 10.2.7 3C：Benchmark 与工程门禁
 
-当前实现状态：3C engineering gates 已补齐 deterministic compile、bundle load/invoke、dynamic tool、side-effect interrupt/resume 和 offline corpus 等离线门禁；这些门禁用于收口 v0.4 第三期，不代表项目已经具备 standalone deployment bundles、secret manager integration、sandboxing、remote audit services 或 LangChain Tool execution。
+当前实现状态：3C engineering gates 已补齐 deterministic compile、bundle load/invoke、dynamic tool、side-effect interrupt/resume 和 offline corpus 等离线门禁；这些门禁用于收口 v0.3 第三期，不代表项目已经具备 standalone deployment bundles、secret manager integration、sandboxing、remote audit services 或 LangChain Tool execution。
 
 补齐可重复 benchmark 和门禁说明：
 
@@ -448,11 +448,11 @@ benchmark 默认不应访问网络。
 
 #### 10.2.8 `LANGCHAIN_TOOL` 决策
 
-`ExecutorType.LANGCHAIN_TOOL` 在 v0.4 不实现端到端执行。v0.4 只做以下处理：
+`ExecutorType.LANGCHAIN_TOOL` 在 v0.3 不实现端到端执行。v0.3 只做以下处理：
 
 - 在 README、AGENTS、CLAUDE 和 public docs 中标记为 reserved/experimental。
 - 在 validator 或 diagnostics 中避免用户误以为该 executor type 已可运行。
-- v0.4 的 tool 执行路径明确限定为受信任 Python tool module + `ExecutorType.PYTHON_CALLABLE`。
+- v0.3 的 tool 执行路径明确限定为受信任 Python tool module + `ExecutorType.PYTHON_CALLABLE`。
 - 将真正的 LangChain Tool 适配、schema 映射和安全策略设计放入 v0.5+。
 
 ### 10.3 验收标准
@@ -466,7 +466,7 @@ benchmark 默认不应访问网络。
 - side-effect idempotency 在 resume 场景下不会重复执行。
 - audit/metrics 能按最小字段记录关键运行摘要且不泄露 secret 或完整 payload。
 - generated bundle 支持最小 runtime config 的 `RuntimeConfig` / `build_graph(config=None)` / `invoke(input_payload=None, config=None)`，并兼容保留 `compile_graph()` / `invoke_graph()`。
-- `LANGCHAIN_TOOL` 被明确标记为 reserved/experimental，且不作为 v0.4 可执行能力宣传。
+- `LANGCHAIN_TOOL` 被明确标记为 reserved/experimental，且不作为 v0.3 可执行能力宣传。
 - README、AGENTS、CLAUDE、测试说明与实际行为一致。
 
 建议验收命令：
@@ -485,7 +485,7 @@ uv run python scripts/benchmark_compile.py --nodes 100 --max-seconds 5
 
 ## 11. 测试策略
 
-v0.4 的测试策略分为四层。
+v0.3 的测试策略分为四层。
 
 ### 11.1 单元测试
 
@@ -556,7 +556,7 @@ uv run pytest tests/test_artifacts.py tests/test_bundle_golden.py tests/test_com
 
 ## 12. 安全与权限边界
 
-v0.4 必须保持以下安全边界：
+v0.3 必须保持以下安全边界：
 
 - 默认不隐式调用外部 LLM。
 - 默认不加载任意 tool。
@@ -573,7 +573,7 @@ v0.4 必须保持以下安全边界：
 
 ## 13. 文档同步要求
 
-v0.4 任一期完成后，至少同步以下文档：
+v0.3 任一期完成后，至少同步以下文档：
 
 - `README.md`
 - `AGENTS.md`
@@ -602,15 +602,15 @@ v0.4 任一期完成后，至少同步以下文档：
 | tool registry CLI 加载扩大攻击面 | 可能执行非预期代码 | 默认不加载；白名单授权；禁止任意 shell；文档明确可信边界 |
 | Retry 放大副作用 | side-effect 可能重复执行 | side-effect retry 必须绑定 idempotency/approval |
 | audit/metrics 泄露敏感信息 | secret 或 payload 泄漏 | 增加 secret scan 和脱敏测试 |
-| bundle runtime config 过度设计 | 延误核心目标 | v0.4 只做最小 runtime config 与 build/invoke API；完整部署型 bundle 推迟到 v0.5+ |
+| bundle runtime config 过度设计 | 延误核心目标 | v0.3 只做最小 runtime config 与 build/invoke API；完整部署型 bundle 推迟到 v0.5+ |
 | 真实 LLM 成功率不可控 | 验收波动 | 默认验收只用离线 corpus，live 指标作为手动评估 |
-| `LANGCHAIN_TOOL` 语义悬空 | 用户误以为该 executor type 已可执行 | v0.4 明确标记 reserved/experimental，不纳入可执行验收 |
+| `LANGCHAIN_TOOL` 语义悬空 | 用户误以为该 executor type 已可执行 | v0.3 明确标记 reserved/experimental，不纳入可执行验收 |
 
 ---
 
-## 15. v0.4 完成定义
+## 15. v0.3 完成定义
 
-v0.4 完成时，应达到以下状态：
+v0.3 完成时，应达到以下状态：
 
 1. JSON plan 能完整表达当前 IR 支持的 reducer、policy、metadata、join_sources 等关键语义，并正确处理显式 `workflow_id`。
 2. Prompt/Skill planner 输出 schema 与 adapter 能力一致。
@@ -620,7 +620,7 @@ v0.4 完成时，应达到以下状态：
 6. Skill 计划结果能声明 required tool refs 和风险提示。
 7. `RetryPolicy`、side-effect idempotency、audit、metrics 具备最小运行语义。
 8. bundle 具备最小 runtime config 与 build/invoke API，完整部署型 bundle 留到 v0.5+。
-9. `LANGCHAIN_TOOL` 被明确标记为 reserved/experimental，不作为 v0.4 可执行能力。
+9. `LANGCHAIN_TOOL` 被明确标记为 reserved/experimental，不作为 v0.3 可执行能力。
 10. README、AGENTS、CLAUDE、测试说明与源码行为一致。
 11. 全量测试通过，并保留必要 benchmark 结果。
 
@@ -628,7 +628,7 @@ v0.4 完成时，应达到以下状态：
 
 ## 16. v0.5+ 路线图储备
 
-v0.4 完成后，后续版本可考虑：
+v0.3 完成后，后续版本可考虑：
 
 - MCP 工具生态。
 - YAML plan 输入。
@@ -645,4 +645,4 @@ v0.4 完成后，后续版本可考虑：
 - Agent / tool-calling loop。
 - 更丰富的状态类型，如 dataframe、file_ref、http_response、tool_result。
 
-这些能力应在 v0.4 目标闭环稳定后再分阶段设计。
+这些能力应在 v0.3 目标闭环稳定后再分阶段设计。
