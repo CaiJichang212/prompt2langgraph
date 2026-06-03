@@ -1,0 +1,35 @@
+#!/bin/sh
+set -eu
+
+ROOT="$(git rev-parse --show-toplevel)"
+cd "$ROOT"
+
+export UV_CACHE_DIR="${UV_CACHE_DIR:-${TMPDIR:-/tmp}/prompt2langgraph-uv-cache}"
+
+run_project_tool() {
+  tool_name="$1"
+  shift
+  if [ -x ".venv/bin/$tool_name" ]; then
+    ".venv/bin/$tool_name" "$@"
+    return
+  fi
+  uv run "$tool_name" "$@"
+}
+
+python_files="$(git diff --cached --name-only --diff-filter=ACMR | rg '\.py$' || true)"
+
+if [ -z "$python_files" ]; then
+  exit 0
+fi
+
+echo "pre-commit: ruff check --fix"
+# shellcheck disable=SC2086
+run_project_tool ruff check --fix $python_files
+
+echo "pre-commit: ruff format"
+# shellcheck disable=SC2086
+run_project_tool ruff format $python_files
+
+echo "$python_files" | while IFS= read -r file; do
+  [ -n "$file" ] && git add "$file"
+done
