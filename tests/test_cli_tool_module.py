@@ -13,13 +13,13 @@ from prompt2langgraph.ir.models import WorkflowSpec
 def _write_tool_module(tmp_path: Path) -> None:
     module_path = tmp_path / "fake_cli_tools.py"
     module_path.write_text(
-        '''
+        """
 def register_tools(registry):
     def upper(inputs, params):
         return {"answer": str(inputs["question"]).upper()}
 
     registry.register("fake.upper", upper)
-''',
+""",
         encoding="utf-8",
     )
 
@@ -63,9 +63,7 @@ def _write_tool_ir(path: Path) -> None:
 
 
 def _write_tool_bundle(tmp_path: Path, workflow_path: Path) -> Path:
-    workflow = WorkflowSpec.model_validate(
-        json.loads(workflow_path.read_text(encoding="utf-8"))
-    )
+    workflow = WorkflowSpec.model_validate(json.loads(workflow_path.read_text(encoding="utf-8")))
     bundle_dir = tmp_path / workflow.workflow_id
     bundle_dir.mkdir()
     (bundle_dir / "workflow.ir.json").write_text(
@@ -186,9 +184,7 @@ def test_cli_run_loads_tool_module_for_workflow_ir(tmp_path: Path, monkeypatch) 
     assert payload["output"] == {"answer": "HELLO"}
 
 
-def test_cli_run_loads_tool_module_for_workflow_lock_json(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_cli_run_loads_tool_module_for_workflow_lock_json(tmp_path: Path, monkeypatch) -> None:
     _write_tool_module(tmp_path)
     monkeypatch.syspath_prepend(str(tmp_path))
     workflow_path = tmp_path / "tool_workflow.json"
@@ -216,9 +212,7 @@ def test_cli_run_loads_tool_module_for_workflow_lock_json(
     assert payload["output"] == {"answer": "HELLO"}
 
 
-def test_cli_run_loads_tool_module_before_json_plan_adapter(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_cli_run_loads_tool_module_before_json_plan_adapter(tmp_path: Path, monkeypatch) -> None:
     _write_tool_module(tmp_path)
     monkeypatch.syspath_prepend(str(tmp_path))
     plan_path = tmp_path / "tool_plan.json"
@@ -260,16 +254,13 @@ def test_cli_run_without_tool_module_fails_for_python_callable_ir(tmp_path: Path
     payload = json.loads(result.stdout)
     assert payload["status"] == "failed"
     assert any(
-        item["code"] in {"E_BIND_006", "E_SEC_015"}
-        and "fake.upper" in item["message"]
+        item["code"] in {"E_BIND_006", "E_SEC_015"} and "fake.upper" in item["message"]
         for item in payload["diagnostics"]
     )
     assert "Traceback" not in result.stdout
 
 
-def test_cli_run_reports_tool_module_without_register_tools(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_cli_run_reports_tool_module_without_register_tools(tmp_path: Path, monkeypatch) -> None:
     module_path = tmp_path / "bad_cli_tools.py"
     module_path.write_text("VALUE = 1\n", encoding="utf-8")
     monkeypatch.syspath_prepend(str(tmp_path))
@@ -299,16 +290,14 @@ def test_cli_run_reports_tool_module_without_register_tools(
     assert "Traceback" not in result.stdout
 
 
-def test_cli_run_reports_duplicate_tool_ref_from_modules(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_cli_run_reports_duplicate_tool_ref_from_modules(tmp_path: Path, monkeypatch) -> None:
     _write_tool_module(tmp_path)
     duplicate_path = tmp_path / "duplicate_cli_tools.py"
     duplicate_path.write_text(
-        '''
+        """
 def register_tools(registry):
     registry.register("fake.upper", lambda inputs, params: {"answer": "duplicate"})
-''',
+""",
         encoding="utf-8",
     )
     monkeypatch.syspath_prepend(str(tmp_path))
@@ -345,10 +334,10 @@ def test_cli_run_rejects_tool_ref_that_overrides_builtin_executor(
 ) -> None:
     module_path = tmp_path / "shadow_cli_tools.py"
     module_path.write_text(
-        '''
+        """
 def register_tools(registry):
     registry.register("builtin.echo_llm", lambda inputs, params: {"answer": "shadowed"})
-''',
+""",
         encoding="utf-8",
     )
     monkeypatch.syspath_prepend(str(tmp_path))
@@ -422,9 +411,7 @@ def test_cli_resume_uses_tool_module_after_interrupt(tmp_path: Path, monkeypatch
     assert resumed["output"] == {"answer": "HELLO"}
 
 
-def test_cli_resume_uses_tool_module_from_workflow_lock_json(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_cli_resume_uses_tool_module_from_workflow_lock_json(tmp_path: Path, monkeypatch) -> None:
     _write_tool_module(tmp_path)
     monkeypatch.syspath_prepend(str(tmp_path))
     workflow_path = tmp_path / "human_then_tool.json"
