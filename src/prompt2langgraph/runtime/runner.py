@@ -23,6 +23,12 @@ from prompt2langgraph.ir.models import EdgeKind, WorkflowSpec
 from prompt2langgraph.ir.normalize import normalize_workflow
 from prompt2langgraph.registry.builtins import builtin_executor_registry
 from prompt2langgraph.registry.executors import ExecutorRegistry
+from prompt2langgraph.runtime.audit import (
+    AuditRecord,
+    JsonlAuditSink,
+    audit_path_for_state_store,
+    utc_timestamp,
+)
 from prompt2langgraph.runtime.events import (
     ExternalCallRecord,
     RunEvent,
@@ -30,6 +36,8 @@ from prompt2langgraph.runtime.events import (
     RunMetrics,
     RunResult,
 )
+from prompt2langgraph.runtime.observability import RuntimeMetricsCollector
+from prompt2langgraph.runtime.side_effects import SideEffectIdempotencyStore, side_effect_store_path
 from prompt2langgraph.validate.validator import validate_workflow
 
 _logger = logging.getLogger(__name__)
@@ -62,17 +70,70 @@ def run_workflow(
     events = [RunEvent(type="run.started", run_id=run_id, thread_id=thread_id)]
     if is_resume:
         events.append(RunEvent(type="run.resumed", run_id=run_id, thread_id=thread_id))
+    metrics_collector = RuntimeMetricsCollector()
+    external_calls = metrics_collector.external_calls
+    audit_path = audit_path_for_state_store(state_store_dir)
+    audit_sink = JsonlAuditSink(audit_path) if audit_path is not None else None
+
+    def _audit(
+        event_type: str,
+        status: str,
+        *,
+        node_id: str | None = None,
+        latency_ms: float | None = None,
+        error_code: str | None = None,
+        retry_count: int = 0,
+    ) -> None:
+        if audit_sink is None:
+            return
+        audit_sink.write(
+            AuditRecord(
+                run_id=run_id,
+                thread_id=thread_id,
+                workflow_id=workflow.workflow_id,
+                node_id=node_id,
+                event_type=event_type,
+                status=status,
+                latency_ms=latency_ms,
+                error_code=error_code,
+                retry_count=retry_count,
+                timestamp=utc_timestamp(),
+            )
+        )
+
+    def _fail(
+        diagnostics: list[Diagnostic],
+        *,
+        external_calls: list[ExternalCallRecord] | None = None,
+    ) -> RunResult:
+        _audit(
+            "run.failed",
+            "failed",
+            error_code=diagnostics[0].code if diagnostics else None,
+            retry_count=metrics_collector.retry_count,
+        )
+        return _failed_result(
+            run_id,
+            thread_id,
+            events,
+            diagnostics,
+            started_at,
+            external_calls=external_calls,
+            retry_count=metrics_collector.retry_count,
+        )
+
+    _audit("run.started", "started")
     executor_registry = executors or builtin_executor_registry()
 
     report = validate_workflow(workflow, executors=executor_registry, tool_registry=tool_registry)
     if not report.ok:
-        return _failed_result(run_id, thread_id, events, report.diagnostics, started_at)
+        return _fail(report.diagnostics)
 
     thread_key = _thread_key(workflow, thread_id)
     if is_resume and checkpointer is None and state_store_dir is not None:
         state_diagnostic = _load_thread_state(thread_key, state_store_dir)
         if state_diagnostic is not None:
-            return _failed_result(run_id, thread_id, events, [state_diagnostic], started_at)
+            return _fail([state_diagnostic])
     if is_resume and thread_key not in _PENDING_INTERRUPTS:
         # When using an external checkpointer (e.g., SqliteSaver), the interrupt state
         # is persisted in the checkpointer database, not in the process-local
@@ -85,51 +146,41 @@ def run_workflow(
                 _logger.warning("checkpointer.get() failed for thread %s", thread_id, exc_info=True)
                 checkpoint = None
             if checkpoint is None:
-                return _failed_result(
-                    run_id,
-                    thread_id,
-                    events,
+                return _fail(
                     [
                         Diagnostic(
                             code=E_RUNTIME_010,
                             severity="error",
                             message=f'no pending interrupt for thread "{thread_id}"',
                         )
-                    ],
-                    started_at,
+                    ]
                 )
         else:
-            return _failed_result(
-                run_id,
-                thread_id,
-                events,
+            return _fail(
                 [
                     Diagnostic(
                         code=E_RUNTIME_010,
                         severity="error",
                         message=f'no pending interrupt for thread "{thread_id}"',
                     )
-                ],
-                started_at,
+                ]
             )
 
     input_diagnostics = [] if is_resume else _check_input_payload(workflow, input_payload)
     if input_diagnostics:
-        return _failed_result(run_id, thread_id, events, input_diagnostics, started_at)
+        return _fail(input_diagnostics)
 
     target_diagnostics = _check_target_capabilities(workflow)
     if target_diagnostics:
         if is_resume:
             _clear_thread(thread_key, state_store_dir)
-        return _failed_result(run_id, thread_id, events, target_diagnostics, started_at)
-
-    external_calls: list[ExternalCallRecord] = []
+        return _fail(target_diagnostics)
 
     def _error_sink(exc: Exception) -> None:
         from prompt2langgraph.registry.executors import ExecutorError
 
         if isinstance(exc, ExecutorError):
-            external_calls.append(
+            _metrics_sink(
                 ExternalCallRecord(
                     node_id=exc.node_id or "unknown",
                     executor_ref=exc.executor_ref or "unknown",
@@ -139,7 +190,25 @@ def run_workflow(
             )
 
     def _metrics_sink(record: ExternalCallRecord) -> None:
-        external_calls.append(record)
+        metrics_collector.record_external_call(record)
+        if record.status == "failed":
+            _audit(
+                "node.failed",
+                "failed",
+                node_id=record.node_id,
+                latency_ms=record.latency_ms,
+                error_code=record.error_code,
+                retry_count=metrics_collector.retry_count,
+            )
+
+    def _retry_sink(node_id: str, attempt: int) -> None:
+        metrics_collector.record_retry()
+        _audit(
+            "node.retry",
+            "retry",
+            node_id=node_id,
+            retry_count=metrics_collector.retry_count,
+        )
 
     def record_node_event(event_type: str, node_id: str) -> None:
         events.append(
@@ -150,6 +219,7 @@ def run_workflow(
         active_checkpointer = (
             _checkpointer_for(thread_key) if checkpointer is None else checkpointer
         )
+        side_effect_store = SideEffectIdempotencyStore(side_effect_store_path(state_store_dir))
         graph = compile_workflow_to_graph(
             workflow,
             executor_registry,
@@ -160,6 +230,10 @@ def run_workflow(
             tool_registry=tool_registry,
             error_sink=_error_sink,
             metrics_sink=_metrics_sink,
+            retry_sink=_retry_sink,
+            side_effect_store=side_effect_store,
+            workflow_id=workflow.workflow_id,
+            thread_id=thread_id,
         )
         graph_input: dict[str, Any] | Command = (
             Command(resume=resume_payload) if is_resume else input_payload
@@ -171,27 +245,22 @@ def run_workflow(
     except Exception as exc:
         if is_resume:
             _clear_thread(thread_key, state_store_dir)
-        return _failed_result(
-            run_id,
-            thread_id,
-            events,
-            [
-                Diagnostic(
-                    code=E_RUNTIME_010,
-                    severity="error",
-                    message="workflow runtime invocation failed",
-                    hint=str(exc),
-                )
-            ],
-            started_at,
-            external_calls=external_calls,
-        )
+        diagnostics = [
+            Diagnostic(
+                code=E_RUNTIME_010,
+                severity="error",
+                message="workflow runtime invocation failed",
+                hint=str(exc),
+            )
+        ]
+        return _fail(diagnostics, external_calls=external_calls)
 
     interrupt = _extract_interrupt(final_state, events)
     if interrupt is not None:
         _PENDING_INTERRUPTS.add(thread_key)
         if checkpointer is None and state_store_dir is not None:
             _save_thread_state(thread_key, state_store_dir)
+        _audit("run.waiting", "waiting", node_id=interrupt.node_id)
         return RunResult(
             status="waiting",
             run_id=run_id,
@@ -200,19 +269,18 @@ def run_workflow(
             events=events,
             diagnostics=[],
             interrupt=interrupt,
-            metrics=RunMetrics(
-                duration_ms=_duration_ms(started_at),
-                call_count=len(external_calls),
-                total_latency_ms=sum(
-                    r.latency_ms for r in external_calls if r.latency_ms is not None
-                )
-                or None,
-            ),
+            metrics=metrics_collector.metrics(duration_ms=_duration_ms(started_at)),
             external_calls=external_calls,
         )
 
     _clear_thread(thread_key, state_store_dir)
     events.append(RunEvent(type="run.finished", run_id=run_id, thread_id=thread_id))
+    _audit(
+        "run.finished",
+        "succeeded",
+        latency_ms=_duration_ms(started_at),
+        retry_count=metrics_collector.retry_count,
+    )
     return RunResult(
         status="succeeded",
         run_id=run_id,
@@ -220,12 +288,7 @@ def run_workflow(
         output=_declared_output(workflow, final_state),
         events=events,
         diagnostics=[],
-        metrics=RunMetrics(
-            duration_ms=_duration_ms(started_at),
-            call_count=len(external_calls),
-            total_latency_ms=sum(r.latency_ms for r in external_calls if r.latency_ms is not None)
-            or None,
-        ),
+        metrics=metrics_collector.metrics(duration_ms=_duration_ms(started_at)),
         external_calls=external_calls,
         side_effect_rejections=_extract_side_effect_rejections(final_state),
     )
@@ -487,6 +550,7 @@ def _failed_result(
     diagnostics: list[Diagnostic],
     started_at: float,
     external_calls: list[ExternalCallRecord] | None = None,
+    retry_count: int = 0,
 ) -> RunResult:
     events.append(RunEvent(type="run.failed", run_id=run_id, thread_id=thread_id))
     calls = external_calls or []
@@ -499,8 +563,11 @@ def _failed_result(
         diagnostics=diagnostics,
         metrics=RunMetrics(
             duration_ms=_duration_ms(started_at),
+            retry_count=retry_count,
             call_count=len(calls),
+            tool_call_count=sum(1 for item in calls if item.category == "tool"),
             total_latency_ms=sum(r.latency_ms for r in calls if r.latency_ms is not None) or None,
+            token_count=sum(r.token_count for r in calls if r.token_count is not None) or None,
         ),
         external_calls=calls,
     )
