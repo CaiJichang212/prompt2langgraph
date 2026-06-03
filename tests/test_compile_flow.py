@@ -60,3 +60,63 @@ def test_compile_flow_accepts_multi_node_retriever_llm_fixture(tmp_path: Path) -
         ("retrieve", "prepare_context", "linear"),
         ("prepare_context", "compose", "linear"),
     }
+
+
+def test_public_compile_workflow_accepts_registries(tmp_path: Path) -> None:
+    from prompt2langgraph.ir.models import ExecutorType
+    from prompt2langgraph.registry.executors import ExecutorDefinition, ExecutorRegistry
+    from prompt2langgraph.registry.tool_executor import ToolCallableRegistry
+
+    workflow = pt2lg.WorkflowSpec.model_validate(
+        {
+            "schema_version": "0.1",
+            "workflow_id": "public_dynamic_compile",
+            "name": "Public Dynamic Compile",
+            "entrypoint": "call_tool",
+            "state_schema": {
+                "input": {"question": {"type": "string"}},
+                "output": {"answer": {"type": "string"}},
+                "channels": {
+                    "question": {"type": "string"},
+                    "answer": {"type": "string"},
+                },
+                "private": {},
+                "reducers": {},
+            },
+            "nodes": [
+                {
+                    "id": "call_tool",
+                    "kind": "tool",
+                    "executor": {"ref": "fake.upper", "type": "python_callable"},
+                    "inputs": {"question": {"state_key": "question"}},
+                    "outputs": {"answer": {"state_key": "answer"}},
+                    "params": {},
+                }
+            ],
+            "edges": [],
+            "policies": {"allowed_tool_refs": ["fake.upper"]},
+            "metadata": {},
+        }
+    )
+    executor_registry = ExecutorRegistry(
+        [
+            ExecutorDefinition(
+                ref="fake.upper",
+                type=ExecutorType.PYTHON_CALLABLE,
+                dynamic=True,
+            )
+        ]
+    )
+    tools = ToolCallableRegistry()
+    tools.register("fake.upper", lambda inputs, params: {"answer": inputs["question"].upper()})
+
+    result = pt2lg.compile_workflow(
+        workflow,
+        out_dir=tmp_path,
+        executor_registry=executor_registry,
+        tool_registry=tools,
+    )
+
+    assert result.ok is True
+    manifest = json.loads((result.output_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["executor_bindings"]["call_tool"]["executor"] == "fake.upper"
