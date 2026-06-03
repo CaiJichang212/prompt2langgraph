@@ -344,6 +344,8 @@ uv run pytest
 
 定义并实现 CLI tool registry 的最小安全加载机制。
 
+当前实现状态：3A 已落地到 CLI `run` / `resume`。CLI 会先加载 `--tool-module`、构造 `ToolCallableRegistry`、合成动态 `ExecutorDefinition(type=PYTHON_CALLABLE)`，再解析 Workflow IR 或简化 JSON plan，并把同一 executor registry 与 tool registry 传给校验和运行链路。
+
 v0.4 正式入口采用：
 
 - `--tool-module <module>`：从受控 Python module 加载注册函数。
@@ -356,15 +358,18 @@ v0.4 正式入口采用：
 - 默认 CLI 不加载任意工具。
 - 不支持任意 shell 命令执行。
 - 不在 manifest、compile report、diagnostics 中写入 secret。
+- tool ref 不允许重复注册，也不允许覆盖内置或既有 executor ref。
 
 #### 10.2.2 Skill required tool refs
 
 Skill planning 产物应能声明 required tool refs 和注册状态：
 
+当前实现状态：3A 已在 `PlanningPipelineResult.tool_readiness` 中提供结构化摘要，并在 CLI `pt2lg plan --json` 中输出。该摘要只作为报告字段，不替代 `validate_workflow()` 的安全策略检查。
+
 - workflow 中实际使用的 tool executor refs。
 - policy 中允许的 tool refs。
 - CLI/runtime 中已注册的 tool refs。
-- 缺失或未授权 refs 的 diagnostics。
+- 缺失或未授权 refs。
 - 高风险 Skill 步骤对应的 approval 或 side_effect 建议。
 
 该能力用于把 Skill 从“结构化计划”推进到“可执行前可检查”的状态。
@@ -443,9 +448,9 @@ benchmark 默认不应访问网络。
 
 第三期完成时，应满足：
 
-- CLI 可以加载至少一个受控 fake tool registry 并执行 `PYTHON_CALLABLE` tool workflow。
-- 未授权、未注册、超时、执行异常 tool 均有稳定 diagnostics。
-- Skill 计划结果能列出 required tool refs 和风险提示。
+- 3A 已满足：CLI 可以加载至少一个受控 fake tool registry 并执行 `PYTHON_CALLABLE` tool workflow。
+- 3A 已满足：未授权、未注册和 tool module 加载/注册失败均有稳定 diagnostics；tool timeout 与执行异常诊断沿用 `ToolExecutor` 路径。
+- 3A 已满足：Prompt/Skill 计划结果能列出 required、allowed、registered、missing 和 unauthorized tool refs。
 - `RetryPolicy.max_attempts` 对 LLM/tool wrapper 生效。
 - side-effect idempotency 在 resume 场景下不会重复执行。
 - audit/metrics 能按最小字段记录关键运行摘要且不泄露 secret 或完整 payload。
