@@ -57,7 +57,7 @@ v0.4 的目标不是“一次性生产级平台化”，而是让项目从“IR/
 | JSON plan 语义保真 | 当前代码已支持 `state_schema.reducers`、`policies`、edge 级 `join_sources`；剩余缺口集中在显式 `workflow_id`、`metadata`、顶层 `reducers` 兼容、端到端 run smoke 和文档一致性 | 作为第一期核心任务 |
 | Prompt/Skill planning 不稳定 | 依赖 LLM 单次输出 JSON，parser 鲁棒性有限，缺少 repair 和质量指标 | 作为第二期核心任务 |
 | Skill/tool 执行闭环不足 | Python API 可注入工具，但 CLI registry 为空；Skill 不产生可执行 tool 注册体验 | 作为第三期核心任务 |
-| 已建模运行语义未完全兑现 | 3B 已补齐 `RetryPolicy`、side-effect idempotency、metrics、audit 的最小运行语义；`LANGCHAIN_TOOL` 当前仍为保留枚举，3C runtime config bundle 尚未完成 | 第三期只做最小运行语义；`LANGCHAIN_TOOL` 在 v0.4 标记为 reserved/experimental，不实现端到端执行 |
+| 已建模运行语义未完全兑现 | 3B 已补齐 `RetryPolicy`、side-effect idempotency、metrics、audit 的最小运行语义；3C 已补齐最小 runtime config bundle 与 secret-free runtime requirements；`LANGCHAIN_TOOL` 当前仍为保留枚举 | 第三期只做最小运行语义；`LANGCHAIN_TOOL` 在 v0.4 标记为 reserved/experimental，不实现端到端执行 |
 | 生产化与工程门禁不足 | bundle 偏骨架，benchmark 和观测指标不足，部分文档与源码演进不同步 | 第三期只交付最小 runtime config、benchmark 门禁说明和文档一致性；完整可部署 bundle 推迟到 v0.5+ |
 
 ### 4.2 v0.4 优先级原则
@@ -418,19 +418,21 @@ v0.4 可以先采用 wrapper retry，不强制依赖 LangGraph 内置 retry 能�
 
 #### 10.2.6 3C：最小 runtime config bundle
 
-当前实现状态：3C runtime config bundle 尚未完成。3B 的 retry、idempotency、audit 和 metrics 是 runner/compiler 运行时语义，不代表 bundle runtime config、独立服务化运行或部署型 runtime artifact 已经可用。
+当前实现状态：3C 已落地最小 runtime config bundle。3B 的 retry、idempotency、audit 和 metrics 仍然只是 runner/compiler 运行时语义；3C 新增的是库内 bundle 的最小可配置入口，不代表独立服务化运行、部署型 runtime artifact 或 secret manager 集成已经可用。
 
 将 bundle 从“本地审计与重新编译骨架”推进到最小可配置 runtime artifact：
 
-- `generated/graph.py` 暴露稳定 `build_graph(config)`。
-- `generated/graph.py` 暴露稳定 `invoke(input, config)`。
-- 生成最小 runtime config 结构，支持注入 model client、tool registry、checkpointer 和 policy override。
-- manifest 输出运行依赖清单，包括模型、tool refs、checkpoint 需求和 policy 摘要。
+- `generated/graph.py` 暴露 `RuntimeConfig`、`build_graph(config=None)` 和 `invoke(input_payload=None, config=None)`。
+- 兼容保留 `compile_graph()` 和 `invoke_graph()`，避免破坏既有 generated bundle 入口。
+- `RuntimeConfig` 支持注入 `executor_registry`、`model_client`、`tool_registry`、`checkpointer` 和完整 `PolicySpec` 覆盖。
+- manifest 输出 secret-free `runtime_requirements`，包括 `model_refs`、`tool_refs`、`checkpoint_required` 和 policy summary。
 - 不写入 secret 或 secret 名称。
 - 增加动态 LLM/tool workflow 的 golden bundle 测试。
-- 完整可部署 bundle、独立服务化运行和 secret manager 集成推迟到 v0.5+。
+- 当前 bundle 仍不是 deployable service wrapper；完整可部署 bundle、独立服务化运行和 secret manager 集成推迟到 v0.5+。
 
 #### 10.2.7 3C：Benchmark 与工程门禁
+
+当前实现状态：3C engineering gates 已补齐 deterministic compile、bundle load/invoke、dynamic tool、side-effect interrupt/resume 和 offline corpus 等离线门禁；这些门禁用于收口 v0.4 第三期，不代表项目已经具备 standalone deployment bundles、secret manager integration、sandboxing、remote audit services 或 LangChain Tool execution。
 
 补齐可重复 benchmark 和门禁说明：
 
@@ -450,6 +452,7 @@ benchmark 默认不应访问网络。
 
 - 在 README、AGENTS、CLAUDE 和 public docs 中标记为 reserved/experimental。
 - 在 validator 或 diagnostics 中避免用户误以为该 executor type 已可运行。
+- v0.4 的 tool 执行路径明确限定为受信任 Python tool module + `ExecutorType.PYTHON_CALLABLE`。
 - 将真正的 LangChain Tool 适配、schema 映射和安全策略设计放入 v0.5+。
 
 ### 10.3 验收标准
@@ -462,7 +465,7 @@ benchmark 默认不应访问网络。
 - `RetryPolicy.max_attempts` 对 LLM/tool wrapper 生效。
 - side-effect idempotency 在 resume 场景下不会重复执行。
 - audit/metrics 能按最小字段记录关键运行摘要且不泄露 secret 或完整 payload。
-- generated bundle 支持最小 runtime config 的基本 build/invoke。
+- generated bundle 支持最小 runtime config 的 `RuntimeConfig` / `build_graph(config=None)` / `invoke(input_payload=None, config=None)`，并兼容保留 `compile_graph()` / `invoke_graph()`。
 - `LANGCHAIN_TOOL` 被明确标记为 reserved/experimental，且不作为 v0.4 可执行能力宣传。
 - README、AGENTS、CLAUDE、测试说明与实际行为一致。
 
