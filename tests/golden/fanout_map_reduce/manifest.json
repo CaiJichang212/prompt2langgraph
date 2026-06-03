@@ -53,6 +53,24 @@
       }
     }
   },
+  "runtime_requirements": {
+    "checkpoint_required": false,
+    "model_refs": [],
+    "policy": {
+      "allow_side_effects": false,
+      "allowed_models": [],
+      "allowed_tool_refs": [],
+      "external_call": false
+    },
+    "policy_overrides_supported": [
+      "allow_side_effects",
+      "allowed_models",
+      "allowed_tool_refs",
+      "default_timeout_s",
+      "external_call"
+    ],
+    "tool_refs": []
+  },
   "side_effect_nodes": [],
   "state_keys": [
     "item",

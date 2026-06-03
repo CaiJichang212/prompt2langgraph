@@ -52,7 +52,9 @@ prompts_skills_test/
 
 This corpus is useful for test-driven development around prompt and Skill ingestion, simplified JSON plan adaptation, validation diagnostics, compiler smoke coverage, and security boundary regressions. 语料覆盖简化 JSON plan 的 linear、conditional、loop、fanout、join、side_effect、security、`state_schema.reducers`、兼容顶层 `reducers`、`policies` 和 `join_sources`。语料测试默认离线执行，不访问网络。
 
-It does not by itself cover the entire project. Full coverage still requires the existing tests for canonical IR models, normalization, lockfile/manifest/report generation, LangGraph compilation, artifact cleanup, local run/resume, checkpoint behavior, Mermaid rendering, CLI flows, public API, executor dispatch, and runtime external-call metrics.
+It does not by itself cover the entire project. Full coverage still requires the existing tests for canonical IR models, normalization, lockfile/manifest/report generation, LangGraph compilation, artifact cleanup, local run/resume, checkpoint behavior, Mermaid rendering, CLI flows, public API, executor dispatch, runtime external-call metrics, generated bundle load/invoke, and side-effect interrupt/resume smoke.
+
+Within v0.4 Phase 3C engineering gates, this corpus serves the offline prompt/skill benchmark portion only. It does not by itself imply standalone deployment bundles, secret manager integration, sandboxing, remote audit services, or LangChain Tool execution.
 
 ## Workflow Pattern Coverage
 
@@ -195,4 +197,5 @@ uv run pytest tests/test_prompt_skill_corpus.py -v
 - Invalid cases test error handling and validation boundaries.
 - Positive corpus cases assert expected node/edge patterns, validation success, and compiler smoke success.
 - Pipeline metric coverage records offline parse, validation, and compile smoke success for prompt, Skill, and JSON plan positives, plus parse/validation failure stages for negatives.
+- v0.4 runtime tool execution path remains trusted Python tool modules plus `ExecutorType.PYTHON_CALLABLE`; `LANGCHAIN_TOOL` stays reserved/experimental in this corpus as well.
 - Live LLM output may vary by model and should remain outside the default offline test path.
