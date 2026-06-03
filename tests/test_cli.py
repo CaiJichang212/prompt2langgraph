@@ -8,6 +8,22 @@ from typer.testing import CliRunner
 from prompt2langgraph.cli import app
 
 FIXTURES = Path(__file__).parent / "fixtures"
+ROOT = Path(__file__).resolve().parent.parent
+
+
+def _run_cli_subprocess(*args: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "from prompt2langgraph.cli import app; app(prog_name='pt2lg')",
+            *args,
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        cwd=ROOT,
+    )
 
 
 def test_validate_command_outputs_machine_readable_report() -> None:
@@ -856,20 +872,12 @@ def test_resume_command_continues_pending_interrupt_across_processes(tmp_path: P
     assert compile_result.exit_code == 0
     lockfile = tmp_path / "conditional_human_gate" / "workflow.lock.json"
 
-    waiting_result = subprocess.run(
-        [
-            "uv",
-            "run",
-            "pt2lg",
-            "run",
-            str(lockfile),
-            "--input",
-            '{"question":"hello","confidence":0.5}',
-            "--json",
-        ],
-        check=False,
-        capture_output=True,
-        text=True,
+    waiting_result = _run_cli_subprocess(
+        "run",
+        str(lockfile),
+        "--input",
+        '{"question":"hello","confidence":0.5}',
+        "--json",
     )
     assert waiting_result.returncode != 0
     waiting = json.loads(waiting_result.stdout)
@@ -878,22 +886,14 @@ def test_resume_command_continues_pending_interrupt_across_processes(tmp_path: P
     # SQLite checkpointer uses .db files; legacy uses .json files
     assert list(state_store.glob("*.json")) or list(state_store.glob("*.db"))
 
-    resume_result = subprocess.run(
-        [
-            "uv",
-            "run",
-            "pt2lg",
-            "resume",
-            str(lockfile),
-            "--thread-id",
-            waiting["thread_id"],
-            "--resume",
-            '"approved"',
-            "--json",
-        ],
-        check=False,
-        capture_output=True,
-        text=True,
+    resume_result = _run_cli_subprocess(
+        "resume",
+        str(lockfile),
+        "--thread-id",
+        waiting["thread_id"],
+        "--resume",
+        '"approved"',
+        "--json",
     )
 
     assert resume_result.returncode == 0
