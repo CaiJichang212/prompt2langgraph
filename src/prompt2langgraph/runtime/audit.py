@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Protocol
 
 from pydantic import BaseModel
 
@@ -16,7 +16,7 @@ class AuditRecord(BaseModel):
     workflow_id: str
     node_id: str | None = None
     event_type: str
-    status: Literal["started", "succeeded", "failed", "waiting", "rejected", "retry"]
+    status: Literal["started", "succeeded", "failed", "waiting", "rejected", "retry", "skipped"]
     latency_ms: float | None = None
     error_code: str | None = None
     retry_count: int = 0
@@ -31,6 +31,10 @@ class JsonlAuditSink:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self.path.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(record.model_dump(mode="json"), sort_keys=True) + "\n")
+
+
+class AuditSink(Protocol):
+    def write(self, record: AuditRecord) -> None: ...
 
 
 def utc_timestamp() -> str:
