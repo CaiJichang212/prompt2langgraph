@@ -25,12 +25,65 @@ class _FakeSkillModel:
         return type("Response", (), {"content": content})()
 
 
+class FakeToolPlanModel:
+    def invoke(self, messages):
+        content = (
+            '{"name":"ToolPlan","workflow_id":"tool_plan",'
+            '"inputs":{"question":"string"},"outputs":{"answer":"string"},'
+            '"nodes":[{"id":"call_tool","kind":"tool","executor":"fake.upper",'
+            '"inputs":{"question":"question"},"outputs":{"answer":"answer"}}],'
+            '"edges":[],"policies":{"allowed_tool_refs":["fake.upper"]}}'
+        )
+        return type("Response", (), {"content": content})()
+
+
+class FakeUnauthorizedToolPlanModel:
+    def invoke(self, messages):
+        content = (
+            '{"name":"ToolPlan","workflow_id":"tool_plan",'
+            '"inputs":{"question":"string"},"outputs":{"answer":"string"},'
+            '"nodes":[{"id":"call_tool","kind":"tool","executor":"fake.upper",'
+            '"inputs":{"question":"question"},"outputs":{"answer":"answer"}}],'
+            '"edges":[]}'
+        )
+        return type("Response", (), {"content": content})()
+
+
+class FakeNodeAuthorizedToolPlanModel:
+    def invoke(self, messages):
+        content = (
+            '{"name":"ToolPlan","workflow_id":"tool_plan",'
+            '"inputs":{"question":"string"},"outputs":{"answer":"string"},'
+            '"nodes":[{"id":"call_tool","kind":"tool","executor":"fake.upper",'
+            '"inputs":{"question":"question"},"outputs":{"answer":"answer"},'
+            '"security":{"allowed_tool_refs":["fake.upper"]}}],'
+            '"edges":[]}'
+        )
+        return type("Response", (), {"content": content})()
+
+
 def _valid_plan_text() -> str:
     return (
         '{"name":"Demo","inputs":{"question":"string"},"outputs":{"answer":"string"},'
         '"nodes":[{"id":"compose","kind":"llm","executor":"builtin.echo_llm"}],'
         '"edges":[]}'
     )
+
+
+def _tool_executor_registry():
+    from prompt2langgraph.ir.models import ExecutorType
+    from prompt2langgraph.registry.builtins import builtin_executor_registry
+    from prompt2langgraph.registry.executors import ExecutorDefinition
+
+    registry = builtin_executor_registry()
+    registry.register(
+        ExecutorDefinition(
+            ref="fake.upper",
+            type=ExecutorType.PYTHON_CALLABLE,
+            dynamic=True,
+        )
+    )
+    return registry
 
 
 def test_prompt_pipeline_reports_all_success_stages() -> None:
@@ -159,3 +212,98 @@ def test_skill_pipeline_preserves_static_risk_diagnostics() -> None:
 
     assert result.ok is True
     assert any(diagnostic.code == "E_SEC_007" for diagnostic in result.diagnostics)
+
+
+def test_plan_prompt_reports_missing_tool_readiness() -> None:
+    from prompt2langgraph.registry.tool_executor import ToolCallableRegistry
+
+    result = plan_prompt(
+        PromptPlanRequest(prompt="Use a fake tool"),
+        model_client=FakeToolPlanModel(),
+        executor_registry=_tool_executor_registry(),
+        tool_registry=ToolCallableRegistry(),
+    )
+
+    assert result.workflow is not None
+    assert result.tool_readiness is not None
+    assert result.tool_readiness.required_tool_refs == ["fake.upper"]
+    assert result.tool_readiness.allowed_tool_refs == ["fake.upper"]
+    assert result.tool_readiness.registered_tool_refs == []
+    assert result.tool_readiness.missing_tool_refs == ["fake.upper"]
+    assert result.tool_readiness.unauthorized_tool_refs == []
+
+
+def test_plan_prompt_reports_registered_tool_readiness() -> None:
+    from prompt2langgraph.registry.tool_executor import ToolCallableRegistry
+
+    tools = ToolCallableRegistry()
+    tools.register("fake.upper", lambda inputs, params: {"answer": "ok"})
+    result = plan_prompt(
+        PromptPlanRequest(prompt="Use a fake tool"),
+        model_client=FakeToolPlanModel(),
+        executor_registry=_tool_executor_registry(),
+        tool_registry=tools,
+    )
+
+    assert result.tool_readiness is not None
+    assert result.tool_readiness.registered_tool_refs == ["fake.upper"]
+    assert result.tool_readiness.missing_tool_refs == []
+
+
+def test_plan_prompt_reports_unauthorized_tool_readiness() -> None:
+    from prompt2langgraph.registry.tool_executor import ToolCallableRegistry
+
+    tools = ToolCallableRegistry()
+    tools.register("fake.upper", lambda inputs, params: {"answer": "ok"})
+    result = plan_prompt(
+        PromptPlanRequest(prompt="Use a fake tool"),
+        model_client=FakeUnauthorizedToolPlanModel(),
+        executor_registry=_tool_executor_registry(),
+        tool_registry=tools,
+    )
+
+    assert result.workflow is not None
+    assert result.tool_readiness is not None
+    assert result.tool_readiness.required_tool_refs == ["fake.upper"]
+    assert result.tool_readiness.allowed_tool_refs == []
+    assert result.tool_readiness.unauthorized_tool_refs == ["fake.upper"]
+
+
+def test_plan_prompt_respects_node_level_tool_readiness_authorization() -> None:
+    from prompt2langgraph.registry.tool_executor import ToolCallableRegistry
+
+    tools = ToolCallableRegistry()
+    tools.register("fake.upper", lambda inputs, params: {"answer": "ok"})
+    result = plan_prompt(
+        PromptPlanRequest(prompt="Use a node-authorized fake tool"),
+        model_client=FakeNodeAuthorizedToolPlanModel(),
+        executor_registry=_tool_executor_registry(),
+        tool_registry=tools,
+    )
+
+    assert result.ok is True
+    assert result.workflow is not None
+    assert result.workflow.policies.allowed_tool_refs == []
+    assert result.workflow.nodes[0].security is not None
+    assert result.workflow.nodes[0].security.allowed_tool_refs == ["fake.upper"]
+    assert result.tool_readiness is not None
+    assert result.tool_readiness.allowed_tool_refs == ["fake.upper"]
+    assert result.tool_readiness.unauthorized_tool_refs == []
+
+
+def test_plan_skill_reports_tool_readiness() -> None:
+    from prompt2langgraph.registry.tool_executor import ToolCallableRegistry
+
+    result = plan_skill(
+        SkillPlanRequest(skill_dir="tests/fixtures/skill_basic"),
+        model_client=FakeToolPlanModel(),
+        executor_registry=_tool_executor_registry(),
+        tool_registry=ToolCallableRegistry(),
+    )
+
+    assert result.source == "skill"
+    assert result.workflow is not None
+    assert result.tool_readiness is not None
+    assert result.tool_readiness.required_tool_refs == ["fake.upper"]
+    assert result.tool_readiness.allowed_tool_refs == ["fake.upper"]
+    assert result.tool_readiness.missing_tool_refs == ["fake.upper"]
