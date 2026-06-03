@@ -15,6 +15,7 @@ from prompt2langgraph.validate.graphcheck import check_graph
 from prompt2langgraph.validate.join_check import check_join_edges
 from prompt2langgraph.validate.security import (
     check_external_policy,
+    check_langchain_tool_reserved,
     check_model_whitelist,
     check_security,
     check_side_effect_reducer,
@@ -62,6 +63,7 @@ def validate_workflow(
     diagnostics.extend(check_side_effect_reducer(spec))
     diagnostics.extend(check_external_policy(spec))
     diagnostics.extend(check_model_whitelist(spec))
+    diagnostics.extend(check_langchain_tool_reserved(spec))
     if tool_registry is not None:
         diagnostics.extend(check_tool_refs(spec, tool_registry))
     return ValidationReport(diagnostics=diagnostics)
