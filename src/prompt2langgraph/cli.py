@@ -66,11 +66,26 @@ def compile(
     workflow_json: Path,
     target: str = typer.Option("langgraph-py", "--target"),
     out: Path = COMPILE_OUT_OPTION,
+    tool_module: list[str] | None = TOOL_MODULE_OPTION,
     json_output: bool = typer.Option(False, "--json", help="Emit a machine-readable report."),
 ) -> None:
     """Compile a Workflow IR or simplified JSON plan into local artifacts."""
+    tool_module = tool_module or []
+    loaded_tool_registry = _load_tool_modules(tool_module)
+    if isinstance(loaded_tool_registry, ValidationReport):
+        _emit_compile_payload(False, None, loaded_tool_registry, json_output)
+        raise typer.Exit(1)
+    if not tool_module:
+        loaded_tool_registry = None
+    executor_registry = _executor_registry_with_tools(loaded_tool_registry)
+    if isinstance(executor_registry, ValidationReport):
+        _emit_compile_payload(False, None, executor_registry, json_output)
+        raise typer.Exit(1)
 
-    workflow_or_report = _load_workflow_or_report(workflow_json)
+    workflow_or_report = _load_workflow_or_report(
+        workflow_json,
+        executors=executor_registry,
+    )
     if isinstance(workflow_or_report, ValidationReport):
         _emit_compile_payload(False, None, workflow_or_report, json_output)
         raise typer.Exit(1)
@@ -78,7 +93,13 @@ def compile(
     workflow = workflow_or_report
     from prompt2langgraph.runtime.artifacts import compile_workflow_to_artifacts
 
-    report, output_dir = compile_workflow_to_artifacts(workflow, out_dir=out, target=target)
+    report, output_dir = compile_workflow_to_artifacts(
+        workflow,
+        out_dir=out,
+        target=target,
+        executor_registry=executor_registry,
+        tool_registry=loaded_tool_registry,
+    )
     _emit_compile_payload(report.ok, output_dir if report.ok else None, report, json_output)
     if not report.ok:
         raise typer.Exit(1)
