@@ -67,11 +67,17 @@ def compile_workflow_to_artifacts(
     *,
     out_dir: Path | str,
     target: str = "langgraph-py",
+    executor_registry: Any | None = None,
+    tool_registry: Any | None = None,
 ) -> tuple[ValidationReport, Path]:
     total_started_at = perf_counter()
     timings_ms: dict[str, float] = {}
     report, normalized, resolved, bound = _validate_and_compile_target(
-        workflow, target=target, timings_ms=timings_ms
+        workflow,
+        target=target,
+        timings_ms=timings_ms,
+        executor_registry=executor_registry,
+        tool_registry=tool_registry,
     )
     output_dir = Path(out_dir) / workflow.workflow_id
     if report.ok:
@@ -83,6 +89,7 @@ def compile_workflow_to_artifacts(
             normalized,
             output_dir,
             target=target,
+            executor_registry=executor_registry,
             report=report,
             compile_id=_new_compile_id(),
             timings_ms=timings_ms,
@@ -153,6 +160,7 @@ def _write_compile_artifacts(
     output_dir: Path,
     *,
     target: str,
+    executor_registry: Any | None,
     report: ValidationReport,
     compile_id: str,
     timings_ms: dict[str, float],
@@ -164,12 +172,21 @@ def _write_compile_artifacts(
     output_dir.mkdir(parents=True, exist_ok=True)
     from prompt2langgraph.compiler.codegen import emit_generated_bundle
 
+    lock = build_workflow_lock(
+        normalized,
+        target=target,
+        executor_registry=executor_registry,
+    )
+    manifest = build_manifest(
+        normalized,
+        target=target,
+        executor_registry=executor_registry,
+        node_policies=resolved.node_policies,
+    )
     artifact_payloads = {
         "workflow.ir.json": normalized.model_dump(mode="json"),
-        "workflow.lock.json": build_workflow_lock(normalized, target=target),
-        "manifest.json": build_manifest(
-            normalized, target=target, node_policies=resolved.node_policies
-        ),
+        "workflow.lock.json": lock,
+        "manifest.json": manifest,
     }
     for name, payload in artifact_payloads.items():
         (output_dir / name).write_text(_json_dumps(payload), encoding="utf-8")
@@ -183,6 +200,7 @@ def _write_compile_artifacts(
         diagnostics=report,
         compile_id=compile_id,
         timings_ms=timings_ms,
+        registry_hash=lock["registry_hash"],
         executor_bindings=bound.executor_bindings,
     )
     (output_dir / "compile_report.json").write_text(_json_dumps(compile_report), encoding="utf-8")
@@ -205,15 +223,22 @@ def _validate_and_compile_target(
     *,
     target: str,
     timings_ms: dict[str, float],
+    executor_registry: Any | None = None,
+    tool_registry: Any | None = None,
 ) -> tuple[ValidationReport, WorkflowSpec | None, ResolvedWorkflow | None, BoundWorkflow | None]:
     # Step 1: Normalize
     normalize_started_at = perf_counter()
     normalized = normalize_workflow(workflow)
     timings_ms["normalize"] = _elapsed_ms(normalize_started_at)
+    selected_executor_registry = executor_registry or builtin_executor_registry()
 
     # Step 2: Validate
     validate_started_at = perf_counter()
-    report = validate_workflow(normalized)
+    report = validate_workflow(
+        normalized,
+        executors=selected_executor_registry,
+        tool_registry=tool_registry,
+    )
     timings_ms["validate"] = _elapsed_ms(validate_started_at)
 
     if not report.ok:
@@ -231,7 +256,7 @@ def _validate_and_compile_target(
     bind_started_at = perf_counter()
     from prompt2langgraph.binding.binder import bind_workflow
 
-    bound = bind_workflow(normalized)
+    bound = bind_workflow(normalized, executors=selected_executor_registry)
     timings_ms["bind_workflow"] = _elapsed_ms(bind_started_at)
 
     # Step 5: Target capability check
@@ -256,7 +281,11 @@ def _validate_and_compile_target(
     try:
         from prompt2langgraph.compiler.langgraph_py import compile_workflow_to_graph
 
-        compile_workflow_to_graph(normalized, builtin_executor_registry())
+        compile_workflow_to_graph(
+            normalized,
+            selected_executor_registry,
+            tool_registry=tool_registry,
+        )
     except Exception as exc:
         report = ValidationReport(
             diagnostics=[
