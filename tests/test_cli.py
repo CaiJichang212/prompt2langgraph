@@ -222,6 +222,25 @@ def test_run_command_accepts_inline_json_input() -> None:
     assert payload["output"] == {"answer": "Answer: hello"}
 
 
+def test_cli_run_writes_audit_log_for_workflow_json(tmp_path: Path, monkeypatch) -> None:
+    workflow_path = tmp_path / "workflow.json"
+    workflow_path.write_text(
+        (FIXTURES / "linear_llm.json").read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+
+    result = CliRunner().invoke(
+        app,
+        ["run", str(workflow_path), "--input", '{"question":"hello"}', "--json"],
+    )
+
+    assert result.exit_code == 0, result.output
+    audit_path = tmp_path / ".pt2lg-runtime" / "audit.log.jsonl"
+    assert audit_path.exists()
+    assert "run.finished" in audit_path.read_text(encoding="utf-8")
+
+
 def test_run_command_invokes_conditional_workflow_with_input_file(tmp_path: Path) -> None:
     input_file = tmp_path / "input.json"
     input_file.write_text(json.dumps({"question": "hello", "confidence": 0.9}), encoding="utf-8")
