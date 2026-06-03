@@ -11,7 +11,7 @@ from typing import Any
 
 from prompt2langgraph.binding.binder import bind_workflow
 from prompt2langgraph.diagnostics.report import Diagnostic, ValidationReport
-from prompt2langgraph.ir.models import WorkflowSpec
+from prompt2langgraph.ir.models import ExecutorType, WorkflowSpec
 from prompt2langgraph.ir.normalize import normalize_workflow
 from prompt2langgraph.registry.builtins import builtin_executor_registry, builtin_node_registry
 from prompt2langgraph.registry.executors import ExecutorRegistry
@@ -124,10 +124,47 @@ def build_manifest(
         "side_effect_nodes": [node.id for node in normalized.nodes if node.kind == "side_effect"],
         "executor_bindings": bound.executor_bindings,
         "artifact_policy": {"large_objects": "artifact_ref"},
+        "runtime_requirements": _runtime_requirements(normalized),
     }
     if node_policies is not None:
         manifest["policy_summary"] = {"node_policies": node_policies}
     return manifest
+
+
+def _runtime_requirements(workflow: WorkflowSpec) -> dict[str, Any]:
+    model_refs = sorted(
+        {node.executor.ref for node in workflow.nodes if node.executor.type is ExecutorType.LLM}
+    )
+    tool_refs = sorted(
+        {
+            node.executor.ref
+            for node in workflow.nodes
+            if node.executor.type is ExecutorType.PYTHON_CALLABLE
+        }
+    )
+    checkpoint_required = any(
+        node.kind in {"human_gate", "side_effect"} or node.executor.type.value == "human"
+        for node in workflow.nodes
+    )
+    policies = workflow.policies
+    return {
+        "model_refs": model_refs,
+        "tool_refs": tool_refs,
+        "checkpoint_required": checkpoint_required,
+        "policy": {
+            "external_call": policies.external_call,
+            "allow_side_effects": policies.allow_side_effects,
+            "allowed_models": sorted(policies.allowed_models),
+            "allowed_tool_refs": sorted(policies.allowed_tool_refs),
+        },
+        "policy_overrides_supported": [
+            "allow_side_effects",
+            "allowed_models",
+            "allowed_tool_refs",
+            "default_timeout_s",
+            "external_call",
+        ],
+    }
 
 
 def build_compile_report(
