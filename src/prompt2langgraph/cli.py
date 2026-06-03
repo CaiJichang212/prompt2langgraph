@@ -33,6 +33,7 @@ from prompt2langgraph.visualization.mermaid import workflow_to_mermaid
 app = typer.Typer(no_args_is_help=True)
 COMPILE_OUT_OPTION = typer.Option(Path("build"), "--out")
 RUN_INPUT_OPTION = typer.Option(..., "--input")
+TOOL_MODULE_OPTION = typer.Option(None, "--tool-module")
 
 
 @dataclass(frozen=True)
@@ -87,11 +88,12 @@ def compile(
 def run(
     workflow_json: Path,
     input: Path = RUN_INPUT_OPTION,
-    tool_module: list[str] = typer.Option([], "--tool-module"),
+    tool_module: list[str] | None = TOOL_MODULE_OPTION,
     json_output: bool = typer.Option(False, "--json", help="Emit a machine-readable result."),
 ) -> None:
     """Run a Workflow IR or simplified JSON plan with a JSON input payload."""
 
+    tool_module = tool_module or []
     loaded_tool_registry = _load_tool_modules(tool_module)
     if isinstance(loaded_tool_registry, ValidationReport):
         result_payload = {
@@ -110,16 +112,12 @@ def run(
         result_payload = {
             "status": "failed",
             "output": {},
-            "diagnostics": [
-                item.model_dump(mode="json") for item in executor_registry.diagnostics
-            ],
+            "diagnostics": [item.model_dump(mode="json") for item in executor_registry.diagnostics],
         }
         _emit(result_payload, json_output, "run failed")
         raise typer.Exit(1)
 
-    workflow_or_report = _load_workflow_source_or_report(
-        workflow_json, executors=executor_registry
-    )
+    workflow_or_report = _load_workflow_source_or_report(workflow_json, executors=executor_registry)
     if isinstance(workflow_or_report, ValidationReport):
         result_payload = {
             "status": "failed",
@@ -533,11 +531,12 @@ def resume(
     workflow_json: Path,
     thread_id: str = typer.Option(..., "--thread-id"),
     resume: str = typer.Option(..., "--resume"),
-    tool_module: list[str] = typer.Option([], "--tool-module"),
+    tool_module: list[str] | None = TOOL_MODULE_OPTION,
     json_output: bool = typer.Option(False, "--json", help="Emit a machine-readable result."),
 ) -> None:
     """Resume a waiting Workflow IR or compiled bundle."""
 
+    tool_module = tool_module or []
     loaded_tool_registry = _load_tool_modules(tool_module)
     if isinstance(loaded_tool_registry, ValidationReport):
         result_payload = {
@@ -556,16 +555,12 @@ def resume(
         result_payload = {
             "status": "failed",
             "output": {},
-            "diagnostics": [
-                item.model_dump(mode="json") for item in executor_registry.diagnostics
-            ],
+            "diagnostics": [item.model_dump(mode="json") for item in executor_registry.diagnostics],
         }
         _emit(result_payload, json_output, "resume failed")
         raise typer.Exit(1)
 
-    workflow_or_report = _load_workflow_source_or_report(
-        workflow_json, executors=executor_registry
-    )
+    workflow_or_report = _load_workflow_source_or_report(workflow_json, executors=executor_registry)
     if isinstance(workflow_or_report, ValidationReport):
         result_payload = {
             "status": "failed",
@@ -656,8 +651,7 @@ def _load_tool_modules(
                         code=E_RUNTIME_010,
                         severity="error",
                         message=(
-                            f'tool module "{module_name}" must define '
-                            "register_tools(registry)"
+                            f'tool module "{module_name}" must define register_tools(registry)'
                         ),
                         location=DiagnosticLocation(source=module_name),
                     )
@@ -671,9 +665,7 @@ def _load_tool_modules(
                     Diagnostic(
                         code=E_RUNTIME_010,
                         severity="error",
-                        message=(
-                            f'tool module "{module_name}" failed while registering tools'
-                        ),
+                        message=(f'tool module "{module_name}" failed while registering tools'),
                         location=DiagnosticLocation(source=module_name),
                         hint=str(exc),
                     )
