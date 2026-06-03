@@ -62,6 +62,10 @@ This plan does not implement Phase 3A CLI tool module loading, Phase 3C runtime 
 - Keep 3A and untracked plan/document files intact. Do not delete, reset, or overwrite unrelated user changes.
 - Run focused tests after each task and broader regression at the end.
 
+**Execution status:** Phase 3B implementation and verification are complete in the
+working tree. Commit steps were intentionally skipped because the user has not
+approved `git commit` in this session.
+
 ---
 
 ### Task 1: Add Retry Classifier
@@ -70,7 +74,7 @@ This plan does not implement Phase 3A CLI tool module loading, Phase 3C runtime 
 - Create: `src/prompt2langgraph/runtime/retry.py`
 - Create: `tests/test_runtime_retry.py`
 
-- [ ] **Step 1: Write failing retry classifier tests**
+- [x] **Step 1: Write failing retry classifier tests**
 
 Create `tests/test_runtime_retry.py`:
 
@@ -118,7 +122,7 @@ def test_retry_classifier_rejects_security_and_side_effect_errors() -> None:
     assert not should_retry_executor_error(ExecutorError(E_SIDE_008, "side effect rejected"))
 ```
 
-- [ ] **Step 2: Run retry tests and verify they fail**
+- [x] **Step 2: Run retry tests and verify they fail**
 
 Run:
 
@@ -128,7 +132,7 @@ uv run pytest tests/test_runtime_retry.py -v
 
 Expected: fails with `ModuleNotFoundError: No module named 'prompt2langgraph.runtime.retry'`.
 
-- [ ] **Step 3: Implement retry classifier**
+- [x] **Step 3: Implement retry classifier**
 
 Create `src/prompt2langgraph/runtime/retry.py`:
 
@@ -166,7 +170,7 @@ def should_retry_executor_error(error: ExecutorError) -> bool:
     return False
 ```
 
-- [ ] **Step 4: Run retry tests**
+- [x] **Step 4: Run retry tests**
 
 Run:
 
@@ -176,7 +180,7 @@ uv run pytest tests/test_runtime_retry.py -v
 
 Expected: all tests in `tests/test_runtime_retry.py` pass.
 
-- [ ] **Step 5: Commit retry classifier**
+- [x] **Step 5: Commit retry classifier** — skipped; commit not approved.
 
 If commits are approved, run:
 
@@ -195,7 +199,7 @@ Expected: commit succeeds. If commits are not approved, skip this step and leave
 - Modify: `tests/test_runtime_retry.py`
 - Modify: `src/prompt2langgraph/runtime/retry.py`
 
-- [ ] **Step 1: Add failing helper tests**
+- [x] **Step 1: Add failing helper tests**
 
 Append to `tests/test_runtime_retry.py`:
 
@@ -278,7 +282,7 @@ def test_run_with_retry_does_not_retry_non_retryable_errors() -> None:
     assert calls == [1]
 ```
 
-- [ ] **Step 2: Run helper tests**
+- [x] **Step 2: Run helper tests**
 
 Run:
 
@@ -288,7 +292,7 @@ uv run pytest tests/test_runtime_retry.py -v
 
 Expected: fails with `ImportError` because `run_with_retry` is not implemented yet.
 
-- [ ] **Step 3: Ensure helper implementation is present**
+- [x] **Step 3: Ensure helper implementation is present**
 
 Append these imports near the top of `src/prompt2langgraph/runtime/retry.py`:
 
@@ -343,7 +347,7 @@ def run_with_retry(
                 sleep(sleep_s)
 ```
 
-- [ ] **Step 4: Run helper tests again**
+- [x] **Step 4: Run helper tests again**
 
 Run:
 
@@ -353,7 +357,7 @@ uv run pytest tests/test_runtime_retry.py -v
 
 Expected: all retry tests pass.
 
-- [ ] **Step 5: Commit retry helper tests**
+- [x] **Step 5: Commit retry helper tests** — skipped; commit not approved.
 
 If commits are approved, run:
 
@@ -373,7 +377,7 @@ Expected: commit succeeds if there are new changes. If Task 1 already committed 
 - Modify: `tests/test_langgraph_compiler.py`
 - Modify: `tests/test_runner.py`
 
-- [ ] **Step 1: Add compiler retry integration tests**
+- [x] **Step 1: Add compiler retry integration tests**
 
 Append to `tests/test_langgraph_compiler.py`:
 
@@ -481,7 +485,7 @@ def test_node_wrapper_does_not_retry_non_retryable_executor_error() -> None:
     assert calls == [1]
 ```
 
-- [ ] **Step 2: Add runner retry metric test**
+- [x] **Step 2: Add runner retry metric test**
 
 Append to `tests/test_runner.py`:
 
@@ -518,7 +522,7 @@ def test_run_workflow_reports_retry_count_for_retryable_node() -> None:
     assert result.metrics.retry_count == 1
 ```
 
-- [ ] **Step 3: Run retry integration tests and verify they fail**
+- [x] **Step 3: Run retry integration tests and verify they fail**
 
 Run:
 
@@ -528,7 +532,7 @@ uv run pytest tests/test_langgraph_compiler.py::test_node_wrapper_retries_retrya
 
 Expected: fails because `_node_wrapper()` does not accept `retry_sink` and does not use `run_with_retry()`.
 
-- [ ] **Step 4: Update compiler signatures**
+- [x] **Step 4: Update compiler signatures**
 
 In `src/prompt2langgraph/compiler/langgraph_py.py`, update `compile_workflow_to_graph()` signature:
 
@@ -574,7 +578,7 @@ def _node_wrapper(
 ):
 ```
 
-- [ ] **Step 5: Wrap executor invocation with retry**
+- [x] **Step 5: Wrap executor invocation with retry**
 
 In `invoke_node()`, replace the single `_invoke_executor(...)` call inside the `try:` block with:
 
@@ -599,7 +603,7 @@ In `invoke_node()`, replace the single `_invoke_executor(...)` call inside the `
 
 Keep the existing `except ExecutorError` block unchanged after this replacement.
 
-- [ ] **Step 6: Wire retry sink in runner**
+- [x] **Step 6: Wire retry sink in runner**
 
 In `src/prompt2langgraph/runtime/runner.py`, before compiling the graph, add:
 
@@ -650,7 +654,7 @@ to its `RunMetrics`.
 
 For every `_failed_result(...)` call after `_retry_sink` is defined, pass `retry_count=retry_count`.
 
-- [ ] **Step 7: Run retry integration tests**
+- [x] **Step 7: Run retry integration tests**
 
 Run:
 
@@ -660,7 +664,7 @@ uv run pytest tests/test_runtime_retry.py tests/test_langgraph_compiler.py::test
 
 Expected: all selected tests pass.
 
-- [ ] **Step 8: Commit compiler retry wiring**
+- [x] **Step 8: Commit compiler retry wiring** — skipped; commit not approved.
 
 If commits are approved, run:
 
@@ -683,7 +687,7 @@ Expected: commit succeeds if commits are approved.
 - Modify: `tests/test_runner.py`
 - Modify: `tests/test_integration_execution.py`
 
-- [ ] **Step 1: Add metrics aggregation tests**
+- [x] **Step 1: Add metrics aggregation tests**
 
 Append to `tests/test_runner.py`:
 
@@ -723,7 +727,7 @@ def test_run_workflow_metrics_count_tool_calls_and_latency() -> None:
     assert result.external_calls[0].status == "succeeded"
 ```
 
-- [ ] **Step 2: Run metrics test and verify it fails**
+- [x] **Step 2: Run metrics test and verify it fails**
 
 Run:
 
@@ -733,7 +737,7 @@ uv run pytest tests/test_runner.py::test_run_workflow_metrics_count_tool_calls_a
 
 Expected: fails because current `ExternalCallRecord.latency_ms` is not set and `tool_call_count` stays 0.
 
-- [ ] **Step 3: Add optional attempt and category fields**
+- [x] **Step 3: Add optional attempt and category fields**
 
 In `src/prompt2langgraph/runtime/events.py`, update `ExternalCallRecord`:
 
@@ -750,7 +754,7 @@ class ExternalCallRecord(BaseModel):
     category: Literal["llm", "tool", "side_effect", "external"] = "external"
 ```
 
-- [ ] **Step 4: Create observability collector**
+- [x] **Step 4: Create observability collector**
 
 Create `src/prompt2langgraph/runtime/observability.py`:
 
@@ -801,7 +805,7 @@ def _sum_tokens(records: Iterable[ExternalCallRecord]) -> int | None:
     return total or None
 ```
 
-- [ ] **Step 5: Emit latency-aware external call records**
+- [x] **Step 5: Emit latency-aware external call records**
 
 In `src/prompt2langgraph/compiler/langgraph_py.py`, import `perf_counter` near the top:
 
@@ -968,7 +972,7 @@ with:
                 )
 ```
 
-- [ ] **Step 6: Use collector in runner**
+- [x] **Step 6: Use collector in runner**
 
 In `src/prompt2langgraph/runtime/runner.py`, initialize the collector immediately after the `events` list is created and before any validation or resume early-return path:
 
@@ -1025,7 +1029,7 @@ Update `_failed_result()` to accept `retry_count` until the next step, then repl
         ),
 ```
 
-- [ ] **Step 7: Run metrics tests**
+- [x] **Step 7: Run metrics tests**
 
 Run:
 
@@ -1035,7 +1039,7 @@ uv run pytest tests/test_runner.py::test_run_workflow_metrics_count_tool_calls_a
 
 Expected: selected runner test and integration tests pass.
 
-- [ ] **Step 8: Commit observability collector**
+- [x] **Step 8: Commit observability collector** — skipped; commit not approved.
 
 If commits are approved, run:
 
@@ -1056,7 +1060,7 @@ Expected: commit succeeds if commits are approved.
 - Modify: `tests/test_runner.py`
 - Modify: `tests/test_cli.py`
 
-- [ ] **Step 1: Add audit sink unit tests**
+- [x] **Step 1: Add audit sink unit tests**
 
 Append to `tests/test_runner.py`:
 
@@ -1082,7 +1086,7 @@ def test_run_workflow_writes_audit_log_without_payloads(tmp_path: Path) -> None:
     assert "api_key" not in serialized.lower()
 ```
 
-- [ ] **Step 2: Run audit test and verify it fails**
+- [x] **Step 2: Run audit test and verify it fails**
 
 Run:
 
@@ -1092,7 +1096,7 @@ uv run pytest tests/test_runner.py::test_run_workflow_writes_audit_log_without_p
 
 Expected: fails because no audit file is written.
 
-- [ ] **Step 3: Implement audit module**
+- [x] **Step 3: Implement audit module**
 
 Create `src/prompt2langgraph/runtime/audit.py`:
 
@@ -1142,7 +1146,7 @@ def audit_path_for_state_store(state_store_dir: Path | None) -> Path | None:
     return state_store_dir / "audit.log.jsonl"
 ```
 
-- [ ] **Step 4: Wire audit in runner**
+- [x] **Step 4: Wire audit in runner**
 
 In `src/prompt2langgraph/runtime/runner.py`, after `metrics_collector` is initialized near the top of `run_workflow()` and before validation, add:
 
@@ -1226,7 +1230,7 @@ In `_failed_result()`, do not add audit yet because it lacks sink context. Inste
 
 immediately before returning `_failed_result(...)`.
 
-- [ ] **Step 5: Add CLI audit regression test**
+- [x] **Step 5: Add CLI audit regression test**
 
 Append to `tests/test_cli.py`:
 
@@ -1256,7 +1260,7 @@ Ensure `Path` is imported in `tests/test_cli.py`; if it is not already imported,
 from pathlib import Path
 ```
 
-- [ ] **Step 6: Run audit tests**
+- [x] **Step 6: Run audit tests**
 
 Run:
 
@@ -1266,7 +1270,7 @@ uv run pytest tests/test_runner.py::test_run_workflow_writes_audit_log_without_p
 
 Expected: both tests pass.
 
-- [ ] **Step 7: Commit audit sink**
+- [x] **Step 7: Commit audit sink** — skipped; commit not approved.
 
 If commits are approved, run:
 
@@ -1287,7 +1291,7 @@ Expected: commit succeeds if commits are approved.
 - Modify: `src/prompt2langgraph/runtime/runner.py`
 - Modify: `tests/test_side_effect_executor.py`
 
-- [ ] **Step 1: Add idempotency store unit test**
+- [x] **Step 1: Add idempotency store unit test**
 
 Append to `tests/test_side_effect_executor.py`:
 
@@ -1306,7 +1310,7 @@ def test_side_effect_idempotency_store_persists_successful_output(tmp_path: Path
     assert reloaded.get_success(*key) == {"effect_result": "done"}
 ```
 
-- [ ] **Step 2: Run idempotency store test and verify it fails**
+- [x] **Step 2: Run idempotency store test and verify it fails**
 
 Run:
 
@@ -1316,7 +1320,7 @@ uv run pytest tests/test_side_effect_executor.py::test_side_effect_idempotency_s
 
 Expected: fails because `prompt2langgraph.runtime.side_effects` does not exist.
 
-- [ ] **Step 3: Implement idempotency store**
+- [x] **Step 3: Implement idempotency store**
 
 Create `src/prompt2langgraph/runtime/side_effects.py`:
 
@@ -1389,7 +1393,7 @@ def _record_key(workflow_id: str, thread_id: str, idempotency_key: str) -> str:
     return "\0".join([workflow_id, thread_id, idempotency_key])
 ```
 
-- [ ] **Step 4: Run idempotency store test**
+- [x] **Step 4: Run idempotency store test**
 
 Run:
 
@@ -1399,7 +1403,7 @@ uv run pytest tests/test_side_effect_executor.py::test_side_effect_idempotency_s
 
 Expected: test passes.
 
-- [ ] **Step 5: Add side-effect runtime idempotency test**
+- [x] **Step 5: Add side-effect runtime idempotency test**
 
 Append to `tests/test_side_effect_executor.py`:
 
@@ -1448,7 +1452,7 @@ def test_side_effect_idempotency_skips_duplicate_success(tmp_path: Path) -> None
     assert second.output == {"effect_result": "hello"}
 ```
 
-- [ ] **Step 6: Run side-effect runtime idempotency test and verify it fails**
+- [x] **Step 6: Run side-effect runtime idempotency test and verify it fails**
 
 Run:
 
@@ -1458,7 +1462,7 @@ uv run pytest tests/test_side_effect_executor.py::test_side_effect_idempotency_s
 
 Expected: fails because compiler does not consult the idempotency store.
 
-- [ ] **Step 7: Wire idempotency store through runner and compiler**
+- [x] **Step 7: Wire idempotency store through runner and compiler**
 
 In `src/prompt2langgraph/compiler/langgraph_py.py`, update `compile_workflow_to_graph()` signature:
 
@@ -1581,7 +1585,7 @@ Pass these arguments to `compile_workflow_to_graph(...)`:
             thread_id=thread_id,
 ```
 
-- [ ] **Step 8: Run side-effect idempotency tests**
+- [x] **Step 8: Run side-effect idempotency tests**
 
 Run:
 
@@ -1591,7 +1595,7 @@ uv run pytest tests/test_side_effect_executor.py::test_side_effect_idempotency_s
 
 Expected: both tests pass.
 
-- [ ] **Step 9: Commit idempotency store**
+- [x] **Step 9: Commit idempotency store** — skipped; commit not approved.
 
 If commits are approved, run:
 
@@ -1610,7 +1614,7 @@ Expected: commit succeeds if commits are approved.
 - Modify: `src/prompt2langgraph/runtime/retry.py`
 - Modify: `tests/test_side_effect_executor.py`
 
-- [ ] **Step 1: Add side-effect retry guard tests**
+- [x] **Step 1: Add side-effect retry guard tests**
 
 Append to `tests/test_side_effect_executor.py`:
 
@@ -1683,7 +1687,7 @@ def test_side_effect_with_idempotency_key_can_retry_retryable_error(tmp_path: Pa
     assert result.metrics.retry_count == 1
 ```
 
-- [ ] **Step 2: Run side-effect retry tests and verify first one fails**
+- [x] **Step 2: Run side-effect retry tests and verify first one fails**
 
 Run:
 
@@ -1693,7 +1697,7 @@ uv run pytest tests/test_side_effect_executor.py::test_side_effect_without_idemp
 
 Expected: first test fails if side-effect retry is unconstrained; second passes once idempotency store wiring is present.
 
-- [ ] **Step 3: Update retry helper to reject unsafe side-effect retry**
+- [x] **Step 3: Update retry helper to reject unsafe side-effect retry**
 
 In `src/prompt2langgraph/runtime/retry.py`, add this helper:
 
@@ -1717,7 +1721,7 @@ with:
             if attempt >= max_attempts or not node_allows_retry(node, exc):
 ```
 
-- [ ] **Step 4: Run side-effect retry tests**
+- [x] **Step 4: Run side-effect retry tests**
 
 Run:
 
@@ -1727,7 +1731,7 @@ uv run pytest tests/test_side_effect_executor.py::test_side_effect_without_idemp
 
 Expected: both tests pass.
 
-- [ ] **Step 5: Commit side-effect retry constraints**
+- [x] **Step 5: Commit side-effect retry constraints** — skipped; commit not approved.
 
 If commits are approved, run:
 
@@ -1746,7 +1750,7 @@ Expected: commit succeeds if commits are approved.
 - Modify: `src/prompt2langgraph/runtime/runner.py`
 - Modify: `tests/test_runner.py`
 
-- [ ] **Step 1: Add failure audit and retry metrics test**
+- [x] **Step 1: Add failure audit and retry metrics test**
 
 Append to `tests/test_runner.py`:
 
@@ -1798,7 +1802,7 @@ def test_waiting_run_writes_audit_without_full_interrupt_payload(tmp_path: Path)
     assert "payload must not be audited" not in audit_text
 ```
 
-- [ ] **Step 2: Run failure/waiting audit tests**
+- [x] **Step 2: Run failure/waiting audit tests**
 
 Run:
 
@@ -1808,7 +1812,7 @@ uv run pytest tests/test_runner.py::test_failed_retry_run_preserves_retry_metric
 
 Expected: tests fail until all failure return paths call `_audit()` with safe metadata.
 
-- [ ] **Step 3: Audit every failure return after `_audit` exists**
+- [x] **Step 3: Audit every failure return after `_audit` exists**
 
 In `src/prompt2langgraph/runtime/runner.py`, for each return of `_failed_result(...)` after `_audit` is defined, add this immediately before the return:
 
@@ -1849,7 +1853,7 @@ For inline diagnostic lists where there is no `diagnostics` local variable, bind
 
 Do the same for runtime invocation exceptions before returning `_failed_result(...)`.
 
-- [ ] **Step 4: Run failure/waiting audit tests**
+- [x] **Step 4: Run failure/waiting audit tests**
 
 Run:
 
@@ -1859,7 +1863,7 @@ uv run pytest tests/test_runner.py::test_failed_retry_run_preserves_retry_metric
 
 Expected: both tests pass.
 
-- [ ] **Step 5: Commit failure/waiting observability**
+- [x] **Step 5: Commit failure/waiting observability** — skipped; commit not approved.
 
 If commits are approved, run:
 
@@ -1880,7 +1884,7 @@ Expected: commit succeeds if commits are approved.
 - Modify: `CLAUDE.md`
 - Modify: `docs/prompt2langgraph-v0.4-开发计划文档.md`
 
-- [ ] **Step 1: Update README runtime section**
+- [x] **Step 1: Update README runtime section**
 
 Add near the runtime execution documentation in `README.md`:
 
@@ -1904,7 +1908,7 @@ to `.pt2lg-runtime/audit.log.jsonl`. Audit records do not include full input
 payloads, API keys, secrets, full model responses, or full tool parameters.
 ```
 
-- [ ] **Step 2: Update AGENTS and CLAUDE**
+- [x] **Step 2: Update AGENTS and CLAUDE**
 
 Add equivalent concise notes to `AGENTS.md` and `CLAUDE.md`:
 
@@ -1915,7 +1919,7 @@ Add equivalent concise notes to `AGENTS.md` and `CLAUDE.md`:
 - Runtime audit writes safe metadata to `.pt2lg-runtime/audit.log.jsonl` and must not include secrets, full payloads, API keys, full model responses, or sensitive tool parameters.
 ```
 
-- [ ] **Step 3: Update v0.4 development plan status**
+- [x] **Step 3: Update v0.4 development plan status**
 
 In `docs/prompt2langgraph-v0.4-开发计划文档.md`, update the 3B sections to state:
 
@@ -1928,7 +1932,7 @@ LangGraph native retry policy integration, or full provider token accounting.
 
 Place this note under the 3B headings without marking 3C complete.
 
-- [ ] **Step 4: Run documentation grep checks**
+- [x] **Step 4: Run documentation grep checks**
 
 Run:
 
@@ -1938,7 +1942,7 @@ rg -n "3B|retry|idempotency|audit|runtime config bundle|LangGraph native retry" 
 
 Expected: output shows 3B documented and does not claim 3C runtime config bundle is implemented.
 
-- [ ] **Step 5: Commit documentation**
+- [x] **Step 5: Commit documentation** — skipped; commit not approved.
 
 If commits are approved, run:
 
@@ -1963,7 +1967,7 @@ Expected: commit succeeds if commits are approved.
 - Test: `tests/test_integration_execution.py`
 - Test: `tests/test_cli.py`
 
-- [ ] **Step 1: Run focused Phase 3B tests**
+- [x] **Step 1: Run focused Phase 3B tests**
 
 Run:
 
@@ -1973,7 +1977,7 @@ uv run pytest tests/test_runtime_retry.py tests/test_langgraph_compiler.py tests
 
 Expected: all focused 3B tests pass.
 
-- [ ] **Step 2: Run executor and integration regression**
+- [x] **Step 2: Run executor and integration regression**
 
 Run:
 
@@ -1983,7 +1987,7 @@ uv run pytest tests/test_tool_executor.py tests/test_llm_executor.py tests/test_
 
 Expected: all executor/security/integration tests pass.
 
-- [ ] **Step 3: Run CLI regression**
+- [x] **Step 3: Run CLI regression**
 
 Run:
 
@@ -1993,7 +1997,7 @@ uv run pytest tests/test_cli.py -v
 
 Expected: all CLI tests pass.
 
-- [ ] **Step 4: Run full test suite**
+- [x] **Step 4: Run full test suite**
 
 Run:
 
@@ -2003,7 +2007,7 @@ uv run pytest
 
 Expected: full suite passes.
 
-- [ ] **Step 5: Commit final regression checkpoint**
+- [x] **Step 5: Commit final regression checkpoint** — skipped; commit not approved.
 
 If commits are approved and regression changes were needed, run:
 
@@ -2018,25 +2022,25 @@ Expected: commit succeeds only if there are uncommitted changes from regression 
 
 ## Final Verification Checklist
 
-- [ ] `uv run pytest tests/test_runtime_retry.py -v` passes.
-- [ ] `uv run pytest tests/test_langgraph_compiler.py -v` passes.
-- [ ] `uv run pytest tests/test_runner.py -v` passes.
-- [ ] `uv run pytest tests/test_side_effect_executor.py -v` passes.
-- [ ] `uv run pytest tests/test_tool_executor.py tests/test_llm_executor.py tests/test_integration_execution.py tests/test_security_policy.py -v` passes.
-- [ ] `uv run pytest tests/test_cli.py -v` passes.
-- [ ] `uv run pytest` passes.
-- [ ] Retryable LLM timeout errors retry up to `max_attempts`.
-- [ ] Retryable LLM API timeout/5xx/server errors retry up to `max_attempts`.
-- [ ] Tool timeout retries up to `max_attempts`.
-- [ ] Unauthorized/unregistered tools do not retry.
-- [ ] Missing model/tool clients do not retry.
-- [ ] Invalid LLM input and output contract errors do not retry.
-- [ ] Side-effect rejection does not retry.
-- [ ] Side-effect retry requires `security.idempotency_key`.
-- [ ] Duplicate side-effect idempotency key in the same workflow/thread returns stored output without executor invocation.
-- [ ] `.pt2lg-runtime/audit.log.jsonl` contains safe metadata and no full input payloads or secrets.
-- [ ] `RunMetrics.retry_count`, `tool_call_count`, `call_count`, and `total_latency_ms` are populated from runtime execution.
-- [ ] Documentation states 3B is implemented without implying 3C runtime config bundle is complete.
+- [x] `uv run pytest tests/test_runtime_retry.py -v` passes.
+- [x] `uv run pytest tests/test_langgraph_compiler.py -v` passes.
+- [x] `uv run pytest tests/test_runner.py -v` passes.
+- [x] `uv run pytest tests/test_side_effect_executor.py -v` passes.
+- [x] `uv run pytest tests/test_tool_executor.py tests/test_llm_executor.py tests/test_integration_execution.py tests/test_security_policy.py -v` passes.
+- [x] `uv run pytest tests/test_cli.py -v` passes.
+- [x] `uv run pytest` passes.
+- [x] Retryable LLM timeout errors retry up to `max_attempts`.
+- [x] Retryable LLM API timeout/5xx/server errors retry up to `max_attempts`.
+- [x] Tool timeout retries up to `max_attempts`.
+- [x] Unauthorized/unregistered tools do not retry.
+- [x] Missing model/tool clients do not retry.
+- [x] Invalid LLM input and output contract errors do not retry.
+- [x] Side-effect rejection does not retry.
+- [x] Side-effect retry requires `security.idempotency_key`.
+- [x] Duplicate side-effect idempotency key in the same workflow/thread returns stored output without executor invocation.
+- [x] `.pt2lg-runtime/audit.log.jsonl` contains safe metadata and no full input payloads or secrets.
+- [x] `RunMetrics.retry_count`, `tool_call_count`, `call_count`, and `total_latency_ms` are populated from runtime execution.
+- [x] Documentation states 3B is implemented without implying 3C runtime config bundle is complete.
 
 ## Execution Handoff
 

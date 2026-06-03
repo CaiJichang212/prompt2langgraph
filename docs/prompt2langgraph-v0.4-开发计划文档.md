@@ -57,7 +57,7 @@ v0.4 的目标不是“一次性生产级平台化”，而是让项目从“IR/
 | JSON plan 语义保真 | 当前代码已支持 `state_schema.reducers`、`policies`、edge 级 `join_sources`；剩余缺口集中在显式 `workflow_id`、`metadata`、顶层 `reducers` 兼容、端到端 run smoke 和文档一致性 | 作为第一期核心任务 |
 | Prompt/Skill planning 不稳定 | 依赖 LLM 单次输出 JSON，parser 鲁棒性有限，缺少 repair 和质量指标 | 作为第二期核心任务 |
 | Skill/tool 执行闭环不足 | Python API 可注入工具，但 CLI registry 为空；Skill 不产生可执行 tool 注册体验 | 作为第三期核心任务 |
-| 已建模运行语义未完全兑现 | `RetryPolicy`、side-effect idempotency、metrics、audit 仍不完整；`LANGCHAIN_TOOL` 当前仅为保留枚举 | 第三期只做最小运行语义；`LANGCHAIN_TOOL` 在 v0.4 标记为 reserved/experimental，不实现端到端执行 |
+| 已建模运行语义未完全兑现 | 3B 已补齐 `RetryPolicy`、side-effect idempotency、metrics、audit 的最小运行语义；`LANGCHAIN_TOOL` 当前仍为保留枚举，3C runtime config bundle 尚未完成 | 第三期只做最小运行语义；`LANGCHAIN_TOOL` 在 v0.4 标记为 reserved/experimental，不实现端到端执行 |
 | 生产化与工程门禁不足 | bundle 偏骨架，benchmark 和观测指标不足，部分文档与源码演进不同步 | 第三期只交付最小 runtime config、benchmark 门禁说明和文档一致性；完整可部署 bundle 推迟到 v0.5+ |
 
 ### 4.2 v0.4 优先级原则
@@ -376,6 +376,8 @@ Skill planning 产物应能声明 required tool refs 和注册状态：
 
 #### 10.2.3 3B：RetryPolicy 执行语义
 
+当前实现状态：3B 已落地最小 wrapper retry。`NodeSpec.retry.max_attempts` 会影响运行时执行；当前只重试 LLM timeout、LLM API timeout/5xx/server failure 和 tool timeout。业务/输入错误、缺失 model/tool client、未授权或未注册 tool、side_effect 拒绝不默认重试。该实现不使用 LangGraph native retry。
+
 实现 `RetryPolicy` 的最小运行时语义：
 
 - 支持 `max_attempts`。
@@ -388,6 +390,8 @@ v0.4 可以先采用 wrapper retry，不强制依赖 LangGraph 内置 retry 能�
 
 #### 10.2.4 3B：Side-effect idempotency 与最小 audit
 
+当前实现状态：3B 已落地本地 JSON-backed side-effect idempotency store 和 audit JSONL。成功副作用以 `(workflow_id, thread_id, idempotency_key)` 为作用域记录原始 executor output；重复命中时直接返回已记录 output，不再次调用 executor。`.pt2lg-runtime/audit.log.jsonl` 只写安全元数据，不写 secret、完整 payload、完整模型响应、API key 或敏感 tool 参数。分布式 idempotency storage 和可配置 audit 后端仍不在 v0.4 3B 范围内。
+
 增强 side-effect 的治理能力：
 
 - 定义 idempotency 作用域，优先采用 workflow/thread 范围。
@@ -398,6 +402,8 @@ v0.4 可以先采用 wrapper retry，不强制依赖 LangGraph 内置 retry 能�
 - audit 不记录真实 secret、完整 API key、完整 input payload、完整 model response 或敏感 tool 参数。
 
 #### 10.2.5 3B：Runtime metrics 与 external calls
+
+当前实现状态：3B 已落地 `RuntimeMetricsCollector` 和 latency-aware `ExternalCallRecord`。`RunMetrics` 汇总 `retry_count`、`tool_call_count`、`call_count`、`total_latency_ms` 和可用 token 摘要；`ExternalCallRecord` 包含 status、latency、attempt 和 category。完整 provider token accounting、dashboard/trace 后端仍未实现。
 
 补齐运行时观测字段：
 
@@ -411,6 +417,8 @@ v0.4 可以先采用 wrapper retry，不强制依赖 LangGraph 内置 retry 能�
 不同 provider 的 token usage 格式可以先标准化为可选字段，不要求一次覆盖所有 provider。
 
 #### 10.2.6 3C：最小 runtime config bundle
+
+当前实现状态：3C runtime config bundle 尚未完成。3B 的 retry、idempotency、audit 和 metrics 是 runner/compiler 运行时语义，不代表 bundle runtime config、独立服务化运行或部署型 runtime artifact 已经可用。
 
 将 bundle 从“本地审计与重新编译骨架”推进到最小可配置 runtime artifact：
 
