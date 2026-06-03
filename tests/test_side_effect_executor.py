@@ -104,6 +104,194 @@ def test_side_effect_allowed_path_no_interrupt():
     assert result.interrupt is None
 
 
+def test_side_effect_idempotency_store_persists_successful_output(tmp_path: Path) -> None:
+    from prompt2langgraph.runtime.side_effects import SideEffectIdempotencyStore
+
+    path = tmp_path / "side_effects.json"
+    store = SideEffectIdempotencyStore(path)
+    key = ("workflow_a", "thread_a", "write-file")
+
+    assert store.get_success(*key) is None
+    store.record_success(*key, output={"effect_result": "done"})
+
+    reloaded = SideEffectIdempotencyStore(path)
+    assert reloaded.get_success(*key) == {"effect_result": "done"}
+
+
+def test_side_effect_idempotency_skips_duplicate_success(tmp_path: Path) -> None:
+    from prompt2langgraph.ir.models import ExecutorType, SecurityPolicy
+    from prompt2langgraph.registry.executors import ExecutorDefinition, ExecutorRegistry
+
+    workflow = load_workflow("side_effect_allowed.json")
+    workflow.nodes[0].security = SecurityPolicy(idempotency_key="write-once")
+    calls: list[int] = []
+
+    def write_once(inputs, params):
+        calls.append(len(calls) + 1)
+        return {"value": inputs["value"]}
+
+    registry = ExecutorRegistry(
+        [
+            ExecutorDefinition(
+                ref="builtin.identity_transform",
+                type=ExecutorType.BUILTIN,
+                handler=write_once,
+            )
+        ]
+    )
+
+    first = run_workflow(
+        workflow,
+        {"question": "hello"},
+        thread_id="same-thread",
+        state_store_dir=tmp_path / ".pt2lg-runtime",
+        executors=registry,
+    )
+    second = run_workflow(
+        workflow,
+        {"question": "hello again"},
+        thread_id="same-thread",
+        state_store_dir=tmp_path / ".pt2lg-runtime",
+        executors=registry,
+    )
+
+    assert first.status == "succeeded"
+    assert second.status == "succeeded"
+    assert calls == [1]
+    assert second.output == {"effect_result": "hello"}
+
+
+def test_side_effect_idempotency_does_not_record_invalid_executor_output(
+    tmp_path: Path,
+) -> None:
+    from prompt2langgraph.ir.models import ExecutorType, SecurityPolicy
+    from prompt2langgraph.registry.executors import ExecutorDefinition, ExecutorRegistry
+
+    workflow = load_workflow("side_effect_allowed.json")
+    workflow.nodes[0].security = SecurityPolicy(idempotency_key="valid-output-only")
+    calls: list[str] = []
+
+    def invalid_write(inputs, params):
+        calls.append("invalid")
+        return {"wrong": inputs["value"]}
+
+    def valid_write(inputs, params):
+        calls.append("valid")
+        return {"value": inputs["value"]}
+
+    first = run_workflow(
+        workflow,
+        {"question": "bad"},
+        thread_id="same-thread",
+        state_store_dir=tmp_path / ".pt2lg-runtime",
+        executors=ExecutorRegistry(
+            [
+                ExecutorDefinition(
+                    ref="builtin.identity_transform",
+                    type=ExecutorType.BUILTIN,
+                    handler=invalid_write,
+                )
+            ]
+        ),
+    )
+    second = run_workflow(
+        workflow,
+        {"question": "good"},
+        thread_id="same-thread",
+        state_store_dir=tmp_path / ".pt2lg-runtime",
+        executors=ExecutorRegistry(
+            [
+                ExecutorDefinition(
+                    ref="builtin.identity_transform",
+                    type=ExecutorType.BUILTIN,
+                    handler=valid_write,
+                )
+            ]
+        ),
+    )
+
+    assert first.status == "failed"
+    assert second.status == "succeeded"
+    assert second.output == {"effect_result": "good"}
+    assert calls == ["invalid", "valid"]
+
+
+def test_side_effect_without_idempotency_key_is_not_retried() -> None:
+    from prompt2langgraph.diagnostics.codes import E_LLM_001
+    from prompt2langgraph.ir.models import ExecutorType, RetryPolicy
+    from prompt2langgraph.registry.executors import (
+        ExecutorDefinition,
+        ExecutorError,
+        ExecutorRegistry,
+    )
+
+    workflow = load_workflow("side_effect_allowed.json")
+    workflow.nodes[0].retry = RetryPolicy(max_attempts=3)
+    workflow.nodes[0].security = None
+    calls: list[int] = []
+
+    def flaky_write(inputs, params):
+        calls.append(len(calls) + 1)
+        raise ExecutorError(E_LLM_001, "LLM call timed out")
+
+    result = run_workflow(
+        workflow,
+        {"question": "hello"},
+        executors=ExecutorRegistry(
+            [
+                ExecutorDefinition(
+                    ref="builtin.identity_transform",
+                    type=ExecutorType.BUILTIN,
+                    handler=flaky_write,
+                )
+            ]
+        ),
+    )
+
+    assert result.status == "failed"
+    assert calls == [1]
+
+
+def test_side_effect_with_idempotency_key_can_retry_retryable_error(tmp_path: Path) -> None:
+    from prompt2langgraph.diagnostics.codes import E_LLM_001
+    from prompt2langgraph.ir.models import ExecutorType, RetryPolicy, SecurityPolicy
+    from prompt2langgraph.registry.executors import (
+        ExecutorDefinition,
+        ExecutorError,
+        ExecutorRegistry,
+    )
+
+    workflow = load_workflow("side_effect_allowed.json")
+    workflow.nodes[0].retry = RetryPolicy(max_attempts=2)
+    workflow.nodes[0].security = SecurityPolicy(idempotency_key="retry-write")
+    calls: list[int] = []
+
+    def flaky_write(inputs, params):
+        calls.append(len(calls) + 1)
+        if len(calls) == 1:
+            raise ExecutorError(E_LLM_001, "LLM call timed out")
+        return {"value": inputs["value"]}
+
+    result = run_workflow(
+        workflow,
+        {"question": "hello"},
+        state_store_dir=tmp_path / ".pt2lg-runtime",
+        executors=ExecutorRegistry(
+            [
+                ExecutorDefinition(
+                    ref="builtin.identity_transform",
+                    type=ExecutorType.BUILTIN,
+                    handler=flaky_write,
+                )
+            ]
+        ),
+    )
+
+    assert result.status == "succeeded"
+    assert calls == [1, 2]
+    assert result.metrics.retry_count == 1
+
+
 def test_side_effect_node_event_sequence_for_approval():
     """Test that node events are recorded correctly for approval flow."""
     workflow = load_workflow("side_effect_requires_approval.json")
