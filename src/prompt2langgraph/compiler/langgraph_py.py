@@ -28,6 +28,7 @@ from prompt2langgraph.registry.executors import ExecutorDefinition, ExecutorErro
 
 NodeEventSink = Callable[[str, str], None]
 RetrySink = Callable[[str, int], None]
+AuditEventSink = Callable[[str, str, str | None], None]
 
 
 def compile_workflow_to_graph(
@@ -42,6 +43,7 @@ def compile_workflow_to_graph(
     error_sink: Callable[[Any], None] | None = None,
     metrics_sink: Callable[[Any], None] | None = None,
     retry_sink: RetrySink | None = None,
+    audit_sink: AuditEventSink | None = None,
     side_effect_store: Any | None = None,
     workflow_id: str | None = None,
     thread_id: str | None = None,
@@ -70,6 +72,7 @@ def compile_workflow_to_graph(
                 error_sink=error_sink,
                 metrics_sink=metrics_sink,
                 retry_sink=retry_sink,
+                audit_sink=audit_sink,
                 side_effect_store=side_effect_store,
                 workflow_id=workflow_id or workflow.workflow_id,
                 thread_id=thread_id,
@@ -335,6 +338,7 @@ def _node_wrapper(
     error_sink: Callable[[Any], None] | None = None,
     metrics_sink: Callable[[Any], None] | None = None,
     retry_sink: RetrySink | None = None,
+    audit_sink: AuditEventSink | None = None,
     side_effect_store: Any | None = None,
     workflow_id: str | None = None,
     thread_id: str | None = None,
@@ -375,10 +379,13 @@ def _node_wrapper(
             stored_outputs = side_effect_store.get_success(
                 workflow_id,
                 thread_id,
+                node.id,
                 idempotency_key,
             )
             if stored_outputs is not None:
                 idempotency_hit_outputs = stored_outputs
+                if audit_sink is not None:
+                    audit_sink("side_effect.skipped_by_idempotency", "skipped", node.id)
 
         # Handle side_effect node approval flow
         # NOTE: This is a compiler-level intercept rather than an executor handler
@@ -533,6 +540,7 @@ def _node_wrapper(
             side_effect_store.record_success(
                 workflow_id,
                 thread_id,
+                node.id,
                 idempotency_key,
                 output=raw_outputs,
             )
