@@ -53,7 +53,7 @@ git config core.hooksPath .githooks
 - `builtin.mock_retriever` 返回 `mock://...` artifact reference，不访问网络
 - `human_gate` 通过 LangGraph interrupt 触发等待态，需要后续 `resume`
 - `side_effect` 节点类型已在 registry 中定义，但是否可通过校验取决于工作流安全策略
-- `LANGCHAIN_TOOL` 在 v0.4 仍为 reserved/experimental，不作为默认可执行能力；v0.4 的 tool 执行路径是受信任 Python tool module + `ExecutorType.PYTHON_CALLABLE`
+- `LANGCHAIN_TOOL` 在 v0.3 仍为 reserved/experimental，不作为默认可执行能力；v0.3 的 tool 执行路径是受信任 Python tool module + `ExecutorType.PYTHON_CALLABLE`
 
 ## 快速开始
 
@@ -223,7 +223,7 @@ uv run pt2lg resume <bundle>/workflow.lock.json --thread-id '<thread_id>' --resu
 
 当 CLI 或 `run_workflow()` 使用 `.pt2lg-runtime` / `state_store_dir` 时，运行时会写入 `.pt2lg-runtime/audit.log.jsonl`。audit 只包含安全元数据字段，例如 `run_id`、`thread_id`、`workflow_id`、`node_id`、`event_type`、`status`、`latency_ms`、`error_code`、`retry_count` 和 `timestamp`，不记录完整 input payload、完整模型响应、API key、secret 或敏感 tool 参数。
 
-`collect_metrics=True` 时，`RunResult.external_calls` 会记录外部调用状态、latency、category 和 attempt；`RunMetrics` 汇总 `retry_count`、`tool_call_count`、`call_count`、`total_latency_ms` 和可用 token 摘要。v0.4 当前仍不实现 LangGraph native retry、分布式 idempotency storage 或完整 token accounting；3C 已补齐最小 runtime config bundle，但不提供 standalone deployment bundle、secret manager、sandbox 或远程审计服务。
+`collect_metrics=True` 时，`RunResult.external_calls` 会记录外部调用状态、latency、category 和 attempt；`RunMetrics` 汇总 `retry_count`、`tool_call_count`、`call_count`、`total_latency_ms` 和可用 token 摘要。v0.3 当前仍不实现 LangGraph native retry、分布式 idempotency storage 或完整 token accounting；3C 已补齐最小 runtime config bundle，但不提供 standalone deployment bundle、secret manager、sandbox 或远程审计服务。
 
 ## Python API
 
@@ -559,7 +559,7 @@ CLI 的 `validate`、`compile`、`run`、`graph`、`resume` 都支持 `--json` �
 - Prompt 只生成简化 JSON plan；运行时 `llm` 节点的真实执行需 `external_call=True` + `allowed_models`
 - `skill_dir` 支持 Skill → `WorkflowSpec` 的 LLM 驱动 alpha 转换（`plan --skill-dir`），也保留静态分析能力（`analyze_skill_dir()`）
 - `llm/` 顶层模块为 LLM 客户端构造共享入口，`.env` 配置同时服务于 Prompt 计划生成和运行时 LLM 执行
-- v0.4 3C 的 engineering gates 覆盖 deterministic compile、bundle load/invoke、dynamic tool、side-effect interrupt/resume 和 offline prompt/skill corpus；这不代表项目已经提供 standalone deployment bundles、secret manager integration、sandboxing、remote audit services 或 LangChain Tool execution
+- v0.3 3C 的 engineering gates 覆盖 deterministic compile、bundle load/invoke、dynamic tool、side-effect interrupt/resume 和 offline prompt/skill corpus；这不代表项目已经提供 standalone deployment bundles、secret manager integration、sandboxing、remote audit services 或 LangChain Tool execution
 
 ## 参考夹具
 

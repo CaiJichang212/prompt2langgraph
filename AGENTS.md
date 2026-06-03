@@ -56,7 +56,7 @@ Prompt 计划生成能力已落地：通过 `plan_prompt_to_workflow_spec()` 或
 - binding summary 记录 executor ref、type、required capabilities 名称、dynamic 标记、allowed_models 和 external_call。
 - `manifest.json` 包含 secret-free `runtime_requirements`，只记录 `model_refs`、`tool_refs`、`checkpoint_required` 和 policy summary，不写入 secret 或 secret 名称。
 - `llm/` 顶层模块为 LLM 客户端构造共享入口（`LLMConfig`、`build_llm_client()`、`dict_messages_to_langchain()`），`.env` 配置同时服务于 Prompt 计划生成和运行时 LLM 执行。
-- v0.4 3B 已实现 `NodeSpec.retry.max_attempts` 的 wrapper retry；可重试错误范围保持窄口径：LLM timeout、LLM API timeout/5xx/server failure、tool timeout。
+- v0.3 3B 已实现 `NodeSpec.retry.max_attempts` 的 wrapper retry；可重试错误范围保持窄口径：LLM timeout、LLM API timeout/5xx/server failure、tool timeout。
 - `side_effect` retry 必须声明 `security.idempotency_key`；成功副作用以 `(workflow_id, thread_id, idempotency_key)` 为作用域记录原始 executor output，重复命中时不再次调用 executor。
 - `collect_metrics=True` 时，`RunResult.external_calls` 中可获取成功和失败调用的 `ExternalCallRecord`，包含 latency、status、attempt、category；`RunMetrics` 汇总 retry/tool/call/latency。
 - 使用 `state_store_dir` 或 CLI `.pt2lg-runtime` 时会写入安全 audit 元数据到 `.pt2lg-runtime/audit.log.jsonl`，不得包含 secret、完整 payload、API key、完整模型响应或敏感 tool 参数。
@@ -65,7 +65,7 @@ Prompt 计划生成能力已落地：通过 `plan_prompt_to_workflow_spec()` 或
 - `side_effect` 节点默认需要审批，通过 `pt2lg resume --resume '{"decision":"approved"}'` 恢复执行。
 - 3C 已补齐最小 runtime config bundle；不要把当前 bundle 描述扩展为 standalone deployment bundle、secret manager、sandbox 或远程审计服务。
 - 策略约束在 `validate_workflow()` 阶段即被检查：`external_call` 开关、`allowed_models` 白名单、`allowed_tool_refs` 白名单。
-- `LANGCHAIN_TOOL` 在 v0.4 仍为 reserved/experimental，不作为默认可执行能力；v0.4 tool path 是受信任 Python tool module + `ExecutorType.PYTHON_CALLABLE`。
+- `LANGCHAIN_TOOL` 在 v0.3 仍为 reserved/experimental，不作为默认可执行能力；v0.3 tool path 是受信任 Python tool module + `ExecutorType.PYTHON_CALLABLE`。
 - 3C engineering gates 覆盖 deterministic compile、bundle load/invoke、dynamic tool、side-effect interrupt/resume 和 offline corpus；这不代表项目已提供 standalone deployment bundles、secret manager integration、sandboxing、remote audit services 或 LangChain Tool execution。
 
 ## Do & Don't

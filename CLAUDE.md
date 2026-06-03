@@ -121,10 +121,10 @@ uv run pt2lg run tests/fixtures/fanout_map_reduce.json --input '{"items":["alpha
 - 编译失败会清理已知旧产物和 `generated/`，避免误用旧 bundle。
 - `manifest.json` 包含 secret-free `runtime_requirements`，只记录 `model_refs`、`tool_refs`、`checkpoint_required` 和 policy summary。
 - `human_gate` 基于 LangGraph `interrupt()`；CLI bundle 运行的等待态保存在 bundle 下 `.pt2lg-runtime/`。安装可选依赖 `checkpoint-sqlite`（`langgraph-checkpoint-sqlite>=2.0`）后，CLI 使用 `SqliteSaver` 提供更稳定的本地 checkpoint，路径为 `.pt2lg-runtime/<thread_hash>.db`。旧 `.json` runtime 状态文件与新的 `.db` checkpoint 不互相迁移。SQLite checkpoint 默认保留以支持后续 time travel debugging，但 resume 成功后不再自动清理 `.db` 文件。
-- `LANGCHAIN_TOOL` 在 v0.4 仍为 reserved/experimental，不作为默认可执行能力；v0.4 tool path 是受信任 Python tool module + `ExecutorType.PYTHON_CALLABLE`。
+- `LANGCHAIN_TOOL` 在 v0.3 仍为 reserved/experimental，不作为默认可执行能力；v0.3 tool path 是受信任 Python tool module + `ExecutorType.PYTHON_CALLABLE`。
 - `collect_metrics=True` 时，`RunResult.external_calls` 中可获取成功和失败调用的 `ExternalCallRecord`。
 - CLI `run` 命令能根据 workflow 节点类型自动构造 `model_client` 和 `tool_registry`，并可通过 `--tool-module` 注册受信任 Python callable。
-- v0.4 3C engineering gates 覆盖 deterministic compile、bundle load/invoke、dynamic tool、side-effect interrupt/resume 和 offline corpus；这不代表 standalone deployment bundles、secret manager integration、sandboxing、remote audit services 或 LangChain Tool execution 已实现。
+- v0.3 3C engineering gates 覆盖 deterministic compile、bundle load/invoke、dynamic tool、side-effect interrupt/resume 和 offline corpus；这不代表 standalone deployment bundles、secret manager integration、sandboxing、remote audit services 或 LangChain Tool execution 已实现。
 
 ## 修改时的硬规则
 
