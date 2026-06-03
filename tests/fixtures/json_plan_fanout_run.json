@@ -3,7 +3,7 @@
   "name": "JSON Plan Fanout Run",
   "entrypoint": "split",
   "metadata": {
-    "source": "v0.4-phase1-smoke"
+    "source": "v0.3-phase1-smoke"
   },
   "inputs": {
     "items": {
