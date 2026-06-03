@@ -114,6 +114,62 @@ def test_benchmark_linear_workflow_generator_has_stable_ids() -> None:
     ]
 
 
+def test_phase3c_benchmark_compile_smoke_covers_10_and_100_nodes(
+    tmp_path: Path,
+) -> None:
+    benchmark_compile = _load_benchmark_compile()
+
+    for node_count in (10, 100):
+        workflow = benchmark_compile.build_linear_workflow(node_count=node_count)
+        from prompt2langgraph.runtime.artifacts import compile_workflow_to_artifacts
+
+        report, bundle_dir = compile_workflow_to_artifacts(workflow, out_dir=tmp_path)
+
+        assert report.ok, report.diagnostics
+        assert bundle_dir.name == f"benchmark_linear_{node_count}"
+        assert (bundle_dir / "workflow.lock.json").exists()
+        assert (bundle_dir / "generated" / "graph.py").exists()
+
+
+def test_phase3c_fanout_join_compile_smoke(tmp_path: Path) -> None:
+    from prompt2langgraph.ir.models import WorkflowSpec
+    from prompt2langgraph.runtime.artifacts import compile_workflow_to_artifacts
+
+    workflow = WorkflowSpec.model_validate(
+        json.loads(
+            (ROOT / "tests" / "fixtures" / "fanout_to_join.json").read_text(encoding="utf-8")
+        )
+    )
+
+    report, bundle_dir = compile_workflow_to_artifacts(workflow, out_dir=tmp_path)
+
+    assert report.ok, report.diagnostics
+    assert (bundle_dir / "manifest.json").exists()
+    assert "join:" in (bundle_dir / "graph.mmd").read_text(encoding="utf-8")
+
+
+def test_phase3c_benchmark_script_runs_offline_for_10_nodes() -> None:
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/benchmark_compile.py",
+            "--nodes",
+            "10",
+            "--max-seconds",
+            "120",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["ok"] is True
+    assert payload["nodes"] == 10
+    assert "timings_ms" in payload
+
+
 def test_phase1_docs_do_not_reintroduce_stale_plan_semantics() -> None:
     docs = [
         ROOT / "README.md",
