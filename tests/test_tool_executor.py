@@ -104,6 +104,10 @@ class TestToolCallableRegistry:
         assert reg.refs() == []
         assert reg.has("anything") is False
 
+    def test_duplicate_ref_raises_value_error(self, registry: ToolCallableRegistry) -> None:
+        with pytest.raises(ValueError, match="echo"):
+            registry.register("echo", _failing_tool)
+
 
 # ---------------------------------------------------------------------------
 # ToolExecutor: timeout raises ExecutorError E_SEC_015

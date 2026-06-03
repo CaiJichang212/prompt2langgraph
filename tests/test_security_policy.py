@@ -211,7 +211,7 @@ def test_langchain_tool_node_not_checked_by_check_tool_refs() -> None:
 
 
 def test_langchain_tool_node_reports_reserved_warning() -> None:
-    """LANGCHAIN_TOOL 节点应产生 reserved/experimental warning。"""
+    """LANGCHAIN_TOOL 节点在 v0.3 应直接报错，禁止执行。"""
     wf = _make_workflow(
         nodes=[
             NodeSpec(
@@ -225,13 +225,13 @@ def test_langchain_tool_node_reports_reserved_warning() -> None:
     diags = check_langchain_tool_reserved(wf)
 
     assert len(diags) == 1
-    assert diags[0].code == "W_SEC_016"
-    assert diags[0].severity == "warning"
+    assert diags[0].code == "E_SEC_016"
+    assert diags[0].severity == "error"
     assert diags[0].location.node_id == "lc_tool"
 
 
-def test_validate_workflow_includes_langchain_tool_reserved_warning() -> None:
-    """validator 应纳入 LANGCHAIN_TOOL reserved warning。"""
+def test_validate_workflow_rejects_langchain_tool_nodes() -> None:
+    """validator 应在 v0.3 阶段拒绝 LANGCHAIN_TOOL 节点。"""
     wf = _make_workflow(
         nodes=[
             NodeSpec(
@@ -254,7 +254,7 @@ def test_validate_workflow_includes_langchain_tool_reserved_warning() -> None:
 
     report = validate_workflow(wf, executors=executors)
 
-    assert any(diag.code == "W_SEC_016" for diag in report.diagnostics)
+    assert any(diag.code == "E_SEC_016" for diag in report.diagnostics)
 
 
 def test_node_level_allowed_tool_refs_overrides_global() -> None:
