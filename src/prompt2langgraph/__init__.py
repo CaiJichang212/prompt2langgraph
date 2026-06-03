@@ -20,10 +20,21 @@ if TYPE_CHECKING:
     from prompt2langgraph.runtime.artifacts import CompileResult
 
 
-def compile_workflow(workflow: WorkflowSpec, *, out_dir: Path | str) -> CompileResult:
+def compile_workflow(
+    workflow: WorkflowSpec,
+    *,
+    out_dir: Path | str,
+    executor_registry: Any | None = None,
+    tool_registry: Any | None = None,
+) -> CompileResult:
     from prompt2langgraph.runtime.artifacts import CompileResult, compile_workflow_to_artifacts
 
-    report, output_dir = compile_workflow_to_artifacts(workflow, out_dir=out_dir)
+    report, output_dir = compile_workflow_to_artifacts(
+        workflow,
+        out_dir=out_dir,
+        executor_registry=executor_registry,
+        tool_registry=tool_registry,
+    )
 
     return CompileResult(
         ok=report.ok,
