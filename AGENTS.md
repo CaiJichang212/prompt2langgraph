@@ -42,7 +42,7 @@ Prompt 计划生成能力已落地：通过 `plan_prompt_to_workflow_spec()` 或
 - Prompt 计划生成：`prompting/planner.py` 封装 LLM 调用（`build_model_client()` 委托给 `llm.provider.build_llm_client()`），`prompting/parser.py` 支持纯 JSON、fenced JSON、包裹文本中唯一 JSON object 并产出 `AdapterParseError` 诊断，`prompting/pipeline.py` 提供结构化 planning、repair、validation、compile smoke，`prompting/config.py` 从 `.env` 加载 `MODEL`、`BASE_URL`、`API_KEY`（已标记 deprecated，委托给 `llm.config`）。
 - LLM 执行：`llm` 节点可通过 `ExecutorType.LLM`（ref 格式 `llm.<model_id>`）调用真实模型，需 `external_call=True` + `allowed_models` 白名单。`LLMExecutor` 在 `registry/llm_executor.py`。
 - Tool 执行：`tool` 节点可通过 `ExecutorType.PYTHON_CALLABLE` 执行受控 callable，需 `allowed_tool_refs` 白名单 + `ToolCallableRegistry` 注册。`ToolExecutor` 在 `registry/tool_executor.py`。
-- CLI `run` / `resume` 支持 `--tool-module <module>` 加载受信任 Python module；module 必须暴露 `register_tools(registry)`，并通过 `ToolCallableRegistry.register(ref, callable)` 注册工具。tool module 必须先于 workflow parse/load 加载，简化 JSON plan 的自定义 tool ref 依赖该顺序。`--tool-module` 不是 sandbox，不支持任意 shell；tool 执行仍需 `allowed_tool_refs` 授权。tool ref 不允许重复注册，也不允许覆盖内置或既有 executor ref。
+- CLI `compile` / `run` / `resume` 支持 `--tool-module <module>` 加载受信任 Python module；module 必须暴露 `register_tools(registry)`，并通过 `ToolCallableRegistry.register(ref, callable)` 注册工具。tool module 必须先于 workflow parse/load 加载，简化 JSON plan 的自定义 tool ref 依赖该顺序。`--tool-module` 不是 sandbox，不支持任意 shell；tool 执行仍需 `allowed_tool_refs` 授权。tool ref 不允许重复注册，也不允许覆盖内置或既有 executor ref。
 - Prompt 只生成简化 JSON plan；运行时 `llm` 节点的真实执行需 `external_call=True` + `allowed_models`。
 - skill：`analyze_skill_dir()` 保留静态分析能力；Skill → `WorkflowSpec` 的 LLM 驱动 alpha 转换已实现（`plan --skill-dir`），可诊断、可人工修正，不保证任意 Skill 一次成功；不执行 skill 脚本，不自动注册 tool callable。
 - 节点类型 registry：`llm`、`tool`、`retriever`、`transform`、`router`、`human_gate`、`join`、`side_effect`。
@@ -50,8 +50,11 @@ Prompt 计划生成能力已落地：通过 `plan_prompt_to_workflow_spec()` 或
 - `compile_workflow_to_graph()` 和 `run_workflow()` 当前目标能力支持 `linear`、`conditional`、`loop`、`fanout`、`join`（基于 `join_sources` + reducer）。
 - `human_gate` 使用 LangGraph `interrupt()`；CLI 对 lockfile bundle 的等待态会写入 bundle 目录下 `.pt2lg-runtime/`。安装可选依赖 `checkpoint-sqlite`（`langgraph-checkpoint-sqlite>=2.0`）后，CLI 使用 `SqliteSaver` 提供更稳定的本地 checkpoint，路径为 `.pt2lg-runtime/<thread_hash>.db`。旧 `.json` runtime 状态文件与新的 `.db` checkpoint 不互相迁移。SQLite checkpoint 默认保留以支持后续 time travel debugging，但 resume 成功后不再自动清理 `.db` 文件。
 - 编译产物路径已统一：CLI `pt2lg compile` 和 public `compile_workflow()` 都通过 `runtime.artifacts.compile_workflow_to_artifacts()` 写入 bundle，包含 compile id、timing、policy summary 和 binding summary。
+- generated bundle 的 `generated/graph.py` 暴露 `RuntimeConfig`、`build_graph(config=None)`、`invoke(input_payload=None, config=None)`，并兼容保留 `compile_graph()`、`invoke_graph()`。
+- `RuntimeConfig` 支持注入 `executor_registry`、`model_client`、`tool_registry`、`checkpointer` 和完整 `PolicySpec` 覆盖；它是库内 bundle 的最小运行时配置入口，不是 deployable service wrapper，也不是 secret manager。
 - 编译失败时不能留下可误用的旧 bundle；`compile_workflow_to_artifacts()` 会清理同一输出目录下已知的旧产物文件和 `generated/`，但保留无关文件。
 - binding summary 记录 executor ref、type、required capabilities 名称、dynamic 标记、allowed_models 和 external_call。
+- `manifest.json` 包含 secret-free `runtime_requirements`，只记录 `model_refs`、`tool_refs`、`checkpoint_required` 和 policy summary，不写入 secret 或 secret 名称。
 - `llm/` 顶层模块为 LLM 客户端构造共享入口（`LLMConfig`、`build_llm_client()`、`dict_messages_to_langchain()`），`.env` 配置同时服务于 Prompt 计划生成和运行时 LLM 执行。
 - v0.4 3B 已实现 `NodeSpec.retry.max_attempts` 的 wrapper retry；可重试错误范围保持窄口径：LLM timeout、LLM API timeout/5xx/server failure、tool timeout。
 - `side_effect` retry 必须声明 `security.idempotency_key`；成功副作用以 `(workflow_id, thread_id, idempotency_key)` 为作用域记录原始 executor output，重复命中时不再次调用 executor。
@@ -60,9 +63,10 @@ Prompt 计划生成能力已落地：通过 `plan_prompt_to_workflow_spec()` 或
 - CLI `run` 命令能根据 workflow 节点类型自动构造 `model_client` 和 `tool_registry`，并可通过 `--tool-module` 注册受信任 Python callable。
 - `run_workflow()` 支持 `checkpointer` 注入以实现状态持久化和恢复。
 - `side_effect` 节点默认需要审批，通过 `pt2lg resume --resume '{"decision":"approved"}'` 恢复执行。
-- 3B 不代表 3C runtime config bundle 已完成；不要把当前 audit/idempotency/metrics 行为扩展描述为可部署 runtime bundle。
+- 3C 已补齐最小 runtime config bundle；不要把当前 bundle 描述扩展为 standalone deployment bundle、secret manager、sandbox 或远程审计服务。
 - 策略约束在 `validate_workflow()` 阶段即被检查：`external_call` 开关、`allowed_models` 白名单、`allowed_tool_refs` 白名单。
-- `LANGCHAIN_TOOL` 在 v0.4 第一期仍为 reserved/experimental，不作为默认可执行能力。
+- `LANGCHAIN_TOOL` 在 v0.4 仍为 reserved/experimental，不作为默认可执行能力；v0.4 tool path 是受信任 Python tool module + `ExecutorType.PYTHON_CALLABLE`。
+- 3C engineering gates 覆盖 deterministic compile、bundle load/invoke、dynamic tool、side-effect interrupt/resume 和 offline corpus；这不代表项目已提供 standalone deployment bundles、secret manager integration、sandboxing、remote audit services 或 LangChain Tool execution。
 
 ## Do & Don't
 

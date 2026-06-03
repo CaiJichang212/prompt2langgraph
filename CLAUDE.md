@@ -109,19 +109,22 @@ uv run pt2lg run tests/fixtures/fanout_map_reduce.json --input '{"items":["alpha
 - JSON plan 适配保留显式 `workflow_id`、顶层 `metadata`、`policies`、`state_schema.reducers`、兼容顶层 `reducers` 和 edge 级 `join_sources`。
 - `llm` 节点可通过 `ExecutorType.LLM`（ref 格式 `llm.<model_id>`）调用真实模型，需 `external_call=True` + `allowed_models` 白名单。
 - `tool` 节点可通过 `ExecutorType.PYTHON_CALLABLE` 执行受控 callable，需 `allowed_tool_refs` 白名单 + `ToolCallableRegistry` 注册。
-- CLI `run` / `resume` 支持 `--tool-module <module>` 加载受信任 Python module；module 必须暴露 `register_tools(registry)`，并通过 `ToolCallableRegistry.register(ref, callable)` 注册工具。tool module 必须先于 workflow parse/load 加载，简化 JSON plan 的自定义 tool ref 依赖该顺序。`--tool-module` 不是 sandbox，不支持任意 shell；tool 执行仍需 `allowed_tool_refs` 授权。tool ref 不允许重复注册，也不允许覆盖内置或既有 executor ref。
+- CLI `compile` / `run` / `resume` 支持 `--tool-module <module>` 加载受信任 Python module；module 必须暴露 `register_tools(registry)`，并通过 `ToolCallableRegistry.register(ref, callable)` 注册工具。tool module 必须先于 workflow parse/load 加载，简化 JSON plan 的自定义 tool ref 依赖该顺序。`--tool-module` 不是 sandbox，不支持任意 shell；tool 执行仍需 `allowed_tool_refs` 授权。tool ref 不允许重复注册，也不允许覆盖内置或既有 executor ref。
 - 真实 executor 和 mock executor 可通过 executor ref 区分（`builtin.echo_llm` = mock，`llm.qwen-plus` = real）。
 - 条件表达式只支持简单 `<state_key> <comparison> <literal>`。
 - `loop` 依赖 `loop_guard.max_iterations`；`fanout` 的 reduce 依赖 `state_schema.reducers`。
 - `pt2lg compile` 与 public `compile_workflow()` 统一走 `runtime.artifacts.compile_workflow_to_artifacts()`。
 - 成功 bundle 包含：`workflow.ir.json`、`workflow.lock.json`、`manifest.json`、`compile_report.json`、`graph.mmd`、`generated/*.py`。
+- `generated/graph.py` 暴露 `RuntimeConfig`、`build_graph(config=None)`、`invoke(input_payload=None, config=None)`，并兼容保留 `compile_graph()`、`invoke_graph()`。
+- `RuntimeConfig` 支持 `executor_registry`、`model_client`、`tool_registry`、`checkpointer` 和完整 `PolicySpec` 覆盖；它是库内 bundle 的最小运行时配置入口，不是 deployable service wrapper，也不是 secret manager。
 - `workflow.lock.json` 是 bundle `run` / `graph` / `resume` 的入口；加载时会校验其与 `workflow.ir.json` 的 hash 一致性。
 - 编译失败会清理已知旧产物和 `generated/`，避免误用旧 bundle。
+- `manifest.json` 包含 secret-free `runtime_requirements`，只记录 `model_refs`、`tool_refs`、`checkpoint_required` 和 policy summary。
 - `human_gate` 基于 LangGraph `interrupt()`；CLI bundle 运行的等待态保存在 bundle 下 `.pt2lg-runtime/`。安装可选依赖 `checkpoint-sqlite`（`langgraph-checkpoint-sqlite>=2.0`）后，CLI 使用 `SqliteSaver` 提供更稳定的本地 checkpoint，路径为 `.pt2lg-runtime/<thread_hash>.db`。旧 `.json` runtime 状态文件与新的 `.db` checkpoint 不互相迁移。SQLite checkpoint 默认保留以支持后续 time travel debugging，但 resume 成功后不再自动清理 `.db` 文件。
-- `LANGCHAIN_TOOL` 在 v0.4 第一期仍为 reserved/experimental，不作为默认可执行能力。
+- `LANGCHAIN_TOOL` 在 v0.4 仍为 reserved/experimental，不作为默认可执行能力；v0.4 tool path 是受信任 Python tool module + `ExecutorType.PYTHON_CALLABLE`。
 - `collect_metrics=True` 时，`RunResult.external_calls` 中可获取成功和失败调用的 `ExternalCallRecord`。
 - CLI `run` 命令能根据 workflow 节点类型自动构造 `model_client` 和 `tool_registry`，并可通过 `--tool-module` 注册受信任 Python callable。
-- v0.4 3B 已完成最小 retry、side-effect idempotency、audit JSONL 和 runtime metrics；3C runtime config bundle 仍未完成，不要在文档或注释中暗示它已可用。
+- v0.4 3C engineering gates 覆盖 deterministic compile、bundle load/invoke、dynamic tool、side-effect interrupt/resume 和 offline corpus；这不代表 standalone deployment bundles、secret manager integration、sandboxing、remote audit services 或 LangChain Tool execution 已实现。
 
 ## 修改时的硬规则
 

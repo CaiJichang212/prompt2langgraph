@@ -53,7 +53,7 @@ git config core.hooksPath .githooks
 - `builtin.mock_retriever` 返回 `mock://...` artifact reference，不访问网络
 - `human_gate` 通过 LangGraph interrupt 触发等待态，需要后续 `resume`
 - `side_effect` 节点类型已在 registry 中定义，但是否可通过校验取决于工作流安全策略
-- `LANGCHAIN_TOOL` 在 v0.4 第一期仍为 reserved/experimental，不作为默认可执行能力
+- `LANGCHAIN_TOOL` 在 v0.4 仍为 reserved/experimental，不作为默认可执行能力；v0.4 的 tool 执行路径是受信任 Python tool module + `ExecutorType.PYTHON_CALLABLE`
 
 ## 快速开始
 
@@ -86,6 +86,15 @@ uv run pt2lg compile tests/fixtures/linear_llm.json --out build --json
 - `generated/nodes.py`
 - `generated/graph.py`
 
+其中 `generated/graph.py` 暴露：
+
+- `RuntimeConfig`
+- `build_graph(config=None)`
+- `invoke(input_payload=None, config=None)`
+- 兼容保留 `compile_graph()` 和 `invoke_graph()`
+
+`RuntimeConfig` 用于给生成 bundle 注入 `executor_registry`、`model_client`、`tool_registry`、`checkpointer` 和完整 `PolicySpec` 覆盖。它是库内 bundle 的最小运行时配置入口，不是独立可部署 service wrapper，也不是 secret manager。
+
 ### 4. 运行工作流
 
 直接运行源工作流：
@@ -107,7 +116,7 @@ uv run pt2lg run build/linear_llm/workflow.lock.json --input '{"question":"hello
 
 ### CLI Tool Module
 
-`pt2lg run` 和 `pt2lg resume` 可通过 `--tool-module <module>` 加载受信任 Python tool module。module 必须定义 `register_tools(registry)`，并通过 `ToolCallableRegistry.register(ref, callable)` 注册 callable。
+`pt2lg compile`、`pt2lg run` 和 `pt2lg resume` 可通过 `--tool-module <module>` 加载受信任 Python tool module。module 必须定义 `register_tools(registry)`，并通过 `ToolCallableRegistry.register(ref, callable)` 注册 callable。
 
 Tool 执行仍需 workflow policy 通过 `allowed_tool_refs` 授权。CLI 会先加载 tool module，再解析 Workflow IR 或简化 JSON plan，因此简化 JSON plan 可以引用自定义 `python_callable` executor ref。
 
@@ -214,7 +223,7 @@ uv run pt2lg resume <bundle>/workflow.lock.json --thread-id '<thread_id>' --resu
 
 当 CLI 或 `run_workflow()` 使用 `.pt2lg-runtime` / `state_store_dir` 时，运行时会写入 `.pt2lg-runtime/audit.log.jsonl`。audit 只包含安全元数据字段，例如 `run_id`、`thread_id`、`workflow_id`、`node_id`、`event_type`、`status`、`latency_ms`、`error_code`、`retry_count` 和 `timestamp`，不记录完整 input payload、完整模型响应、API key、secret 或敏感 tool 参数。
 
-`collect_metrics=True` 时，`RunResult.external_calls` 会记录外部调用状态、latency、category 和 attempt；`RunMetrics` 汇总 `retry_count`、`tool_call_count`、`call_count`、`total_latency_ms` 和可用 token 摘要。当前 3B 不实现 LangGraph native retry、分布式 idempotency storage、完整 token accounting 或 3C runtime config bundle。
+`collect_metrics=True` 时，`RunResult.external_calls` 会记录外部调用状态、latency、category 和 attempt；`RunMetrics` 汇总 `retry_count`、`tool_call_count`、`call_count`、`total_latency_ms` 和可用 token 摘要。v0.4 当前仍不实现 LangGraph native retry、分布式 idempotency storage 或完整 token accounting；3C 已补齐最小 runtime config bundle，但不提供 standalone deployment bundle、secret manager、sandbox 或远程审计服务。
 
 ## Python API
 
@@ -263,6 +272,8 @@ compile_result = pt2lg.compile_workflow(workflow, out_dir="build")
 assert compile_result.ok is True
 print(compile_result.output_dir)
 ```
+
+如需在编译 bundle 时校验或绑定动态 tool / executor，可向 `compile_workflow()` 传入 `executor_registry` 和 `tool_registry`。生成后的 `generated/graph.py` 则通过 `RuntimeConfig` 在加载或调用时注入运行依赖。
 
 `run_workflow()` 支持 `checkpointer` 注入以实现状态持久化和恢复：
 
@@ -485,9 +496,9 @@ API_KEY=sk-your-key
 
 lockfile 会记录 workflow hash、registry hash、target、编译选项 hash、policy hash 和生成文件列表。读取 bundle 时会校验 lockfile 与 `workflow.ir.json` 的 workflow hash 是否一致。
 
-`manifest.json` 会包含 deterministic policy summary 和 executor binding summary；`compile_report.json` 会包含 `compile_id`、阶段 `timings_ms`、诊断和 binding summary。Binding summary 记录 executor ref、type、capability 名称、dynamic 标记、allowed_models 和 external_call 状态，不写入真实 secret，也不写入 secret 名称。
+`manifest.json` 会包含 deterministic policy summary、executor binding summary，以及 secret-free `runtime_requirements`。其中 `runtime_requirements` 只记录运行依赖摘要：`model_refs`、`tool_refs`、`checkpoint_required` 和 policy summary，不写入真实 secret，也不写入 secret 名称。`compile_report.json` 会包含 `compile_id`、阶段 `timings_ms`、诊断和 binding summary。Binding summary 记录 executor ref、type、capability 名称、dynamic 标记、allowed_models 和 external_call 状态。
 
-v0.1 bundle 契约是“可复现且依赖当前 `prompt2langgraph` 库运行”，不是完全自包含的静态 LangGraph 代码包。`generated/graph.py` 会读取同一 bundle 下的 `workflow.ir.json`，再调用库内 `compile_workflow_to_graph()` 构建图；`workflow.ir.json`、lock、manifest、report 和 Mermaid 才是当前可审计契约的核心产物。
+v0.1 bundle 契约是“可复现且依赖当前 `prompt2langgraph` 库运行”，不是完全自包含的静态 LangGraph 代码包。`generated/graph.py` 会读取同一 bundle 下的 `workflow.ir.json`，再调用库内 `compile_workflow_to_graph()` 构建图；`workflow.ir.json`、lock、manifest、report 和 Mermaid 才是当前可审计契约的核心产物。当前 bundle 仍不是 standalone deployment bundle，不包含 secret manager 集成、沙箱、远程 audit service 或 LangChain Tool 执行封装。
 
 如果编译失败，`pt2lg compile` 不会生成可运行 bundle；同一输出目录下的旧 bundle 产物会被清理，目录中的无关文件会保留。
 
@@ -533,7 +544,7 @@ CLI 的 `validate`、`compile`、`run`、`graph`、`resume` 都支持 `--json` �
 - 内置 mock executor 以确定性测试为目标，便于本地回归和快照验证
 - 真实 LLM 调用需显式启用：`policies.external_call=True` + `policies.allowed_models` 白名单
 - 受控 Tool 执行需显式授权：`policies.allowed_tool_refs` 白名单 + `ToolCallableRegistry` 注册
-  - CLI `run` / `resume` 可通过 `--tool-module <module>` 加载受信任 Python module 并注册 callable
+  - CLI `compile` / `run` / `resume` 可通过 `--tool-module <module>` 加载受信任 Python module 并注册 callable
   - Python API 可直接向 `run_workflow()` 注入已注册 callable 的 `tool_registry`
 - 策略约束在 `validate_workflow()` 阶段即被检查，运行时做防御性二次校验
 - 条件表达式当前仅支持 `<state_key> <comparison> <literal>` 形式
@@ -548,6 +559,7 @@ CLI 的 `validate`、`compile`、`run`、`graph`、`resume` 都支持 `--json` �
 - Prompt 只生成简化 JSON plan；运行时 `llm` 节点的真实执行需 `external_call=True` + `allowed_models`
 - `skill_dir` 支持 Skill → `WorkflowSpec` 的 LLM 驱动 alpha 转换（`plan --skill-dir`），也保留静态分析能力（`analyze_skill_dir()`）
 - `llm/` 顶层模块为 LLM 客户端构造共享入口，`.env` 配置同时服务于 Prompt 计划生成和运行时 LLM 执行
+- v0.4 3C 的 engineering gates 覆盖 deterministic compile、bundle load/invoke、dynamic tool、side-effect interrupt/resume 和 offline prompt/skill corpus；这不代表项目已经提供 standalone deployment bundles、secret manager integration、sandboxing、remote audit services 或 LangChain Tool execution
 
 ## 参考夹具
 
