@@ -22,9 +22,10 @@ class SideEffectIdempotencyStore:
         self,
         workflow_id: str,
         thread_id: str,
+        node_id: str,
         idempotency_key: str,
     ) -> dict[str, Any] | None:
-        record = self._records.get(_record_key(workflow_id, thread_id, idempotency_key))
+        record = self._records.get(_record_key(workflow_id, thread_id, node_id, idempotency_key))
         if record is None or record.get("status") != "succeeded":
             return None
         output = record.get("output")
@@ -34,11 +35,12 @@ class SideEffectIdempotencyStore:
         self,
         workflow_id: str,
         thread_id: str,
+        node_id: str,
         idempotency_key: str,
         *,
         output: dict[str, Any],
     ) -> None:
-        self._records[_record_key(workflow_id, thread_id, idempotency_key)] = {
+        self._records[_record_key(workflow_id, thread_id, node_id, idempotency_key)] = {
             "status": "succeeded",
             "output": dict(output),
         }
@@ -60,5 +62,5 @@ def side_effect_store_path(state_store_dir: Path | None) -> Path | None:
     return state_store_dir / "side_effects.json"
 
 
-def _record_key(workflow_id: str, thread_id: str, idempotency_key: str) -> str:
-    return "\0".join([workflow_id, thread_id, idempotency_key])
+def _record_key(workflow_id: str, thread_id: str, node_id: str, idempotency_key: str) -> str:
+    return "\0".join([workflow_id, thread_id, node_id, idempotency_key])
