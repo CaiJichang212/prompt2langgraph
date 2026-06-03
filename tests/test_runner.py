@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 
 from prompt2langgraph.ir.models import ExecutorType, TypeName, TypeSpec, WorkflowSpec
-from prompt2langgraph.registry.executors import ExecutorDefinition, ExecutorRegistry
+from prompt2langgraph.registry.executors import ExecutorDefinition, ExecutorError, ExecutorRegistry
 from prompt2langgraph.runtime import runner
 from prompt2langgraph.runtime.events import ExternalCallRecord, RunMetrics, RunResult
 from prompt2langgraph.runtime.runner import run_workflow
@@ -78,6 +78,175 @@ def test_run_workflow_returns_metrics() -> None:
     assert result.metrics.duration_ms is not None
     assert result.metrics.retry_count == 0
     assert result.metrics.tool_call_count == 0
+
+
+def test_run_workflow_reports_retry_count_for_retryable_node() -> None:
+    calls: list[int] = []
+
+    def flaky_handler(inputs: dict, params: dict) -> dict:
+        calls.append(len(calls) + 1)
+        if len(calls) == 1:
+            raise ExecutorError("E_LLM_001", "LLM call timed out")
+        return {"answer": f"Answer: {inputs['question']}"}
+
+    workflow = WorkflowSpec.model_validate(
+        {
+            "schema_version": "0.1",
+            "workflow_id": "runner_retry_count",
+            "name": "Runner Retry Count",
+            "entrypoint": "compose",
+            "state_schema": {
+                "input": {"question": {"type": "string"}},
+                "output": {"answer": {"type": "string"}},
+                "channels": {"question": {"type": "string"}, "answer": {"type": "string"}},
+                "private": {},
+                "reducers": {},
+            },
+            "nodes": [
+                {
+                    "id": "compose",
+                    "kind": "transform",
+                    "executor": {"ref": "test.flaky", "type": "builtin"},
+                    "inputs": {"question": {"state_key": "question"}},
+                    "outputs": {"answer": {"state_key": "answer"}},
+                    "retry": {"max_attempts": 2},
+                    "params": {},
+                }
+            ],
+            "edges": [],
+            "policies": {},
+            "metadata": {},
+        }
+    )
+    registry = ExecutorRegistry(
+        [
+            ExecutorDefinition(
+                ref="test.flaky",
+                type=ExecutorType.BUILTIN,
+                input_schema={"question": TypeSpec(type=TypeName.STRING)},
+                output_schema={"answer": TypeSpec(type=TypeName.STRING)},
+                handler=flaky_handler,
+            )
+        ]
+    )
+
+    result = run_workflow(workflow, {"question": "hello"}, executors=registry)
+
+    assert result.status == "succeeded"
+    assert result.output == {"answer": "Answer: hello"}
+    assert calls == [1, 2]
+    assert result.metrics.retry_count == 1
+
+
+def test_run_workflow_metrics_count_tool_calls_and_latency() -> None:
+    from prompt2langgraph.registry.builtins import builtin_executor_registry
+    from prompt2langgraph.registry.tool_executor import ToolCallableRegistry
+
+    workflow = load_workflow("tool_identity.json")
+    workflow.policies.collect_metrics = True
+
+    registry = builtin_executor_registry()
+    registry.register(
+        ExecutorDefinition(ref="fake.identity", type=ExecutorType.PYTHON_CALLABLE, dynamic=True)
+    )
+    workflow.nodes[0].executor.ref = "fake.identity"
+    workflow.nodes[0].executor.type = ExecutorType.PYTHON_CALLABLE
+    workflow.policies.allowed_tool_refs = ["fake.identity"]
+
+    tools = ToolCallableRegistry()
+    tools.register("fake.identity", lambda inputs, params: {"value": inputs["value"]})
+
+    result = run_workflow(
+        workflow,
+        {"question": "hello"},
+        executors=registry,
+        tool_registry=tools,
+    )
+
+    assert result.status == "succeeded"
+    assert result.metrics.call_count == 1
+    assert result.metrics.tool_call_count == 1
+    assert result.metrics.total_latency_ms is not None
+    assert result.external_calls[0].latency_ms is not None
+    assert result.external_calls[0].status == "succeeded"
+
+
+def test_run_workflow_writes_audit_log_without_payloads(tmp_path: Path) -> None:
+    workflow = load_workflow("linear_llm.json")
+    runtime_dir = tmp_path / ".pt2lg-runtime"
+
+    result = run_workflow(
+        workflow,
+        {"question": "secret question text"},
+        state_store_dir=runtime_dir,
+    )
+
+    assert result.status == "succeeded"
+    audit_path = runtime_dir / "audit.log.jsonl"
+    lines = audit_path.read_text(encoding="utf-8").splitlines()
+    assert lines
+    records = [json.loads(line) for line in lines]
+    assert {record["event_type"] for record in records} >= {"run.started", "run.finished"}
+    serialized = "\n".join(lines)
+    assert "secret question text" not in serialized
+    assert "api_key" not in serialized.lower()
+
+
+def test_failed_retry_run_preserves_retry_metrics_and_audit(tmp_path: Path) -> None:
+    from prompt2langgraph.diagnostics.codes import E_LLM_001
+    from prompt2langgraph.ir.models import ExecutorType, RetryPolicy
+    from prompt2langgraph.registry.executors import (
+        ExecutorDefinition,
+        ExecutorError,
+        ExecutorRegistry,
+    )
+
+    workflow = load_workflow("linear_llm.json")
+    workflow.nodes[0].retry = RetryPolicy(max_attempts=2)
+
+    def always_timeout(inputs, params):
+        raise ExecutorError(E_LLM_001, "LLM call timed out")
+
+    result = run_workflow(
+        workflow,
+        {"question": "hello"},
+        state_store_dir=tmp_path / ".pt2lg-runtime",
+        executors=ExecutorRegistry(
+            [
+                ExecutorDefinition(
+                    ref="builtin.echo_llm",
+                    type=ExecutorType.BUILTIN,
+                    handler=always_timeout,
+                )
+            ]
+        ),
+    )
+
+    assert result.status == "failed"
+    assert result.metrics.retry_count == 1
+    audit_lines = (tmp_path / ".pt2lg-runtime" / "audit.log.jsonl").read_text(
+        encoding="utf-8"
+    ).splitlines()
+    records = [json.loads(line) for line in audit_lines]
+    assert any(record["event_type"] == "run.failed" for record in records)
+    assert any(
+        record["event_type"] == "node.failed" and record["error_code"] == E_LLM_001
+        for record in records
+    )
+
+
+def test_waiting_run_writes_audit_without_full_interrupt_payload(tmp_path: Path) -> None:
+    workflow = load_workflow("side_effect_requires_approval.json")
+    result = run_workflow(
+        workflow,
+        {"question": "payload must not be audited"},
+        state_store_dir=tmp_path / ".pt2lg-runtime",
+    )
+
+    assert result.status == "waiting"
+    audit_text = (tmp_path / ".pt2lg-runtime" / "audit.log.jsonl").read_text(encoding="utf-8")
+    assert "run.waiting" in audit_text
+    assert "payload must not be audited" not in audit_text
     assert result.tool_calls == []
 
 
