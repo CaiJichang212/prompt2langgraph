@@ -68,6 +68,11 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Compile a deterministic benchmark workflow.")
     parser.add_argument("--nodes", type=int, required=True)
     parser.add_argument("--max-seconds", type=float, required=True)
+    parser.add_argument(
+        "--report-file",
+        type=Path,
+        help="Optional path to write benchmark JSON payload.",
+    )
     args = parser.parse_args()
 
     started_at = perf_counter()
@@ -85,6 +90,11 @@ def main() -> int:
         "duration_seconds": round(duration_seconds, 6),
         "timings_ms": timings_ms,
     }
+    if args.report_file is not None:
+        args.report_file.parent.mkdir(parents=True, exist_ok=True)
+        mode = "a" if args.report_file.exists() else "w"
+        with args.report_file.open(mode, encoding="utf-8") as report_output:
+            report_output.write(json.dumps(payload, sort_keys=True) + "\n")
     print(json.dumps(payload, indent=2, sort_keys=True))
     return 0 if ok else 1
 
