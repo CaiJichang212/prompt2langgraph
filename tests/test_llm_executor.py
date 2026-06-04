@@ -154,3 +154,12 @@ def test_list_content_joined_as_str():
     executor = LLMExecutor(fake)
     result = executor({"question": "hi"}, {})
     assert result == {"answer": "hello world"}
+
+
+def test_extract_token_count_reads_usage_metadata_attribute():
+    message = AIMessage(
+        content="ok",
+        usage_metadata={"input_tokens": 1, "output_tokens": 2, "total_tokens": 3},
+    )
+
+    assert LLMExecutor._extract_token_count(message) == 3

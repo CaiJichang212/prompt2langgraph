@@ -171,6 +171,48 @@ def test_run_workflow_metrics_count_tool_calls_and_latency() -> None:
     assert result.external_calls[0].status == "succeeded"
 
 
+def test_dynamic_tool_retry_success_marks_retry_attempt() -> None:
+    from prompt2langgraph.ir.models import PolicySpec, RetryPolicy
+    from prompt2langgraph.registry.tool_executor import ToolCallableRegistry
+
+    calls: list[int] = []
+
+    def flaky_tool(inputs: dict, params: dict) -> dict:
+        calls.append(len(calls) + 1)
+        if len(calls) == 1:
+            raise TimeoutError("tool timed out")
+        return {"value": inputs["value"]}
+
+    workflow = load_workflow("tool_identity.json")
+    workflow.policies = PolicySpec(
+        collect_metrics=True,
+        allowed_tool_refs=["fake.flaky"],
+    )
+    workflow.nodes[0].executor.ref = "fake.flaky"
+    workflow.nodes[0].executor.type = ExecutorType.PYTHON_CALLABLE
+    workflow.nodes[0].retry = RetryPolicy(max_attempts=2)
+
+    executors = ExecutorRegistry(
+        [ExecutorDefinition(ref="fake.flaky", type=ExecutorType.PYTHON_CALLABLE, dynamic=True)]
+    )
+    tools = ToolCallableRegistry()
+    tools.register("fake.flaky", flaky_tool)
+
+    result = run_workflow(
+        workflow,
+        {"question": "hello"},
+        executors=executors,
+        tool_registry=tools,
+    )
+
+    assert result.status == "succeeded"
+    assert calls == [1, 2]
+    assert [(call.attempt, call.is_retry) for call in result.external_calls] == [
+        (1, False),
+        (2, True),
+    ]
+
+
 def test_run_workflow_writes_audit_log_without_payloads(tmp_path: Path) -> None:
     workflow = load_workflow("linear_llm.json")
     runtime_dir = tmp_path / ".pt2lg-runtime"
@@ -233,6 +275,37 @@ def test_failed_retry_run_preserves_retry_metrics_and_audit(tmp_path: Path) -> N
         record["event_type"] == "node.failed" and record["error_code"] == E_LLM_001
         for record in records
     )
+
+
+def test_failed_retry_run_records_final_attempt_index() -> None:
+    from prompt2langgraph.diagnostics.codes import E_LLM_001
+    from prompt2langgraph.ir.models import RetryPolicy
+
+    workflow = load_workflow("linear_llm.json")
+    workflow.policies.collect_metrics = True
+    workflow.nodes[0].retry = RetryPolicy(max_attempts=2)
+
+    def always_timeout(inputs, params):
+        raise ExecutorError(E_LLM_001, "LLM call timed out")
+
+    result = run_workflow(
+        workflow,
+        {"question": "hello"},
+        executors=ExecutorRegistry(
+            [
+                ExecutorDefinition(
+                    ref="builtin.echo_llm",
+                    type=ExecutorType.BUILTIN,
+                    handler=always_timeout,
+                )
+            ]
+        ),
+    )
+
+    assert result.status == "failed"
+    assert len(result.external_calls) == 1
+    assert result.external_calls[0].attempt == 2
+    assert result.external_calls[0].is_retry is True
 
 
 def test_waiting_run_writes_audit_without_full_interrupt_payload(tmp_path: Path) -> None:

@@ -25,7 +25,7 @@ def test_prompt_plan_request_accepts_explicit_repair_attempts() -> None:
     assert request.repair_attempts == 2
 
 
-def test_system_prompt_documents_v04_phase1_json_plan_fields() -> None:
+def test_system_prompt_documents_v03_json_plan_fields() -> None:
     from prompt2langgraph.prompting.planner import SYSTEM_PROMPT
 
     required_fragments = [

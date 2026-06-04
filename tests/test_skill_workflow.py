@@ -184,7 +184,7 @@ def test_build_skill_plan_prompt_contains_state_schema_constraints():
     assert "reducer" in prompt or "state" in prompt.lower()
 
 
-def test_build_skill_plan_prompt_documents_v04_phase1_json_plan_fields() -> None:
+def test_build_skill_plan_prompt_documents_v03_json_plan_fields() -> None:
     analysis = analyze_skill_dir("tests/fixtures/skill_basic")
     prompt = build_skill_plan_prompt(analysis, skill_dir="tests/fixtures/skill_basic")
 
