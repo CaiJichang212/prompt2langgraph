@@ -63,6 +63,14 @@ git config core.hooksPath .githooks
 uv run pytest
 ```
 
+离线 benchmark smoke 建议口径（与工程门禁保持一致）：
+
+```bash
+python scripts/benchmark_compile.py --nodes 10 --max-seconds 10
+python scripts/benchmark_compile.py --nodes 100 --max-seconds 60
+python scripts/benchmark_compile.py --nodes 10 --max-seconds 10 --report-file /tmp/benchmark.jsonl
+```
+
 ### 2. 校验工作流
 
 ```bash
@@ -569,7 +577,7 @@ CLI 的 `validate`、`compile`、`run`、`graph`、`resume` 都支持 `--json` �
 - `conditional_human_gate.json`
 - `loop_with_guard.json`
 - `fanout_map_reduce.json`
-- `join.json`（JOIN 基于 `join_sources` + reducer 可执行）
+- `fanout_to_join.json`（JOIN 基于 `join_sources` + reducer 可执行）
 
 也可以查看无效夹具理解校验边界：
 

@@ -150,12 +150,20 @@ uv run pt2lg compile tests/fixtures/linear_llm.json --out build --json
 uv run pt2lg run build/linear_llm/workflow.lock.json --input '{"question":"hello"}' --json
 ```
 
+离线 benchmark 建议口径：
+
+```bash
+python scripts/benchmark_compile.py --nodes 10 --max-seconds 10
+python scripts/benchmark_compile.py --nodes 100 --max-seconds 60
+python scripts/benchmark_compile.py --nodes 10 --max-seconds 10 --report-file /tmp/benchmark.jsonl
+```
+
 常用控制流验证：
 
 ```bash
 uv run pt2lg run tests/fixtures/loop_with_guard.json --input '{"question":"hello"}' --json
 uv run pt2lg run tests/fixtures/fanout_map_reduce.json --input '{"items":["alpha","beta"]}' --json
-uv run pt2lg run tests/fixtures/join.json --input '{"data":"test"}' --json
+uv run pt2lg run tests/fixtures/fanout_to_join.json --input '{"question":"hello","items":["alpha","beta"]}' --json
 uv run pt2lg compile tests/fixtures/conditional_human_gate.json --out build --json
 uv run pt2lg run build/conditional_human_gate/workflow.lock.json --input '{"question":"hello","confidence":0.5}' --json
 uv run pt2lg resume build/conditional_human_gate/workflow.lock.json --thread-id '<thread_id>' --resume '"approved"' --json
