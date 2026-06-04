@@ -148,7 +148,7 @@ v0.3 第一期应补齐以下剩余字段与兼容入口：
 
 - 顶层 `workflow_id` 应优先于 `name` 派生 ID；缺省时继续保持 `name` slug 兼容行为。
 - 顶层 `metadata`。
-- 顶层 `reducers` 作为 `state_schema.reducers` 的兼容别名；当两者同时存在且内容不同，以 `state_schema.reducers` 为准，并返回稳定 adapter diagnostic。
+- 顶层 `reducers` 作为 `state_schema.reducers` 的兼容别名；当两者同时存在且内容不同，`JSONPlanAdapter` 直接失败并返回 `path="reducers"` 的稳定诊断错误（`AdapterParseError`）。
 - 与当前 IR 兼容的 loop guard、fanout map、condition routes。
 - fanout/join/security plan 的 validate、compile、run smoke fixtures。
 
@@ -193,7 +193,7 @@ v0.3 第一期应补齐以下剩余字段与兼容入口：
 - JSON plan 顶层 `workflow_id` 生效，并保持缺省时由 `name` 派生的兼容行为。
 - JSON plan `metadata` 进入 `WorkflowSpec.metadata`。
 - JSON plan `state_schema.reducers`、`policies.external_call`、`allowed_models`、`allowed_tool_refs`、`join_sources` 保持回归通过。
-- JSON plan 顶层 `reducers` 兼容入口生效；与 `state_schema.reducers` 冲突时以 `state_schema.reducers` 为准并返回稳定 diagnostic。
+- JSON plan 顶层 `reducers` 兼容入口生效；与 `state_schema.reducers` 冲突时直接失败，并返回 `path="reducers"` 的稳定诊断错误。
 - Prompt/Skill fake model 输出 fanout/join/security plan 后可进入 validate/compile/run smoke。
 - 文档中的 join、Prompt、Skill、tool 描述与源码行为一致。
 

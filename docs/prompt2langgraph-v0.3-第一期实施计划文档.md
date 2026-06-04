@@ -23,7 +23,7 @@ v0.3 第一期对应《prompt2langgraph v0.3 开发计划文档》中的 **Plan 
 
 - 显式 `workflow_id` 优先于 `name` 派生 ID。
 - 顶层 `metadata` 进入 `WorkflowSpec.metadata`。
-- 顶层 `reducers` 作为 `state_schema.reducers` 的兼容别名。
+- 顶层 `reducers` 作为 `state_schema.reducers` 的兼容别名；当两者冲突时解析直接失败。
 - Prompt planner / Skill planner 的输出 schema 与 adapter 实际能力一致。
 - JSON plan 的 fanout、join、security 场景具备 validate / compile / run smoke 回归。
 - README、AGENTS、CLAUDE、测试语料说明与源码行为一致。
@@ -171,7 +171,7 @@ Prompt planner 和 Skill planner 应指导模型输出当前 adapter 支持的�
 - 增加显式 `workflow_id` 解析。
 - 增加 `metadata` object 映射。
 - 增加顶层 `reducers` 到 `state_schema.reducers` 的兼容映射。
-- 为 reducers 冲突返回明确 diagnostic。
+- 顶层与 `state_schema.reducers` 冲突时直接失败，返回 `path="reducers"` 的稳定诊断错误。
 - 保持 `state_schema.reducers`、`policies`、`join_sources` 现有行为不退化。
 
 测试要求：
@@ -183,7 +183,7 @@ Prompt planner 和 Skill planner 应指导模型输出当前 adapter 支持的�
 - 非 object `metadata` 有稳定 source/path。
 - 顶层 `reducers` 生效。
 - 顶层 `reducers` 与 `state_schema.reducers` 一致时通过。
-- 两者冲突时失败，路径指向 `reducers`。
+- 两者冲突时直接失败（`AdapterParseError`），路径指向 `reducers`。
 - 非法 reducer 名称失败，路径与输入位置一致。
 
 ### 7.2 JSON plan smoke 回归
