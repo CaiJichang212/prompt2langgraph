@@ -216,6 +216,27 @@ def _merge_dict(left: dict[str, Any], right: dict[str, Any]) -> dict[str, Any]:
     return {**left, **right}
 
 
+def _extract_int(value: Any) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    if isinstance(value, str):
+        stripped = value.strip()
+        if stripped.isdigit():
+            return int(stripped)
+    return None
+
+
+def _attempt_metadata(attempt: int) -> dict[str, int | bool]:
+    return {
+        "attempt": attempt,
+        "is_retry": attempt > 1,
+    }
+
+
 def _invoke_executor(
     node: NodeSpec,
     executor: ExecutorDefinition,
@@ -246,6 +267,11 @@ def _invoke_executor(
         started_at = perf_counter()
         try:
             result = llm_executor(inputs, params)
+            token_count = None
+            if isinstance(result, dict):
+                meta = result.pop(LLMExecutor._metadata_key, None)
+                if isinstance(meta, dict):
+                    token_count = _extract_int(meta.get("token_count"))
         except ExecutorError as exc:
             if policies.collect_metrics and metrics_sink is not None:
                 metrics_sink(
@@ -258,6 +284,7 @@ def _invoke_executor(
                         status="failed",
                         error_code=exc.code,
                         attempt=attempt,
+                        is_retry=(attempt > 1),
                         category="llm",
                     )
                 )
@@ -270,8 +297,10 @@ def _invoke_executor(
                     model=getattr(model_client, "model_name", None)
                     or getattr(model_client, "model", None),
                     latency_ms=round((perf_counter() - started_at) * 1000, 3),
+                    token_count=token_count,
                     status="succeeded",
                     attempt=attempt,
+                    is_retry=(attempt > 1),
                     category="llm",
                 )
             )
@@ -303,6 +332,7 @@ def _invoke_executor(
                         status="failed",
                         error_code=exc.code,
                         attempt=attempt,
+                        is_retry=(attempt > 1),
                         category="tool",
                     )
                 )
@@ -314,7 +344,7 @@ def _invoke_executor(
                     executor_ref=executor.ref,
                     latency_ms=round((perf_counter() - started_at) * 1000, 3),
                     status="succeeded",
-                    attempt=attempt,
+                    **_attempt_metadata(attempt),
                     category="tool",
                 )
             )
@@ -423,6 +453,7 @@ def _node_wrapper(
                             status="failed",
                             error_code="E_SIDE_008",
                             category="side_effect",
+                            is_retry=False,
                         )
                     )
                 return update
@@ -446,22 +477,29 @@ def _node_wrapper(
         try:
             from prompt2langgraph.runtime.retry import run_with_retry
 
+            final_attempt = 1
+
+            def _invoke_with_attempt(attempt: int) -> dict[str, Any]:
+                nonlocal final_attempt
+                final_attempt = attempt
+                return _invoke_executor(
+                    node,
+                    executor,
+                    inputs,
+                    params,
+                    policies=effective_policies,
+                    model_client=model_client,
+                    tool_registry=tool_registry,
+                    metrics_sink=metrics_sink,
+                    attempt=attempt,
+                )
+
             if idempotency_hit_outputs is not None:
                 raw_outputs = idempotency_hit_outputs
             else:
                 raw_outputs = run_with_retry(
                     node,
-                    lambda attempt: _invoke_executor(
-                        node,
-                        executor,
-                        inputs,
-                        params,
-                        policies=effective_policies,
-                        model_client=model_client,
-                        tool_registry=tool_registry,
-                        metrics_sink=metrics_sink,
-                        attempt=attempt,
-                    ),
+                    _invoke_with_attempt,
                     retry_sink=retry_sink,
                 )
             # Record successful external call for side_effect after approval.
@@ -480,6 +518,7 @@ def _node_wrapper(
                         executor_ref=executor.ref,
                         status="succeeded",
                         category="side_effect",
+                        is_retry=False,
                     )
                 )
         except ExecutorError as exc:
@@ -498,7 +537,11 @@ def _node_wrapper(
                     or (executor.type is ExecutorType.PYTHON_CALLABLE and tool_registry is not None)
                 )
             )
-            if error_sink is not None and not dynamic_external_recorded:
+            if (
+                error_sink is not None
+                and not dynamic_external_recorded
+                and not effective_policies.collect_metrics
+            ):
                 error_sink(exc)
             if (
                 effective_policies.collect_metrics
@@ -511,6 +554,7 @@ def _node_wrapper(
                         executor_ref=executor.ref,
                         status="failed",
                         error_code=exc.code,
+                        **_attempt_metadata(final_attempt),
                         category="external",
                     )
                 )
