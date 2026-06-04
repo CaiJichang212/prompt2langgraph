@@ -1,4 +1,19 @@
-"""Diagnostic code constants."""
+"""Diagnostic code constants and naming conventions.
+
+Error codes use E_* and warning codes use W_*.
+Code numbering is grouped by domain:
+- Parse/Schema/Type/Dependency/Binding/Runtime/Route validation: E_PARSE_001 / E_SCHEMA_002 / ...
+- Security policy: E_SEC_007~E_SEC_016
+- Join routing: E_JOIN_* / W_JOIN_*
+- Side effects: E_SIDE_* / W_SIDE_*
+
+Current security assignments:
+- E_SEC_015: tool whitelist and registration enforcement
+- E_SEC_016: reserved LANGCHAIN_TOOL rejection in v0.3
+
+When adding new diagnostics, keep numbering adjacent to existing semantic groups to
+avoid accidental level or owner collisions.
+"""
 
 E_PARSE_001 = "E_PARSE_001"
 E_SCHEMA_002 = "E_SCHEMA_002"
