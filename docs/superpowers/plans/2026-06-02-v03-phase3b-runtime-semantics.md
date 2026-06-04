@@ -1948,7 +1948,7 @@ If commits are approved, run:
 
 ```bash
 git add README.md AGENTS.md CLAUDE.md docs/prompt2langgraph-v0.3-开发计划文档.md
-git commit -m "docs: document v04 phase3b runtime semantics"
+git commit -m "docs: document v03 phase3b runtime semantics"
 ```
 
 Expected: commit succeeds if commits are approved.
@@ -2013,7 +2013,7 @@ If commits are approved and regression changes were needed, run:
 
 ```bash
 git add src/prompt2langgraph tests README.md AGENTS.md CLAUDE.md docs/prompt2langgraph-v0.3-开发计划文档.md
-git commit -m "test: cover v04 phase3b runtime regression"
+git commit -m "test: cover v03 phase3b runtime regression"
 ```
 
 Expected: commit succeeds only if there are uncommitted changes from regression fixes and commits are approved.
@@ -2044,7 +2044,7 @@ Expected: commit succeeds only if there are uncommitted changes from regression 
 
 ## Execution Handoff
 
-Plan complete and saved to `docs/superpowers/plans/2026-06-02-v04-phase3b-runtime-semantics.md`. Two execution options:
+Plan complete and saved to `docs/superpowers/plans/2026-06-02-v03-phase3b-runtime-semantics.md`. Two execution options:
 
 1. Subagent-Driven (recommended) - dispatch a fresh subagent per task, review between tasks, fast iteration.
 2. Inline Execution - execute tasks in this session using executing-plans, batch execution with checkpoints.

@@ -355,7 +355,8 @@ def build_graph(config: RuntimeConfig | None = None):
 行为要求：
 
 - README、AGENTS、CLAUDE、开发计划和实施计划均不得宣传其可执行。
-- validator 对 `LANGCHAIN_TOOL` 节点应产生明确 warning，建议新增 `W_SEC_016`，message 标明 `ExecutorType.LANGCHAIN_TOOL is reserved/experimental in v0.3`。
+- validator 对 `LANGCHAIN_TOOL` 节点应直接拒绝执行，使用 `E_SEC_016` 错误。
+- message 应为 `ExecutorType.LANGCHAIN_TOOL is not executable in v0.3`。
 - warning 不应由 `check_tool_refs()` 产生；该函数继续只检查 `ExecutorType.PYTHON_CALLABLE`，避免与现有安全测试语义冲突。
 - `JSONPlanAdapter`、Skill prompt 和 Prompt planner 可保留该枚举存在说明，但必须标注不作为 v0.3 可执行能力。
 - 真正的 LangChain Tool schema 映射和安全策略进入 v0.5+。
@@ -816,7 +817,7 @@ uv run pytest
 - artifact compile API 支持 executor registry 注入，dynamic tool bundle 可生成并通过 `RuntimeConfig` 注入 registry 运行。
 - 旧 generated bundle 入口仍有兼容测试。
 - benchmark 和工程门禁默认离线、可重复、不访问网络。
-- `LANGCHAIN_TOOL` 被明确标记为 reserved/experimental，validator 产生 reserved warning，且不作为 v0.3 可执行能力宣传。
+- `LANGCHAIN_TOOL` 被明确标记为 reserved/experimental，validator 产生 `E_SEC_016` 错误阻断，并不作为 v0.3 可执行能力宣传。
 - README、AGENTS、CLAUDE、测试说明与实际行为一致。
 - 全量 `uv run pytest` 通过。
 
@@ -865,9 +866,9 @@ uv run pytest
 
 若需要为 coding agent 生成细粒度执行计划，应将本项目级计划拆成至少三个独立计划：
 
-1. `v04-phase3a-cli-tool-registry`
-2. `v04-phase3b-runtime-governance`
-3. `v04-phase3c-runtime-config-bundle`
+1. `v03-phase3a-cli-tool-registry`
+2. `v03-phase3b-runtime-governance`
+3. `v03-phase3c-runtime-config-bundle`
 
 agent 执行计划可以包含更详细代码，但必须遵守以下规则：
 

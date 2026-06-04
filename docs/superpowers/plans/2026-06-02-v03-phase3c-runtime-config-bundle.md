@@ -1481,7 +1481,7 @@ No code commit is required for this step. If any prior commit was skipped becaus
 
 ## Execution Handoff
 
-Plan complete and saved to `docs/superpowers/plans/2026-06-02-v04-phase3c-runtime-config-bundle.md`. Two execution options:
+Plan complete and saved to `docs/superpowers/plans/2026-06-02-v03-phase3c-runtime-config-bundle.md`. Two execution options:
 
 1. Subagent-Driven (recommended) - dispatch a fresh subagent per task, review between tasks, fast iteration.
 2. Inline Execution - execute tasks in this session using executing-plans, batch execution with checkpoints.

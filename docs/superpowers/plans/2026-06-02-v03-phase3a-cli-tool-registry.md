@@ -1421,7 +1421,7 @@ Run:
 
 ```bash
 git add README.md AGENTS.md CLAUDE.md docs/prompt2langgraph-v0.3-开发计划文档.md
-git commit -m "docs: document v04 phase3a tool module workflow"
+git commit -m "docs: document v03 phase3a tool module workflow"
 ```
 
 Expected: commit succeeds if commits are allowed.
@@ -1448,7 +1448,7 @@ Expected: commit succeeds if commits are allowed.
 
 ## Execution Handoff
 
-Plan complete and saved to `docs/superpowers/plans/2026-06-02-v04-phase3a-cli-tool-registry.md`. Two execution options:
+Plan complete and saved to `docs/superpowers/plans/2026-06-02-v03-phase3a-cli-tool-registry.md`. Two execution options:
 
 1. Subagent-Driven (recommended) - dispatch a fresh subagent per task, review between tasks, fast iteration.
 2. Inline Execution - execute tasks in this session using executing-plans, batch execution with checkpoints.
