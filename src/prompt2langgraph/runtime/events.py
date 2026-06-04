@@ -42,6 +42,7 @@ class ExternalCallRecord(BaseModel):
     error_code: str | None = None
     attempt: int = 1
     category: Literal["llm", "tool", "side_effect", "external"] = "external"
+    is_retry: bool = False
 
 
 class RunResult(BaseModel):
